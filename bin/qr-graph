@@ -5,6 +5,9 @@ declare(strict_types=1);
 
 use BEAR\QueryRepositoryGraph\Cli;
 
+// stdout is JSONL: PHP's own notices and deprecations must not land in it.
+ini_set('display_errors', 'stderr');
+
 // The application's autoloader first: the resource classes to scan are the application's.
 foreach ([getcwd() . '/vendor/autoload.php', __DIR__ . '/../../../autoload.php', __DIR__ . '/../vendor/autoload.php'] as $autoload) {
     if (is_file($autoload)) {
