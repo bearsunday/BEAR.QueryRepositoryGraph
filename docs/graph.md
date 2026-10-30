@@ -63,9 +63,8 @@ It walks the embed edges breadth-first, one line per reached URI by its shortest
 
 `by` leads back to the start. URIs are matched as BEAR.Resource's AppAdapter resolves them: path segments
 are case-insensitive and `-` is ignored, so `galleryArticle` finds `gallery-article`. `cached: false` on the
-resource named by `by` means the cache does not carry
-that dependency: a child's tags reach its parent only from a 200 response whose child carried an ETag or
-Surrogate-Key.
+resource named by `by` means the cache does not carry that dependency: a child's tags reach its parent only
+from a 200 response whose child carried an ETag (its Surrogate-Key, if any, rides along).
 
 ### `dot` — a picture
 

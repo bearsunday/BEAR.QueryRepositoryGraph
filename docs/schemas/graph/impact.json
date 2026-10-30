@@ -14,7 +14,7 @@
         "by": {"type": ["string", "null"]},
         "depth": {"type": "integer", "minimum": 0},
         "cached": {
-            "description": "Whether the resource declares a cache at all. A child's tags reach its parent only from a child that ran with an ETag or Surrogate-Key, so an `embed` line whose `by` is not cached is a dependency the cache does not track (for a donut page, a hole rendered per request).",
+            "description": "Whether the resource declares a cache at all. A child's tags reach its parent only from a 200 response whose child carried an ETag (its Surrogate-Key, if any, rides along), so an `embed` line whose `by` is not cached is a dependency the cache may not track (for a donut page, a hole rendered per request).",
             "type": "boolean"
         },
         "source": {"description": "file:line; null for a URI no scanned resource serves.", "type": ["string", "null"]}
