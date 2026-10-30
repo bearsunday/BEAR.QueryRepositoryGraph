@@ -16,7 +16,7 @@ is declared but never observed, or observed but never declared.
 
 ```bash
 vendor/bin/qr-graph dump [--dir=src/Resource]
-vendor/bin/qr-graph impact <uri> [--method=onPut] [--dir=src/Resource]
+vendor/bin/qr-graph impact <uri> [--method=onPut] [--allow-unknown] [--dir=src/Resource]
 vendor/bin/qr-graph dot [--dir=src/Resource]
 ```
 
@@ -25,11 +25,16 @@ the autoloader does not resolve is reported on stderr as skipped, never included
 Skipped files and tool errors are JSONL on stderr; usage errors are plain text, as are PHP's own notices.
 Exit code: 0 ok, 1 error, 2 usage. An unknown option or an extra
 argument is a usage error (2); `--method` naming a method that refreshes and purges nothing is an error (1).
+A scan that finds no resource classes is an error (1) rather than an empty success: that is what a missing
+application autoloader looks like. `impact` on a URI no scanned resource serves is also an error (1) unless
+`--allow-unknown` is given.
 
 ### `dump` — one line per resource
 
 The first line is `meta`; every other line is a resource and the declarations it makes
 ([schema](schemas/graph/dump.json)). Edges start at the resource that declares them, so a line has no `from`.
+`meta` also records `counts` (nodes, edges, skipped), `tool.name` and the installed package version, and the
+`autoload` file relative to the working directory (`meta.version` is 2; v1 had no such fields).
 
 ```json
 {"uri":"app://self/user","source":"src/Resource/App/User.php:17","cacheable":{"expiry":"never","expirySecond":0,"expiryAt":"","update":false,"type":"value"},"methods":{"onPut":{"source":"src/Resource/App/User.php:52","refresh":[{"uri":"app://self/user","implicit":"Cacheable"},{"uri":"app://self/user/profile","template":"app://self/user/profile?user_id={id}"}],"purge":[{"uri":"app://self/user/friend","template":"app://self/user/friend?user_id={id}"}]}}}
@@ -57,7 +62,8 @@ It walks the embed edges breadth-first, one line per reached URI by its shortest
 ```
 
 `by` leads back to the start. `cached: false` on the resource named by `by` means the cache does not carry
-that dependency: a child's tags reach its parent only from a child that ran with an ETag or Surrogate-Key.
+that dependency: a child's tags reach its parent only from a 200 response whose child carried an ETag or
+Surrogate-Key.
 
 ### `dot` — a picture
 

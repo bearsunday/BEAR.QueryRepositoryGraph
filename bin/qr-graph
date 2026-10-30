@@ -9,11 +9,18 @@ use BEAR\QueryRepositoryGraph\Cli;
 ini_set('display_errors', 'stderr');
 
 // The application's autoloader first: the resource classes to scan are the application's.
+$autoloadFile = null;
 foreach ([getcwd() . '/vendor/autoload.php', __DIR__ . '/../../../autoload.php', __DIR__ . '/../vendor/autoload.php'] as $autoload) {
     if (is_file($autoload)) {
+        $autoloadFile = $autoload;
         require $autoload;
         break;
     }
 }
 
-exit((new Cli())(array_slice($argv, 1), STDOUT, STDERR));
+if ($autoloadFile === null) {
+    fwrite(STDERR, "No composer autoloader found for the application under " . getcwd() . "\n");
+    exit(1);
+}
+
+exit((new Cli($autoloadFile))(array_slice($argv, 1), STDOUT, STDERR));

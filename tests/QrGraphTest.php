@@ -10,8 +10,11 @@ use JsonSchema\Validator;
 use PHPUnit\Framework\TestCase;
 
 use function array_column;
+use function array_key_first;
+use function array_key_last;
 use function array_map;
 use function dirname;
+use function end;
 use function explode;
 use function fopen;
 use function is_array;
@@ -41,7 +44,15 @@ class QrGraphTest extends TestCase
         [$code, $out, $err] = self::qrGraph(['dump', '--dir=' . self::DIR]);
         self::assertSame(0, $code, $err);
         $lines = self::jsonl($out);
-        self::assertSame(['version' => 1, 'namespaces' => ['self' => 'FakeVendor\HelloWorld'], 'dir' => self::DIR], $lines[0]['meta']);
+        $meta = $lines[0]['meta'];
+        self::assertSame(2, $meta['version']);
+        self::assertSame(['self' => 'FakeVendor\HelloWorld'], $meta['namespaces']);
+        self::assertSame(self::DIR, $meta['dir']);
+        self::assertSame(['nodes' => 115, 'edges' => 123, 'skipped' => 2], $meta['counts']);
+        self::assertSame('qr-graph', $meta['tool']['name']);
+        self::assertIsString($meta['tool']['version']);
+        self::assertNotSame('', $meta['tool']['version']);
+        self::assertNull($meta['autoload']);
         foreach ($lines as $i => $line) {
             if ($i === 0) {
                 continue;
@@ -192,10 +203,11 @@ class QrGraphTest extends TestCase
         [$code, $out, $err] = self::qrGraph(['dump', '--dir=tests/Fixture/Resource']);
         $this->assertSame(0, $code, $err);
         $lines = self::jsonl($out);
-        $this->assertSame(
-            ['version' => 1, 'namespaces' => ['self' => 'BEAR\QueryRepositoryGraph\Fixture'], 'dir' => 'tests/Fixture/Resource'],
-            $lines[0]['meta'],
-        );
+        $meta = $lines[0]['meta'];
+        $this->assertSame(2, $meta['version']);
+        $this->assertSame(['self' => 'BEAR\QueryRepositoryGraph\Fixture'], $meta['namespaces']);
+        $this->assertSame('tests/Fixture/Resource', $meta['dir']);
+        $this->assertSame(['nodes' => 2, 'edges' => 0, 'skipped' => 0], $meta['counts']);
         $this->assertSame(['page://self/braced', 'page://self/inline-attr'], array_column(array_slice($lines, 1), 'uri'));
         $this->assertSame([], self::jsonl($err), 'a declaration PHP can see is never dropped silently');
     }
@@ -210,6 +222,10 @@ class QrGraphTest extends TestCase
         $this->assertSame(2, $code);
         $this->assertStringContainsString('Usage:', $err);
 
+        [$code, , $err] = self::qrGraph(['dump', '--allow-unknown', '--dir=' . self::DIR]);
+        $this->assertSame(2, $code);
+        $this->assertStringContainsString('Usage:', $err);
+
         [$code, , $err] = self::qrGraph(['impact', 'app://self/user', '--method=onFoo', '--dir=' . self::DIR]);
         $this->assertSame(1, $code);
         $this->assertStringContainsString('No write method onFoo on app://self/user', $err);
@@ -217,6 +233,32 @@ class QrGraphTest extends TestCase
         [$code, , $err] = self::qrGraph(['impact', 'page://self/dep/level-one', '--method=onGet', '--dir=' . self::DIR]);
         $this->assertSame(1, $code);
         $this->assertStringContainsString('No write method onGet on page://self/dep/level-one', $err);
+    }
+
+    public function testNoResourceClassesIsAnError(): void
+    {
+        [$code, $out, $err] = self::qrGraph(['dump', '--dir=tests/Fixture/Orphan/Resource']);
+        $this->assertSame(1, $code);
+        $this->assertSame('', $out);
+        $lines = self::jsonl($err);
+        $this->assertSame('skipped', array_key_first($lines[0]));
+        $this->assertStringContainsString(
+            'No resource classes found in tests/Fixture/Orphan/Resource',
+            $lines[array_key_last($lines)]['error'],
+        );
+    }
+
+    public function testUnknownTargetUriIsAnErrorUnlessAllowed(): void
+    {
+        [$code, $out, $err] = self::qrGraph(['impact', 'app://self/typo', '--dir=' . self::DIR]);
+        $this->assertSame(1, $code);
+        $this->assertSame('', $out);
+        $lines = self::jsonl($err);
+        $this->assertStringContainsString('No resource app://self/typo', $lines[array_key_last($lines)]['error']);
+
+        [$code, $out] = self::qrGraph(['impact', 'app://self/typo', '--allow-unknown', '--dir=' . self::DIR]);
+        $this->assertSame(0, $code);
+        $this->assertSame(['app://self/typo'], array_column(self::jsonl($out), 'uri'));
     }
 
     public function testUsageErrors(): void

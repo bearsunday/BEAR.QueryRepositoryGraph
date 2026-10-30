@@ -16,13 +16,38 @@
                     "type": "object",
                     "required": ["version", "namespaces", "dir"],
                     "properties": {
-                        "version": {"const": 1},
+                        "version": {"const": 2},
                         "namespaces": {
                             "description": "URI host => PHP namespace. `page://self/html/blog-posting` is `{namespaces.self}\\Resource\\Page\\Html\\BlogPosting`.",
                             "type": "object",
                             "additionalProperties": {"type": "string"}
                         },
-                        "dir": {"description": "The directory that was scanned.", "type": "string"}
+                        "dir": {"description": "The directory that was scanned.", "type": "string"},
+                "counts": {
+                    "description": "What the scan found: resource nodes, declared edges, and files the autoloader did not resolve.",
+                    "type": "object",
+                    "required": ["nodes", "edges", "skipped"],
+                    "properties": {
+                        "nodes": {"type": "integer", "minimum": 0},
+                        "edges": {"type": "integer", "minimum": 0},
+                        "skipped": {"type": "integer", "minimum": 0}
+                    },
+                    "additionalProperties": false
+                },
+                "tool": {
+                    "description": "The tool that produced the graph.",
+                    "type": "object",
+                    "required": ["name", "version"],
+                    "properties": {
+                        "name": {"const": "qr-graph"},
+                        "version": {"type": "string"}
+                    },
+                    "additionalProperties": false
+                },
+                "autoload": {
+                    "description": "The application autoloader relative to the working directory; null when Cli was called without one or it lies outside the working directory.",
+                    "type": ["string", "null"]
+                }
                     },
                     "additionalProperties": false
                 }
