@@ -154,9 +154,11 @@ USAGE;
      */
     private static function assertTarget(array $nodes, string $uri, string|null $method, bool $allowUnknown): void
     {
-        $uri = (new UriConverter())->resolve($uri, $uri)['uri'];
+        $converter = new UriConverter();
+        $uri = $converter->resolve($uri, $uri)['uri'];
+        $key = $converter->key($uri);
         foreach ($nodes as $node) {
-            if ($node['uri'] !== $uri) {
+            if ($converter->key($node['uri']) !== $key) {
                 continue;
             }
 

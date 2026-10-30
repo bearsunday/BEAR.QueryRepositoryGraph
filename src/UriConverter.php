@@ -11,6 +11,7 @@ use function implode;
 use function lcfirst;
 use function min;
 use function preg_replace;
+use function str_replace;
 use function str_starts_with;
 use function strlen;
 use function strpos;
@@ -77,5 +78,32 @@ final class UriConverter
         $uri = substr($absolute, 0, $cut);
 
         return $uri === $absolute ? ['uri' => $uri] : ['uri' => $uri, 'template' => $absolute];
+    }
+
+    /**
+     * The lookup key of a URI
+     *
+     * BEAR.Resource's AppAdapter resolves a path by `ucwords($path, '/-')` and removing `-`,
+     * so `galleryArticle` and `gallery-article` reach the same class. Matching on this key
+     * keeps those declarations on one node; the node's own URI stays canonical.
+     */
+    public function key(string $uri): string
+    {
+        $schemeEnd = strpos($uri, '://');
+        if ($schemeEnd === false) {
+            return strtolower($uri);
+        }
+
+        $rest = substr($uri, $schemeEnd + 3);
+        $slash = strpos($rest, '/');
+        if ($slash === false) {
+            return strtolower($uri);
+        }
+
+        return strtolower(substr($uri, 0, $schemeEnd))
+            . '://'
+            . strtolower(substr($rest, 0, $slash))
+            . '/'
+            . strtolower(str_replace('-', '', substr($rest, $slash + 1)));
     }
 }

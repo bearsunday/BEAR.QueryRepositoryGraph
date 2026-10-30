@@ -261,6 +261,16 @@ class QrGraphTest extends TestCase
         $this->assertSame(['app://self/typo'], array_column(self::jsonl($out), 'uri'));
     }
 
+    public function testUriMatchingFollowsTheAdapterEquivalence(): void
+    {
+        [$code, $out, $err] = self::qrGraph(['impact', 'app://self/galleryArticle', '--dir=tests/Fixture/Camel/Resource']);
+        $this->assertSame(0, $code, $err);
+        $lines = self::jsonl($out);
+        $this->assertSame(['app://self/gallery-article', 'page://self/camel-parent'], array_column($lines, 'uri'));
+        $this->assertSame(['target', 'embed'], array_column($lines, 'via'));
+        $this->assertSame('app://self/gallery-article', $lines[1]['by']);
+    }
+
     public function testUsageErrors(): void
     {
         [$code, , $err] = self::qrGraph(['impact', '--dir=' . self::DIR]);

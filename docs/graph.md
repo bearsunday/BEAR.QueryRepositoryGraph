@@ -61,7 +61,9 @@ It walks the embed edges breadth-first, one line per reached URI by its shortest
 {"uri":"page://self/dep/diamond-top","via":"embed","by":"page://self/dep/diamond-left","depth":2,"cached":true,"source":"src/Resource/Page/Dep/DiamondTop.php:10"}
 ```
 
-`by` leads back to the start. `cached: false` on the resource named by `by` means the cache does not carry
+`by` leads back to the start. URIs are matched as BEAR.Resource's AppAdapter resolves them: path segments
+are case-insensitive and `-` is ignored, so `galleryArticle` finds `gallery-article`. `cached: false` on the
+resource named by `by` means the cache does not carry
 that dependency: a child's tags reach its parent only from a 200 response whose child carried an ETag or
 Surrogate-Key.
 

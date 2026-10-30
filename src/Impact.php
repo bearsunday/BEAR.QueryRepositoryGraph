@@ -18,20 +18,23 @@ use function str_starts_with;
  */
 final class Impact
 {
-    /** @var array<string, Node> */
+    private readonly UriConverter $converter;
+
+    /** @var array<string, Node> keyed by UriConverter::key(), the value carries the canonical URI */
     private array $nodes = [];
 
-    /** @var array<string, list<string>> child URI => URIs of the resources embedding it */
+    /** @var array<string, list<string>> child key => URIs of the resources embedding it */
     private array $embeddedBy = [];
 
     /** @param list<Node> $nodes */
     public function __construct(array $nodes)
     {
+        $this->converter = new UriConverter();
         foreach ($nodes as $node) {
-            $this->nodes[$node['uri']] = $node;
+            $this->nodes[$this->converter->key($node['uri'])] = $node;
             foreach ($node['methods'] ?? [] as $method) {
                 foreach ($method['embed'] ?? [] as $embed) {
-                    $this->embeddedBy[$embed['uri']][] = $node['uri'];
+                    $this->embeddedBy[$this->converter->key($embed['uri'])][] = $node['uri'];
                 }
             }
         }
@@ -45,19 +48,21 @@ final class Impact
      */
     public function __invoke(string $uri, string|null $method = null): array
     {
-        $uri = (new UriConverter())->resolve($uri, $uri)['uri'];
+        $uri = $this->converter->resolve($uri, $uri)['uri'];
+        $key = $this->converter->key($uri);
+        $start = $this->nodes[$key]['uri'] ?? $uri;
         /** @var list<array{uri: string, via: string, by: string|null, depth: int}> $queue */
         $queue = [];
         if ($method === null) {
-            $queue[] = ['uri' => $uri, 'via' => 'target', 'by' => null, 'depth' => 0];
+            $queue[] = ['uri' => $start, 'via' => 'target', 'by' => null, 'depth' => 0];
         } else {
-            $declared = $this->nodes[$uri]['methods'][$method] ?? [];
+            $declared = $this->nodes[$key]['methods'][$method] ?? [];
             foreach ($declared['refresh'] ?? [] as $target) {
-                $queue[] = ['uri' => $target['uri'], 'via' => 'refresh', 'by' => $uri, 'depth' => 1];
+                $queue[] = ['uri' => $this->canonical($target['uri']), 'via' => 'refresh', 'by' => $start, 'depth' => 1];
             }
 
             foreach ($declared['purge'] ?? [] as $target) {
-                $queue[] = ['uri' => $target['uri'], 'via' => 'purge', 'by' => $uri, 'depth' => 1];
+                $queue[] = ['uri' => $this->canonical($target['uri']), 'via' => 'purge', 'by' => $start, 'depth' => 1];
             }
         }
 
@@ -65,19 +70,34 @@ final class Impact
         $seen = [];
         while ($queue !== []) {
             $next = array_shift($queue);
-            if (isset($seen[$next['uri']])) {
+            $key = $this->converter->key($next['uri']);
+            if (isset($seen[$key])) {
                 continue;
             }
 
-            $seen[$next['uri']] = true;
-            $node = $this->nodes[$next['uri']] ?? null;
-            $lines[] = $next + ['cached' => $node !== null && $this->isCached($node), 'source' => $node['source'] ?? null];
-            foreach ($this->embeddedBy[$next['uri']] ?? [] as $parent) {
-                $queue[] = ['uri' => $parent, 'via' => 'embed', 'by' => $next['uri'], 'depth' => $next['depth'] + 1];
+            $seen[$key] = true;
+            $node = $this->nodes[$key] ?? null;
+            $uri = $node['uri'] ?? $next['uri'];
+            $lines[] = [
+                'uri' => $uri,
+                'via' => $next['via'],
+                'by' => $next['by'],
+                'depth' => $next['depth'],
+                'cached' => $node !== null && $this->isCached($node),
+                'source' => $node['source'] ?? null,
+            ];
+            foreach ($this->embeddedBy[$key] ?? [] as $parent) {
+                $queue[] = ['uri' => $parent, 'via' => 'embed', 'by' => $uri, 'depth' => $next['depth'] + 1];
             }
         }
 
         return $lines;
+    }
+
+    /** The node URI a declaration points at, or the declaration itself when no node serves it. */
+    private function canonical(string $uri): string
+    {
+        return $this->nodes[$this->converter->key($uri)]['uri'] ?? $uri;
     }
 
     /** @param Node $node */
