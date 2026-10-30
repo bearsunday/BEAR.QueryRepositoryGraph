@@ -87,9 +87,6 @@ final class ResourceScanner
     /**
      * Classes declared in the file, in declaration order
      *
-     * Tokens, not a regex: a declaration is found wherever PHP puts it (one line with an
-     * attribute, a braced namespace), and a class is never mistaken for a mention in code.
-     *
      * @return list<class-string>
      */
     private function classNames(string $path): array

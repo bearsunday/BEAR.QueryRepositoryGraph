@@ -21,8 +21,9 @@ vendor/bin/qr-graph dot [--dir=src/Resource]
 ```
 
 Run it from the application root: classes are loaded through the application's autoloader, and a file
-the autoloader does not resolve is reported on stderr as skipped, never included. Output is JSONL on stdout;
-diagnostics are JSONL on stderr (PHP's own notices may also appear there). Exit code: 0 ok, 1 error, 2 usage. An unknown option or an extra
+the autoloader does not resolve is reported on stderr as skipped, never included. Output is JSONL on stdout.
+Skipped files and tool errors are JSONL on stderr; usage errors are plain text, as are PHP's own notices.
+Exit code: 0 ok, 1 error, 2 usage. An unknown option or an extra
 argument is a usage error (2); `--method` naming a method that refreshes and purges nothing is an error (1).
 
 ### `dump` — one line per resource
