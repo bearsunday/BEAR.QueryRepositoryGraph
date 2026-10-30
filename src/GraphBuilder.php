@@ -22,6 +22,7 @@ use function array_filter;
 use function file_get_contents;
 use function getcwd;
 use function preg_match;
+use function preg_quote;
 use function sprintf;
 use function str_replace;
 use function str_starts_with;
@@ -115,12 +116,14 @@ final class GraphBuilder
         }
 
         $methods = [];
+        $donut = $classCacheableResponse || isset($node['donutCache']);
+        $classSource = (string) file_get_contents((string) $ref->getFileName());
         foreach ($ref->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
             if (! str_starts_with($method->getName(), 'on') || $method->getDeclaringClass()->getName() === ResourceObject::class) {
                 continue;
             }
 
-            $declared = $this->method($method, $uri, $cacheable !== null, $classCacheableResponse);
+            $declared = $this->method($method, $uri, $cacheable !== null, $classCacheableResponse, $donut, $classSource);
             if ($declared !== null) {
                 $methods[$method->getName()] = $declared;
             }
@@ -139,12 +142,17 @@ final class GraphBuilder
     }
 
     /** @return Method|null null when the method declares nothing the cache acts on */
-    private function method(ReflectionMethod $method, string $uri, bool $cacheable, bool $classCacheableResponse): array|null
+    private function method(ReflectionMethod $method, string $uri, bool $cacheable, bool $classCacheableResponse, bool $donut, string $classSource): array|null
     {
         $embed = [];
         foreach ($method->getAttributes(Embed::class) as $attribute) {
             $instance = $attribute->newInstance();
-            $embed[] = ['rel' => $instance->rel] + $this->uriConverter->resolve($instance->src, $uri);
+            $declaredEmbed = ['rel' => $instance->rel];
+            if ($donut) {
+                $declaredEmbed['usage'] = $this->referenced($classSource, $instance->rel) ? 'referenced' : 'unreferenced';
+            }
+
+            $embed[] = $declaredEmbed + $this->uriConverter->resolve($instance->src, $uri);
         }
 
         // The command interceptors refresh the resource's own onGet before any #[Refresh]/#[Purge].
@@ -174,6 +182,25 @@ final class GraphBuilder
         }
 
         return ['source' => $this->source((string) $method->getFileName(), (int) $method->getStartLine())] + $declared;
+    }
+
+    /**
+     * Whether the class reads this embed relation
+     *
+     * A donut page reads a relation through `$this['rel']` (or `$this->body['rel']`),
+     * often from a helper called by onGet; an unread one is a hole, rendered per request
+     * and left out of the stored template's tags. The scan is a heuristic: a relation can
+     * be read indirectly, as Series does when it replaces `body['tags']` with the child's
+     * body array, and a read relation still contributes tags only when the child ran with
+     * them.
+     */
+    private function referenced(string $classSource, string $rel): bool
+    {
+        $quoted = preg_quote($rel, '/');
+        $read = '/\$this\s*\[\s*[\'"]' . $quoted . '[\'"]\s*\]/';
+        $body = '/->body\s*\[\s*[\'"]' . $quoted . '[\'"]\s*\]/';
+
+        return preg_match($read, $classSource) === 1 || preg_match($body, $classSource) === 1;
     }
 
     /** @return string|null the attribute that makes the write refresh its own resource */

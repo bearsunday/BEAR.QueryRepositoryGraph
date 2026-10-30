@@ -23,7 +23,7 @@ final class Impact
     /** @var array<string, Node> keyed by UriConverter::key(), the value carries the canonical URI */
     private array $nodes = [];
 
-    /** @var array<string, list<string>> child key => URIs of the resources embedding it */
+    /** @var array<string, list<array{uri: string, role: string|null}>> child key => embedders */
     private array $embeddedBy = [];
 
     /** @param list<Node> $nodes */
@@ -34,7 +34,10 @@ final class Impact
             $this->nodes[$this->converter->key($node['uri'])] = $node;
             foreach ($node['methods'] ?? [] as $method) {
                 foreach ($method['embed'] ?? [] as $embed) {
-                    $this->embeddedBy[$this->converter->key($embed['uri'])][] = $node['uri'];
+                    $this->embeddedBy[$this->converter->key($embed['uri'])][] = [
+                        'uri' => $node['uri'],
+                        'role' => $this->role($node, $embed),
+                    ];
                 }
             }
         }
@@ -51,7 +54,7 @@ final class Impact
         $uri = $this->converter->resolve($uri, $uri)['uri'];
         $key = $this->converter->key($uri);
         $start = $this->nodes[$key]['uri'] ?? $uri;
-        /** @var list<array{uri: string, via: string, by: string|null, depth: int}> $queue */
+        /** @var list<array{uri: string, via: string, by: string|null, depth: int, role?: string}> $queue */
         $queue = [];
         if ($method === null) {
             $queue[] = ['uri' => $start, 'via' => 'target', 'by' => null, 'depth' => 0];
@@ -78,7 +81,7 @@ final class Impact
             $seen[$key] = true;
             $node = $this->nodes[$key] ?? null;
             $uri = $node['uri'] ?? $next['uri'];
-            $lines[] = [
+            $line = [
                 'uri' => $uri,
                 'via' => $next['via'],
                 'by' => $next['by'],
@@ -86,12 +89,47 @@ final class Impact
                 'cached' => $node !== null && $this->isCached($node),
                 'source' => $node['source'] ?? null,
             ];
-            foreach ($this->embeddedBy[$key] ?? [] as $parent) {
-                $queue[] = ['uri' => $parent, 'via' => 'embed', 'by' => $uri, 'depth' => $next['depth'] + 1];
+            if (isset($next['role'])) {
+                $line['role'] = $next['role'];
+            }
+
+            $lines[] = $line;
+            foreach ($this->embeddedBy[$key] ?? [] as $embedder) {
+                $parent = [
+                    'uri' => $embedder['uri'],
+                    'via' => 'embed',
+                    'by' => $uri,
+                    'depth' => $next['depth'] + 1,
+                ];
+                if ($embedder['role'] !== null) {
+                    $parent['role'] = $embedder['role'];
+                }
+
+                $queue[] = $parent;
             }
         }
 
         return $lines;
+    }
+
+    /**
+     * Whether the embedding page stores this child as a material or renders it as a hole
+     *
+     * @param Node $node
+     * @param array{rel: string, uri: string, template?: string, usage?: string} $embed
+     */
+    private function role(array $node, array $embed): string|null
+    {
+        if (! isset($node['cacheableResponse']) && ! isset($node['donutCache'])) {
+            return null;
+        }
+
+        $usage = $embed['usage'] ?? null;
+        if ($usage === null) {
+            return null;
+        }
+
+        return $usage === 'referenced' ? 'material' : 'hole';
     }
 
     /** The node URI a declaration points at, or the declaration itself when no node serves it. */

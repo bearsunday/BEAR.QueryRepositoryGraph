@@ -47,6 +47,10 @@ The first line is `meta`; every other line is a resource and the declarations it
   or one marked `#[RefreshCache]`, refreshes its own resource.
 - `dynamic` lists source-text hints that the declarations may not be the whole story (the class source
   mentions a `surrogate-key`, or `ResourceInject`/`ResourceInterface` for a `resource-request` outside `#[Embed]`). A hint is a reason to read the source; its absence proves nothing.
+- `usage` on an embed of a donut-cached page (`#[CacheableResponse]`/`#[DonutCache]`) says whether the method
+  reads the relation: `referenced` children become materials (their tags are stored with the page), and
+  `unreferenced` ones are holes, rendered per request. This is a source-text heuristic; an indirect read
+  (one that replaces the relation's body with an array) is not detected.
 
 Local questions are a `grep` away: `grep '"uri":"app://self/user/profile"'` finds the resource, and
 `grep 'app://self/user/profile"'` also finds every line that embeds, refreshes or purges it.
@@ -65,7 +69,8 @@ It walks the embed edges breadth-first, one line per reached URI by its shortest
 are case-insensitive and `-` is ignored, so `galleryArticle` finds `gallery-article`. `cached: false` on the
 resource named by `by` means the cache does not carry that dependency: tags reach a parent only from a child
 that already ran, carrying an ETag (the non-donut path), or an ETag or Surrogate-Key (donut materials; holes
-have not run yet).
+have not run yet). An `embed` line from a donut-cached page also carries `role`: `material` when the page
+reads that child, `hole` when it is left to render per request.
 
 ### `dot` — a picture
 

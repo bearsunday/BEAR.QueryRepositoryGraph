@@ -13,6 +13,7 @@ use function array_column;
 use function array_key_first;
 use function array_key_last;
 use function array_map;
+use function array_slice;
 use function dirname;
 use function end;
 use function explode;
@@ -45,7 +46,7 @@ class QrGraphTest extends TestCase
         self::assertSame(0, $code, $err);
         $lines = self::jsonl($out);
         $meta = $lines[0]['meta'];
-        self::assertSame(2, $meta['version']);
+        self::assertSame(3, $meta['version']);
         self::assertSame(['self' => 'FakeVendor\HelloWorld'], $meta['namespaces']);
         self::assertSame(self::DIR, $meta['dir']);
         self::assertSame(['nodes' => 115, 'edges' => 123, 'skipped' => 2], $meta['counts']);
@@ -204,7 +205,7 @@ class QrGraphTest extends TestCase
         $this->assertSame(0, $code, $err);
         $lines = self::jsonl($out);
         $meta = $lines[0]['meta'];
-        $this->assertSame(2, $meta['version']);
+        $this->assertSame(3, $meta['version']);
         $this->assertSame(['self' => 'BEAR\QueryRepositoryGraph\Fixture'], $meta['namespaces']);
         $this->assertSame('tests/Fixture/Resource', $meta['dir']);
         $this->assertSame(['nodes' => 2, 'edges' => 0, 'skipped' => 0], $meta['counts']);
@@ -269,6 +270,31 @@ class QrGraphTest extends TestCase
         $this->assertSame(['app://self/gallery-article', 'page://self/camel-parent'], array_column($lines, 'uri'));
         $this->assertSame(['target', 'embed'], array_column($lines, 'via'));
         $this->assertSame('app://self/gallery-article', $lines[1]['by']);
+    }
+
+    public function testDonutEmbedUsageAndImpactRole(): void
+    {
+        [$code, $out, $err] = self::qrGraph(['dump', '--dir=tests/Fixture/Usage/Resource']);
+        $this->assertSame(0, $code, $err);
+        $lines = self::jsonl($out);
+        $nodes = [];
+        foreach (array_slice($lines, 1) as $line) {
+            $nodes[$line['uri']] = $line;
+        }
+
+        $embeds = $nodes['page://self/donut-page']['methods']['onGet']['embed'];
+        $this->assertSame(['read' => 'referenced', 'ignored' => 'unreferenced'], array_column($embeds, 'usage', 'rel'));
+
+        [$code, $out] = self::qrGraph(['impact', 'app://self/ignored-child', '--dir=tests/Fixture/Usage/Resource']);
+        $this->assertSame(0, $code);
+        $lines = self::jsonl($out);
+        $this->assertSame(['app://self/ignored-child', 'page://self/donut-page'], array_column($lines, 'uri'));
+        $this->assertSame('hole', $lines[1]['role']);
+
+        [$code, $out] = self::qrGraph(['impact', 'app://self/read-child', '--dir=tests/Fixture/Usage/Resource']);
+        $this->assertSame(0, $code);
+        $lines = self::jsonl($out);
+        $this->assertSame('material', $lines[1]['role']);
     }
 
     public function testUsageErrors(): void

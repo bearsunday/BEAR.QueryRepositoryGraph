@@ -16,7 +16,7 @@
                     "type": "object",
                     "required": ["version", "namespaces", "dir"],
                     "properties": {
-                        "version": {"const": 2},
+                        "version": {"const": 3},
                         "namespaces": {
                             "description": "URI host => PHP namespace. `page://self/html/blog-posting` is `{namespaces.self}\\Resource\\Page\\Html\\BlogPosting`.",
                             "type": "object",
@@ -103,6 +103,10 @@
                         "required": ["rel", "uri"],
                         "properties": {
                             "rel": {"type": "string"},
+                            "usage": {
+                                "description": "On a donut-cached page, whether the declaring method reads this relation (`referenced`) or leaves it to render per request (`unreferenced`). A source-text heuristic: indirect reads are not detected.",
+                                "enum": ["referenced", "unreferenced"]
+                            },
                             "uri": {"$ref": "#/$defs/uri"},
                             "template": {"$ref": "#/$defs/template"}
                         },

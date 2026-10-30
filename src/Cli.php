@@ -126,7 +126,7 @@ USAGE;
             $lines = $command === 'dump'
                 ? [[
                     'meta' => [
-                        'version' => 2,
+                        'version' => 3,
                         'namespaces' => $graph['namespaces'],
                         'dir' => $options['dir'],
                         'counts' => self::counts($graph['nodes'], $skipped),

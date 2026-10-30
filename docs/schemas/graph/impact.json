@@ -12,6 +12,10 @@
             "enum": ["target", "refresh", "purge", "embed"]
         },
         "by": {"type": ["string", "null"]},
+        "role": {
+            "description": "For an `embed` line whose `by` is a donut-cached page: `material` (the page reads this child, so its tags are stored with the page) or `hole` (rendered per request, left out of the stored template's tags). Source-text heuristic; absent for non-donut pages.",
+            "enum": ["material", "hole"]
+        },
         "depth": {"type": "integer", "minimum": 0},
         "cached": {
             "description": "Whether the resource declares a cache at all. Tags reach a parent only from a child that already ran, carrying an ETag (the non-donut path), or an ETag or Surrogate-Key (donut materials; holes have not run yet), so an `embed` line whose `by` is not cached is a dependency the cache may not track (for a donut page, a hole rendered per request).",
