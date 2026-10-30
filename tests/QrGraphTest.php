@@ -187,6 +187,38 @@ class QrGraphTest extends TestCase
         $this->assertStringContainsString('"app://self/user" -> "app://self/user/friend" [label="onPut purge", style=dashed];', $out);
     }
 
+    public function testTokensFindOneLineDeclarationsAndBracedNamespaces(): void
+    {
+        [$code, $out, $err] = self::qrGraph(['dump', '--dir=tests/Fixture/Resource']);
+        $this->assertSame(0, $code, $err);
+        $lines = self::jsonl($out);
+        $this->assertSame(
+            ['version' => 1, 'namespaces' => ['self' => 'BEAR\QueryRepositoryGraph\Fixture'], 'dir' => 'tests/Fixture/Resource'],
+            $lines[0]['meta'],
+        );
+        $this->assertSame(['page://self/braced', 'page://self/inline-attr'], array_column(array_slice($lines, 1), 'uri'));
+        $this->assertSame([], self::jsonl($err), 'a declaration PHP can see is never dropped silently');
+    }
+
+    public function testUnknownOptionsAndMethodsAreErrors(): void
+    {
+        [$code, , $err] = self::qrGraph(['dump', '--bogus', '--dir=' . self::DIR]);
+        $this->assertSame(2, $code);
+        $this->assertStringContainsString('Unknown option: --bogus', $err);
+
+        [$code, , $err] = self::qrGraph(['dump', '--method=onPut', '--dir=' . self::DIR]);
+        $this->assertSame(2, $code);
+        $this->assertStringContainsString('Usage:', $err);
+
+        [$code, , $err] = self::qrGraph(['impact', 'app://self/user', '--method=onFoo', '--dir=' . self::DIR]);
+        $this->assertSame(1, $code);
+        $this->assertStringContainsString('No write method onFoo on app://self/user', $err);
+
+        [$code, , $err] = self::qrGraph(['impact', 'page://self/dep/level-one', '--method=onGet', '--dir=' . self::DIR]);
+        $this->assertSame(1, $code);
+        $this->assertStringContainsString('No write method onGet on page://self/dep/level-one', $err);
+    }
+
     public function testUsageErrors(): void
     {
         [$code, , $err] = self::qrGraph(['impact', '--dir=' . self::DIR]);

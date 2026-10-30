@@ -13,12 +13,22 @@ use SplFileInfo;
 
 use function class_exists;
 use function file_get_contents;
+use function in_array;
+use function is_array;
 use function ksort;
-use function preg_match;
 use function realpath;
 use function str_ends_with;
 use function str_replace;
+use function token_get_all;
 use function usort;
+
+use const T_CLASS;
+use const T_COMMENT;
+use const T_DOC_COMMENT;
+use const T_DOUBLE_COLON;
+use const T_NAMESPACE;
+use const T_STRING;
+use const T_WHITESPACE;
 
 /**
  * Finds the resource classes under a directory
@@ -44,31 +54,28 @@ final class ResourceScanner
                 continue;
             }
 
-            $class = $this->className($path);
-            if ($class === null) {
-                continue;
-            }
+            foreach ($this->classNames($path) as $class) {
+                if (! class_exists($class)) {
+                    $this->skipped[] = ['file' => $reported, 'reason' => "{$class} is not autoloadable"];
+                    continue;
+                }
 
-            if (! class_exists($class)) {
-                $this->skipped[] = ['file' => $reported, 'reason' => "{$class} is not autoloadable"];
-                continue;
-            }
+                $ref = new ReflectionClass($class);
+                if ($ref->getFileName() !== realpath($path)) {
+                    // The autoloader resolves this class to another file: this one is never loaded.
+                    $loaded = str_replace('\\', '/', (string) $ref->getFileName());
+                    $this->skipped[] = ['file' => $reported, 'reason' => "{$class} is loaded from {$loaded}"];
+                    continue;
+                }
 
-            $ref = new ReflectionClass($class);
-            if ($ref->getFileName() !== realpath($path)) {
-                // The autoloader resolves this class to another file: this one is never loaded.
-                $loaded = str_replace('\\', '/', (string) $ref->getFileName());
-                $this->skipped[] = ['file' => $reported, 'reason' => "{$class} is loaded from {$loaded}"];
-                continue;
-            }
+                if ($ref->isAbstract() || ! $ref->isSubclassOf(ResourceObject::class)) {
+                    continue;
+                }
 
-            if ($ref->isAbstract() || ! $ref->isSubclassOf(ResourceObject::class)) {
-                continue;
+                /** @var ReflectionClass<ResourceObject> $resource */
+                $resource = $ref;
+                $classes[$resource->getName()] = $resource;
             }
-
-            /** @var ReflectionClass<ResourceObject> $resource */
-            $resource = $ref;
-            $classes[$resource->getName()] = $resource;
         }
 
         ksort($classes);
@@ -77,13 +84,65 @@ final class ResourceScanner
         return $classes;
     }
 
-    private function className(string $path): string|null
+    /**
+     * Classes declared in the file, in declaration order
+     *
+     * Tokens, not a regex: a declaration is found wherever PHP puts it (one line with an
+     * attribute, a braced namespace), and a class is never mistaken for a mention in code.
+     *
+     * @return list<class-string>
+     */
+    private function classNames(string $path): array
     {
-        $code = (string) file_get_contents($path);
-        if (! preg_match('/^\s*(?:(?:final|abstract|readonly)\s+)*class\s+(\w+)/m', $code, $class)) {
-            return null;
+        $tokens = token_get_all((string) file_get_contents($path));
+        $namespace = '';
+        $classes = [];
+        foreach ($tokens as $i => $token) {
+            if (! is_array($token)) {
+                continue;
+            }
+
+            if ($token[0] === T_NAMESPACE) {
+                $namespace = '';
+                for ($j = $i + 1; isset($tokens[$j]); $j++) {
+                    $next = $tokens[$j];
+                    if ($next === ';' || $next === '{') {
+                        break;
+                    }
+
+                    if (! is_array($next) || in_array($next[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
+                        continue;
+                    }
+
+                    $namespace .= $next[1];
+                }
+
+                continue;
+            }
+
+            if ($token[0] !== T_CLASS) {
+                continue;
+            }
+
+            // Foo::class is not a declaration.
+            for ($p = $i - 1; isset($tokens[$p]) && is_array($tokens[$p]) && $tokens[$p][0] === T_WHITESPACE; $p--);
+            if (isset($tokens[$p]) && is_array($tokens[$p]) && $tokens[$p][0] === T_DOUBLE_COLON) {
+                continue;
+            }
+
+            // An anonymous class has no name token.
+            $j = $i + 1;
+            while (isset($tokens[$j]) && is_array($tokens[$j]) && $tokens[$j][0] === T_WHITESPACE) {
+                $j++;
+            }
+
+            if (! isset($tokens[$j]) || ! is_array($tokens[$j]) || $tokens[$j][0] !== T_STRING) {
+                continue;
+            }
+
+            $classes[] = ($namespace === '' ? '' : $namespace . '\\') . $tokens[$j][1];
         }
 
-        return preg_match('/^\s*namespace\s+([\w\\\\]+)\s*;/m', $code, $namespace) ? "{$namespace[1]}\\{$class[1]}" : $class[1];
+        return $classes;
     }
 }

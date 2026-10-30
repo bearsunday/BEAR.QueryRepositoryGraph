@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace BEAR\QueryRepositoryGraph;
 
+use RuntimeException;
 use Throwable;
 
 use function array_shift;
+use function count;
 use function fwrite;
 use function getcwd;
+use function in_array;
 use function is_dir;
 use function json_encode;
 use function str_starts_with;
@@ -56,11 +59,27 @@ USAGE;
                 continue;
             }
 
+            if (str_starts_with($arg, '--')) {
+                fwrite($stderr, "Unknown option: {$arg}\n" . self::USAGE);
+
+                return 2;
+            }
+
             $args[] = $arg;
         }
 
-        if (! is_dir($options['dir']) || ! ($command === 'dump' || $command === 'dot' || ($command === 'impact' && isset($args[0])))) {
-            fwrite($stderr, is_dir($options['dir']) ? self::USAGE : "No such directory: {$options['dir']}\n" . self::USAGE);
+        if (! is_dir($options['dir'])) {
+            fwrite($stderr, "No such directory: {$options['dir']}\n" . self::USAGE);
+
+            return 2;
+        }
+
+        $isCommand = in_array($command, ['dump', 'dot', 'impact'], true);
+        $isValid = $isCommand
+            && ($command === 'impact' ? count($args) === 1 : $args === [])
+            && ($command === 'impact' || $options['method'] === null);
+        if (! $isValid) {
+            fwrite($stderr, self::USAGE);
 
             return 2;
         }
@@ -78,6 +97,10 @@ USAGE;
                 return 0;
             }
 
+            if ($command === 'impact' && $options['method'] !== null) {
+                self::assertWriteMethod($graph['nodes'], $args[0], $options['method']);
+            }
+
             $lines = $command === 'dump'
                 ? [['meta' => ['version' => 1, 'namespaces' => $graph['namespaces'], 'dir' => $options['dir']]], ...$graph['nodes']]
                 : (new Impact($graph['nodes']))($args[0], $options['method']);
@@ -91,5 +114,27 @@ USAGE;
         }
 
         return 0;
+    }
+
+    /**
+     * @param list<array{uri: string, methods?: array<string, array{refresh?: list<mixed>, purge?: list<mixed>}>}> $nodes
+     *
+     * @throws RuntimeException when the method refreshes and purges nothing
+     */
+    private static function assertWriteMethod(array $nodes, string $uri, string $method): void
+    {
+        $uri = (new UriConverter())->resolve($uri, $uri)['uri'];
+        foreach ($nodes as $node) {
+            if ($node['uri'] !== $uri) {
+                continue;
+            }
+
+            $declared = $node['methods'][$method] ?? null;
+            if ($declared !== null && (($declared['refresh'] ?? []) !== [] || ($declared['purge'] ?? []) !== [])) {
+                return;
+            }
+        }
+
+        throw new RuntimeException("No write method {$method} on {$uri}");
     }
 }
