@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace BEAR\QueryRepository;
+namespace BEAR\QueryRepositoryGraph;
 
 use BEAR\QueryRepositoryGraph\Cli;
 use BEAR\QueryRepositoryGraph\UriConverter;

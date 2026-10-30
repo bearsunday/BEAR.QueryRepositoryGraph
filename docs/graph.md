@@ -9,9 +9,8 @@ The semantic log records what the cache *did*, as instance URIs (`depends_on`, `
 This graph records what the code *declares*, as resource URIs. Comparing the two finds a dependency that
 is declared but never observed, or observed but never declared.
 
-> `qr-graph` is a development tool. It ships in this package under its own namespace
-> (`BEAR\QueryRepositoryGraph`) for now and is planned to move to a separate package you install with
-> `require-dev`. Its contract is the command line and the schemas below, not the PHP classes.
+> `qr-graph` is a development tool. Install it with `composer require --dev bear/query-repository-graph`;
+> it is not installed by `composer install --no-dev`. Its contract is the command line and the schemas below, not the PHP classes.
 
 ## Commands
 
