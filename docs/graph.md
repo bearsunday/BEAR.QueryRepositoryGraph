@@ -96,10 +96,12 @@ line per page and embedded child that a donut write classified ([schema](schemas
 {"page":"page://self/blog","child":"app://self/channel","observed":["dependency_skipped"],"declared":"referenced","verdict":"untagged-material"}
 ```
 
-`depends_on` and `dependency_skipped` (BEAR.QueryRepository 1.19+) are joined with the embed's `usage`. The
+`depends_on` and `dependency_skipped` (BEAR.QueryRepository 1.19+) carry the run-time facts: a skipped child's
+`reason` says whether it had not run (`not_run`, a hole) or ran without a tag (`no_etag_or_surrogate_key`). The
+embed's `usage`, a source-text guess, is used only for `depends_on` and for a skip logged without a reason. The
 verdicts that need reading:
 
-- `untagged-material` — the page reads the child, but the child carried neither an ETag nor a Surrogate-Key, so a
+- `untagged-material` — the page read the child, but the child carried neither an ETag nor a Surrogate-Key, so a
   change to the child's data does not reach the page's template **through this child**. The page may still carry
   the right tags itself; whether it does is read from the page's own `save_etag`/`save_donut` tags, not from here.
 - `unclassified` — the page was written (`put_donut`), yet the declared child was no longer an embedded request at

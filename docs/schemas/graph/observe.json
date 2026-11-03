@@ -9,9 +9,9 @@
         "page": {"description": "The parent URI as logged, without query.", "type": "string"},
         "child": {"description": "The child URI as logged, without query.", "type": "string"},
         "observed": {
-            "description": "The event types recorded for this pair across the sessions read; empty for an `unclassified` child.",
+            "description": "What the sessions recorded for this pair: `depends_on`, or the `reason` of a `dependency_skipped` (`not_run`, `no_etag_or_surrogate_key`), or a bare `dependency_skipped` from a log that records no reason. Empty for an `unclassified` child.",
             "type": "array",
-            "items": {"enum": ["depends_on", "dependency_skipped"]},
+            "items": {"enum": ["depends_on", "not_run", "no_etag_or_surrogate_key", "dependency_skipped"]},
             "uniqueItems": true
         },
         "declared": {

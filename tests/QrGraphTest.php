@@ -326,6 +326,22 @@ class QrGraphTest extends TestCase
         ], $this->verdicts(self::SESSIONS . '/contrary.json'));
     }
 
+    public function testObserveTrustsTheRunTimeReasonOverTheSourceGuess(): void
+    {
+        $this->assertSame([
+            ['page://self/donut-page', 'app://self/ignored-child', 'tagged-hole'],
+            ['page://self/donut-page', 'app://self/read-child', 'hole'],
+        ], $this->verdicts(self::SESSIONS . '/runtime.json'), 'the scan guesses read-child is referenced, but it had not run');
+    }
+
+    public function testObserveFallsBackToTheSourceGuessWithoutAReason(): void
+    {
+        $this->assertSame([
+            ['page://self/donut-page', 'app://self/ignored-child', 'tagged-hole'],
+            ['page://self/donut-page', 'app://self/read-child', 'untagged-material'],
+        ], $this->verdicts(self::SESSIONS . '/reasonless.json'));
+    }
+
     public function testObserveReadsADirectoryWithoutItsLatestCopy(): void
     {
         $this->assertSame([

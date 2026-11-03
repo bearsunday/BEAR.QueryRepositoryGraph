@@ -14,6 +14,7 @@ use function count;
 use function file_get_contents;
 use function glob;
 use function implode;
+use function in_array;
 use function is_array;
 use function is_dir;
 use function is_file;
@@ -32,12 +33,13 @@ use const JSON_THROW_ON_ERROR;
  * What the semantic log observed about each embedded child, joined with what the code declares
  *
  * `depends_on` and `dependency_skipped` name their parent and child, so where an event sits in the tree does not
- * matter. A skipped child cannot say whether it is a hole or a child that ran and emits no tag; the declaration's
- * `usage` can, and `untagged-material` is that case: the page reads the child, yet a change to the child's data
- * does not reach the page's template through it.
+ * matter. The reason of a `dependency_skipped` is measured at run time: `not_run` is a hole, and
+ * `no_etag_or_surrogate_key` is a child the page read that emits no tag (`untagged-material`): a change to its
+ * data does not reach the page's template through it. A log without a reason falls back to the declaration's
+ * `usage`, a source-text guess.
  *
  * A `put_donut` says the page's children were classified. A declared child that then left no event was no longer
- * an embedded request in the page's body: `unclassified`.
+ * an embedded request at the top of the page's body: `unclassified`.
  *
  * The shape is `docs/schemas/graph/observe.json`.
  *
@@ -46,8 +48,13 @@ use const JSON_THROW_ON_ERROR;
  */
 final class Observe
 {
+    private const EVENTS = ['depends_on', 'dependency_skipped'];
+
+    /** Observation => declared usage => verdict; a skip with a run-time reason does not need the usage */
     private const VERDICTS = [
         'depends_on' => ['referenced' => 'material', 'unreferenced' => 'tagged-hole', 'embedded' => 'dependency'],
+        'not_run' => ['referenced' => 'hole', 'unreferenced' => 'hole', 'embedded' => 'hole'],
+        'no_etag_or_surrogate_key' => ['referenced' => 'untagged-material', 'unreferenced' => 'untagged-material', 'embedded' => 'untagged-material'],
         'dependency_skipped' => ['referenced' => 'untagged-material', 'unreferenced' => 'hole', 'embedded' => 'skipped'],
     ];
 
@@ -56,7 +63,7 @@ final class Observe
     /** @var array<string, array<string, array{uri: string, usage: string}>> page key => child key => declared embed */
     private array $declared = [];
 
-    /** @var array<string, array{uri: string, children: array<string, array{uri: string, types: array<string, true>}>}> page key => logged page and children */
+    /** @var array<string, array{uri: string, children: array<string, array{uri: string, types: array<string, true>}>}> page key => logged page and children, each observation a VERDICTS key */
     private array $observed = [];
 
     /** @var array<string, string> page key => logged page URI, for every page written by `put_donut` */
@@ -192,18 +199,20 @@ final class Observe
             return;
         }
 
-        if (! isset(self::VERDICTS[$type]) || ! is_string($context['parent'] ?? null) || ! is_string($context['child'] ?? null)) {
+        if (! in_array($type, self::EVENTS, true) || ! is_string($context['parent'] ?? null) || ! is_string($context['child'] ?? null)) {
             return;
         }
 
         $this->sawSkipped = $this->sawSkipped || $type === 'dependency_skipped';
+        $reason = $context['reason'] ?? null;
+        $observation = $type === 'dependency_skipped' && is_string($reason) && isset(self::VERDICTS[$reason]) ? $reason : $type;
         $page = self::withoutQuery($context['parent']);
         $child = self::withoutQuery($context['child']);
         $pageKey = $this->converter->key($page);
         $childKey = $this->converter->key($child);
         $this->observed[$pageKey] ??= ['uri' => $page, 'children' => []];
         $this->observed[$pageKey]['children'][$childKey] ??= ['uri' => $child, 'types' => []];
-        $this->observed[$pageKey]['children'][$childKey]['types'][$type] = true;
+        $this->observed[$pageKey]['children'][$childKey]['types'][$observation] = true;
     }
 
     /**
