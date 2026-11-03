@@ -28,7 +28,9 @@ use const JSON_UNESCAPED_UNICODE;
 /**
  * `qr-graph` - the declared cache graph of a BEAR.Sunday application
  *
- * Output is JSONL on stdout; diagnostics (skipped files, errors) are JSONL on stderr.
+ * Output is JSONL on stdout; diagnostics (skipped files, warnings, errors) are JSONL on stderr.
+ *
+ * @psalm-import-type Node from GraphBuilder
  */
 final class Cli
 {
@@ -139,7 +141,7 @@ USAGE;
                         'autoload' => self::relativeAutoload($this->autoload, $cwd),
                     ],
                 ], ...$graph['nodes']],
-                'observe' => (new Observe($graph['nodes']))($args),
+                'observe' => $this->observe($graph['nodes'], $args, $stderr),
                 default => (new Impact($graph['nodes']))($args[0], $options['method']),
             };
             foreach ($lines as $line) {
@@ -152,6 +154,26 @@ USAGE;
         }
 
         return 0;
+    }
+
+    /**
+     * @param list<Node>   $nodes
+     * @param list<string> $paths
+     * @param resource     $stderr
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function observe(array $nodes, array $paths, $stderr): array
+    {
+        $observe = new Observe($nodes);
+        $lines = $observe($paths);
+        if (! $observe->sawSkipped) {
+            fwrite($stderr, json_encode([
+                'warning' => 'No dependency_skipped in the sessions read. BEAR.QueryRepository before 1.19 does not record it, and then holes and untagged children read as unclassified.',
+            ], self::JSON) . "\n");
+        }
+
+        return $lines;
     }
 
     /**

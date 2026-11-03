@@ -343,6 +343,15 @@ class QrGraphTest extends TestCase
         ], $this->verdicts(self::SESSIONS . '/written.json'));
     }
 
+    public function testObserveWarnsWhenTheLogPredatesDependencySkipped(): void
+    {
+        [, , $err] = self::qrGraph(['observe', self::SESSIONS . '/written.json', '--dir=tests/Fixture/Usage/Resource']);
+        $this->assertStringContainsString('No dependency_skipped in the sessions read', $err);
+
+        [, , $err] = self::qrGraph(['observe', self::SESSIONS . '/expected.json', '--dir=tests/Fixture/Usage/Resource']);
+        $this->assertStringNotContainsString('No dependency_skipped', $err);
+    }
+
     public function testObserveWithoutASessionIsAnError(): void
     {
         [$code, , $err] = self::qrGraph(['observe', '--dir=tests/Fixture/Usage/Resource']);

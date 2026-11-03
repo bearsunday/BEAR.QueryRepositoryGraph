@@ -62,6 +62,9 @@ final class Observe
     /** @var array<string, string> page key => logged page URI, for every page written by `put_donut` */
     private array $written = [];
 
+    /** Whether any session recorded `dependency_skipped`; without it holes and untagged children read as `unclassified` */
+    public bool $sawSkipped = false;
+
     /** @param list<Node> $nodes */
     public function __construct(array $nodes)
     {
@@ -86,6 +89,7 @@ final class Observe
     public function __invoke(array $paths): array
     {
         $this->observed = $this->written = [];
+        $this->sawSkipped = false;
         foreach ($this->sessions($paths) as $file) {
             try {
                 $session = json_decode((string) file_get_contents($file), true, 512, JSON_THROW_ON_ERROR);
@@ -192,6 +196,7 @@ final class Observe
             return;
         }
 
+        $this->sawSkipped = $this->sawSkipped || $type === 'dependency_skipped';
         $page = self::withoutQuery($context['parent']);
         $child = self::withoutQuery($context['child']);
         $pageKey = $this->converter->key($page);

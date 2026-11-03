@@ -35,7 +35,7 @@ application autoloader looks like. `impact` on a URI no scanned resource serves 
 The first line is `meta`; every other line is a resource and the declarations it makes
 ([schema](schemas/graph/dump.json)). Edges start at the resource that declares them, so a line has no `from`.
 `meta` also records `counts` (nodes, edges, skipped), `tool.name` and the installed package version, and the
-`autoload` file relative to the working directory (`meta.version` is 2; v1 had no such fields).
+`autoload` file relative to the working directory. `meta.version` is 3: v2 added those fields, v3 the embed `usage`.
 
 ```json
 {"uri":"app://self/user","source":"src/Resource/App/User.php:17","cacheable":{"expiry":"never","expirySecond":0,"expiryAt":"","update":false,"type":"value"},"methods":{"onPut":{"source":"src/Resource/App/User.php:52","refresh":[{"uri":"app://self/user","implicit":"Cacheable"},{"uri":"app://self/user/profile","template":"app://self/user/profile?user_id={id}"}],"purge":[{"uri":"app://self/user/friend","template":"app://self/user/friend?user_id={id}"}]}}}
@@ -100,13 +100,17 @@ line per page and embedded child that a donut write classified ([schema](schemas
 verdicts that need reading:
 
 - `untagged-material` — the page reads the child, but the child carried neither an ETag nor a Surrogate-Key, so a
-  change to the child's data does not reach the page's template through it.
+  change to the child's data does not reach the page's template **through this child**. The page may still carry
+  the right tags itself; whether it does is read from the page's own `save_etag`/`save_donut` tags, not from here.
 - `unclassified` — the page was written (`put_donut`), yet the declared child was no longer an embedded request at
-  the top of its body: removed with `unset()`, replaced by its body array, or moved into a nested array. Its tags
-  never reach the page, even when the page read it.
+  the top of its body: removed with `unset()`, replaced by its body array, or moved into a nested array. The
+  classification looks at the top of the body only, so such a child adds no tag to the page even when the page
+  read it. An `unset()` of a child the page never needed is the same verdict and harmless.
 - `tagged-hole` — the source scan says the page does not read the child, yet the child carried tags before the write.
 
-Only pages written in the sessions read are judged; a page served from cache classifies nothing.
+Only pages written in the sessions read are judged; a page served from cache classifies nothing. Sessions without a
+single `dependency_skipped` are reported with a warning on stderr: they may come from a version that does not record
+it, where holes and untagged children read as `unclassified`.
 
 ## What the graph does not know
 
