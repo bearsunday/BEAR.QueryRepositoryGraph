@@ -38,6 +38,7 @@ Usage:
   qr-graph dump   [--dir=src/Resource]                      one JSONL line per resource
   qr-graph impact <uri> [--method=onPut] [--allow-unknown] [--dir=src/Resource]  what invalidating <uri> (or calling its write method) reaches
   qr-graph dot    [--dir=src/Resource]                      Graphviz view
+  qr-graph observe <session.json|dir>... [--dir=src/Resource]  each embedded child the log saw, joined with its declaration
 
 USAGE;
 
@@ -86,9 +87,13 @@ USAGE;
             return 2;
         }
 
-        $isCommand = in_array($command, ['dump', 'dot', 'impact'], true);
+        $isCommand = in_array($command, ['dump', 'dot', 'impact', 'observe'], true);
         $isValid = $isCommand
-            && ($command === 'impact' ? count($args) === 1 : $args === [])
+            && match ($command) {
+                'impact' => count($args) === 1,
+                'observe' => $args !== [],
+                default => $args === [],
+            }
             && ($command === 'impact' || ($options['method'] === null && ! $options['allowUnknown']));
         if (! $isValid) {
             fwrite($stderr, self::USAGE);
@@ -123,8 +128,8 @@ USAGE;
                 self::assertTarget($graph['nodes'], $args[0], $options['method'], $options['allowUnknown']);
             }
 
-            $lines = $command === 'dump'
-                ? [[
+            $lines = match ($command) {
+                'dump' => [[
                     'meta' => [
                         'version' => 3,
                         'namespaces' => $graph['namespaces'],
@@ -133,8 +138,10 @@ USAGE;
                         'tool' => ['name' => 'qr-graph', 'version' => self::version()],
                         'autoload' => self::relativeAutoload($this->autoload, $cwd),
                     ],
-                ], ...$graph['nodes']]
-                : (new Impact($graph['nodes']))($args[0], $options['method']);
+                ], ...$graph['nodes']],
+                'observe' => (new Observe($graph['nodes']))($args),
+                default => (new Impact($graph['nodes']))($args[0], $options['method']),
+            };
             foreach ($lines as $line) {
                 fwrite($stdout, json_encode($line, self::JSON) . "\n");
             }

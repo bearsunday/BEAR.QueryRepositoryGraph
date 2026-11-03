@@ -37,7 +37,7 @@ use function usort;
  * The record's shape is `docs/schemas/graph/resource.json`.
  *
  * @psalm-type Target = array{uri: string, template?: string, implicit?: string}
- * @psalm-type Method = array{source: string, cacheableResponse?: true, embed?: list<array{rel: string, uri: string, template?: string}>, refresh?: list<Target>, purge?: list<Target>}
+ * @psalm-type Method = array{source: string, cacheableResponse?: true, embed?: list<array{rel: string, usage?: string, uri: string, template?: string}>, refresh?: list<Target>, purge?: list<Target>}
  * @psalm-type Node = array{uri: string, source: string, cacheable?: array{expiry: string, expirySecond: int, expiryAt: string, update: bool, type: string}, donutCache?: true, cacheableResponse?: true, httpCache?: string, methods?: array<string, Method>, dynamic?: list<string>}
  */
 final class GraphBuilder

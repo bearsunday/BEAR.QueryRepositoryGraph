@@ -18,6 +18,7 @@ is declared but never observed, or observed but never declared.
 vendor/bin/qr-graph dump [--dir=src/Resource]
 vendor/bin/qr-graph impact <uri> [--method=onPut] [--allow-unknown] [--dir=src/Resource]
 vendor/bin/qr-graph dot [--dir=src/Resource]
+vendor/bin/qr-graph observe <session.json|dir>... [--dir=src/Resource]
 ```
 
 Run it from the application root: classes are loaded through the application's autoloader, and a file
@@ -81,6 +82,31 @@ vendor/bin/qr-graph dot | dot -Tsvg > graph.svg
 Arrows point as declared (a page to what it embeds, a write to what it refreshes or purges); add
 `edge [dir=back]` for the direction invalidation travels. Cached resources are drawn double-bordered,
 resources with `dynamic` hints dashed.
+
+### `observe` — the log against the declarations
+
+```bash
+vendor/bin/qr-graph observe var/log/query-repository
+```
+
+Reads semantic log sessions (a directory contributes its timestamped files, not `latest.json`) and writes one
+line per page and embedded child that a donut write classified ([schema](schemas/graph/observe.json)):
+
+```json
+{"page":"page://self/blog","child":"app://self/channel","observed":["dependency_skipped"],"declared":"referenced","verdict":"untagged-material"}
+```
+
+`depends_on` and `dependency_skipped` (BEAR.QueryRepository 1.19+) are joined with the embed's `usage`. The
+verdicts that need reading:
+
+- `untagged-material` — the page reads the child, but the child carried neither an ETag nor a Surrogate-Key, so a
+  change to the child's data does not reach the page's template through it.
+- `unclassified` — the page was written (`put_donut`), yet the declared child was no longer an embedded request at
+  the top of its body: removed with `unset()`, replaced by its body array, or moved into a nested array. Its tags
+  never reach the page, even when the page read it.
+- `tagged-hole` — the source scan says the page does not read the child, yet the child carried tags before the write.
+
+Only pages written in the sessions read are judged; a page served from cache classifies nothing.
 
 ## What the graph does not know
 

@@ -33,6 +33,7 @@ use const JSON_THROW_ON_ERROR;
 class QrGraphTest extends TestCase
 {
     private const DIR = 'tests/Fake/fake-app/src/Resource';
+    private const SESSIONS = 'tests/Fixture/Sessions';
 
     /** @var array<string, array<string, mixed>> */
     private static array $nodes = [];
@@ -306,6 +307,66 @@ class QrGraphTest extends TestCase
         [$code, , $err] = self::qrGraph(['dump', '--dir=no/such/dir']);
         $this->assertSame(2, $code);
         $this->assertStringContainsString('No such directory: no/such/dir', $err);
+    }
+
+    public function testObserveJudgesEachLoggedChildAgainstItsDeclaredUsage(): void
+    {
+        $this->assertSame([
+            ['page://self/donut-page', 'app://self/ignored-child', 'hole'],
+            ['page://self/donut-page', 'app://self/read-child', 'material'],
+            ['page://self/donut-page', 'app://self/unknown-child', 'undeclared'],
+        ], $this->verdicts(self::SESSIONS . '/expected.json'));
+    }
+
+    public function testObserveFlagsAReadChildThatCarriedNoTag(): void
+    {
+        $this->assertSame([
+            ['page://self/donut-page', 'app://self/ignored-child', 'tagged-hole'],
+            ['page://self/donut-page', 'app://self/read-child', 'untagged-material'],
+        ], $this->verdicts(self::SESSIONS . '/contrary.json'));
+    }
+
+    public function testObserveReadsADirectoryWithoutItsLatestCopy(): void
+    {
+        $this->assertSame([
+            ['page://self/donut-page', 'app://self/ignored-child', 'mixed'],
+            ['page://self/donut-page', 'app://self/read-child', 'mixed'],
+            ['page://self/donut-page', 'app://self/unknown-child', 'undeclared'],
+        ], $this->verdicts(self::SESSIONS . '/dir'));
+    }
+
+    public function testObserveNamesADeclaredChildAWrittenPageNoLongerHeld(): void
+    {
+        $this->assertSame([
+            ['page://self/donut-page', 'app://self/ignored-child', 'unclassified'],
+            ['page://self/donut-page', 'app://self/read-child', 'material'],
+        ], $this->verdicts(self::SESSIONS . '/written.json'));
+    }
+
+    public function testObserveWithoutASessionIsAnError(): void
+    {
+        [$code, , $err] = self::qrGraph(['observe', '--dir=tests/Fixture/Usage/Resource']);
+        $this->assertSame(2, $code);
+        $this->assertStringContainsString('Usage:', $err);
+
+        [$code, , $err] = self::qrGraph(['observe', 'no/such/session.json', '--dir=tests/Fixture/Usage/Resource']);
+        $this->assertSame(1, $code);
+        $this->assertStringContainsString('No such session file or directory: no/such/session.json', $err);
+    }
+
+    /** @return list<array{string, string, string}> page, child, verdict */
+    private function verdicts(string $path): array
+    {
+        [$code, $out, $err] = self::qrGraph(['observe', $path, '--dir=tests/Fixture/Usage/Resource']);
+        $this->assertSame(0, $code, $err);
+        $verdicts = [];
+        foreach (explode("\n", trim($out)) as $line) {
+            $this->assertSchema('observe.json', $line);
+            $decoded = json_decode($line, true, 512, JSON_THROW_ON_ERROR);
+            $verdicts[] = [$decoded['page'], $decoded['child'], $decoded['verdict']];
+        }
+
+        return $verdicts;
     }
 
     /**
