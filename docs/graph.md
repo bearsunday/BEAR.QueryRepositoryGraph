@@ -18,13 +18,13 @@ is declared but never observed, or observed but never declared.
 vendor/bin/qr-graph dump [--dir=src/Resource]
 vendor/bin/qr-graph impact <uri> [--method=onPut] [--allow-unknown] [--dir=src/Resource]
 vendor/bin/qr-graph dot [--dir=src/Resource]
-vendor/bin/qr-graph observe <session.json|dir>... [--dir=src/Resource]
+vendor/bin/qr-graph observe <session.json|dir>... [--dir=src/Resource] [--fail-on=<verdict>[,<verdict>...]]
 ```
 
 Run it from the application root: classes are loaded through the application's autoloader, and a file
 the autoloader does not resolve is reported on stderr as skipped, never included. Output is JSONL on stdout.
 Skipped files and tool errors are JSONL on stderr; usage errors are plain text, as are PHP's own notices.
-Exit code: 0 ok, 1 error, 2 usage. An unknown option or an extra
+Exit code: 0 ok, 1 error, 2 usage, 3 `observe --fail-on` matched a printed line. An unknown option or an extra
 argument is a usage error (2); `--method` naming a method that refreshes and purges nothing is an error (1).
 A scan that finds no resource classes is an error (1) rather than an empty success: that is what a missing
 application autoloader looks like. `impact` on a URI no scanned resource serves is also an error (1) unless
@@ -103,8 +103,12 @@ is used only for `depends_on` and for a skip logged without a reason. The
 verdicts that need reading:
 
 - `untagged-material` — the page read the child, but the child carried neither an ETag nor a Surrogate-Key, so a
-  change to the child's data does not reach the page's template **through this child**. The page may still carry
-  the right tags itself; whether it does is read from the page's own `save_etag`/`save_donut` tags, not from here.
+  change to the child's data does not reach the page's template **through this child**. `observe` writes a
+  matching warning on stderr for every such line
+  (`{"warning":"untagged-material","page":...,"child":...,"message":...}`), even when the page covers the child
+  with a hand-written Surrogate-Key: `observe` cannot see that from here, and a hand-written key is not a
+  supported fix for this — it is not part of the rollout below. The fix is always on the child: make it
+  cacheable (so it carries its own ETag/Surrogate-Key) or render it as a hole.
 - `unclassified` — the page was written (`put_donut`), yet the declared child was no longer an embedded request at
   the top of its body: removed with `unset()`, replaced by its body array, or moved into a nested array. The
   classification looks at the top of the body only, so such a child adds no tag to the page even when the page
@@ -114,6 +118,12 @@ verdicts that need reading:
 Only pages written in the sessions read are judged; a page served from cache classifies nothing. Sessions without a
 single `dependency_skipped` are reported with a warning on stderr: they may come from a version that does not record
 it, where holes and untagged children read as `unclassified`.
+
+`--fail-on=<verdict>[,<verdict>...]` (repeatable or comma-separated) makes `observe` exit 3 when a printed line
+carries a listed verdict; without it the warnings above are the only signal, and the exit code is unchanged. An
+unknown verdict name is a usage error (2). Roll it out gradually: watch the `untagged-material` warnings on
+stderr until there are none, then turn on `--fail-on=untagged-material` in CI so a new one fails the build
+instead of aging silently behind the page's TTL.
 
 ## What the graph does not know
 

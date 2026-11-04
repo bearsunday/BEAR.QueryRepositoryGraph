@@ -368,6 +368,44 @@ class QrGraphTest extends TestCase
         $this->assertStringNotContainsString('No dependency_skipped', $err);
     }
 
+    public function testObserveWarnsOnStderrForEachUntaggedMaterialLine(): void
+    {
+        [, , $err] = self::qrGraph(['observe', self::SESSIONS . '/contrary.json', '--dir=tests/Fixture/Usage/Resource']);
+        $warnings = [];
+        foreach (self::jsonl($err) as $line) {
+            if (($line['warning'] ?? null) === 'untagged-material') {
+                $warnings[] = $line;
+            }
+        }
+
+        $this->assertCount(1, $warnings);
+        $this->assertSame('page://self/donut-page', $warnings[0]['page']);
+        $this->assertSame('app://self/read-child', $warnings[0]['child']);
+        $this->assertSame('The page read this child, but the child carries no ETag or Surrogate-Key, so a change to the child never reaches the page; make the child cacheable or render it as a hole.', $warnings[0]['message']);
+        $this->assertStringNotContainsString('hand-written', $warnings[0]['message'], 'a hand-written Surrogate-Key on the page is not a supported remedy');
+    }
+
+    public function testObserveFailOnExitsNonZeroOnlyWhenAListedVerdictIsPrinted(): void
+    {
+        [$code, $out] = self::qrGraph(['observe', self::SESSIONS . '/contrary.json', '--dir=tests/Fixture/Usage/Resource', '--fail-on=untagged-material']);
+        $this->assertSame(3, $code);
+        $this->assertNotSame('', $out, 'stdout is still written before the non-zero exit');
+
+        [$code] = self::qrGraph(['observe', self::SESSIONS . '/contrary.json', '--dir=tests/Fixture/Usage/Resource', '--fail-on=hole,untagged-material']);
+        $this->assertSame(3, $code, 'comma-separated verdicts are all checked');
+
+        [$code] = self::qrGraph(['observe', self::SESSIONS . '/expected.json', '--dir=tests/Fixture/Usage/Resource', '--fail-on=untagged-material']);
+        $this->assertSame(0, $code, 'no matching verdict leaves the exit code unchanged');
+    }
+
+    public function testObserveFailOnRejectsAnUnknownVerdict(): void
+    {
+        [$code, , $err] = self::qrGraph(['observe', self::SESSIONS . '/contrary.json', '--dir=tests/Fixture/Usage/Resource', '--fail-on=not-a-verdict']);
+        $this->assertSame(2, $code);
+        $this->assertStringContainsString('Unknown --fail-on verdict: not-a-verdict', $err);
+        $this->assertStringContainsString('Usage:', $err);
+    }
+
     public function testObserveWithoutASessionIsAnError(): void
     {
         [$code, , $err] = self::qrGraph(['observe', '--dir=tests/Fixture/Usage/Resource']);

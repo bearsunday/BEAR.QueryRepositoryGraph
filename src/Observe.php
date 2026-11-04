@@ -59,6 +59,9 @@ final class Observe
         'dependency_skipped' => ['referenced' => 'untagged-material', 'unreferenced' => 'hole', 'embedded' => 'skipped'],
     ];
 
+    /** Every verdict a line can carry, as docs/schemas/graph/observe.json enumerates them; the vocabulary `--fail-on` validates against */
+    public const ALL_VERDICTS = ['material', 'hole', 'dependency', 'untagged-material', 'tagged-hole', 'unclassified', 'skipped', 'undeclared', 'mixed'];
+
     private readonly UriConverter $converter;
 
     /** @var array<string, array<string, array{uri: string, usage: string}>> page key => child key => declared embed */

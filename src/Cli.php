@@ -10,6 +10,7 @@ use Throwable;
 use function array_shift;
 use function class_exists;
 use function count;
+use function explode;
 use function fwrite;
 use function getcwd;
 use function in_array;
@@ -40,8 +41,9 @@ Usage:
   qr-graph dump   [--dir=src/Resource]                      one JSONL line per resource
   qr-graph impact <uri> [--method=onPut] [--allow-unknown] [--dir=src/Resource]  what invalidating <uri> (or calling its write method) reaches
   qr-graph dot    [--dir=src/Resource]                      Graphviz view
-  qr-graph observe <session.json|dir>... [--dir=src/Resource]  each embedded child the log saw, joined with its declaration
+  qr-graph observe <session.json|dir>... [--dir=src/Resource] [--fail-on=<verdict>[,<verdict>...]]  each embedded child the log saw, joined with its declaration; --fail-on is repeatable or comma-separated and exits 3 when a printed line carries a listed verdict (e.g. --fail-on=untagged-material)
 
+Exit codes: 0 ok, 1 error, 2 usage, 3 observe printed a line matching --fail-on.
 USAGE;
 
     public function __construct(private readonly string|null $autoload = null)
@@ -56,7 +58,7 @@ USAGE;
     public function __invoke(array $argv, $stdout, $stderr): int
     {
         $command = array_shift($argv);
-        $options = ['dir' => 'src/Resource', 'method' => null, 'allowUnknown' => false];
+        $options = ['dir' => 'src/Resource', 'method' => null, 'allowUnknown' => false, 'failOn' => []];
         $args = [];
         foreach ($argv as $arg) {
             if (str_starts_with($arg, '--dir=')) {
@@ -66,6 +68,14 @@ USAGE;
 
             if (str_starts_with($arg, '--method=')) {
                 $options['method'] = substr($arg, strlen('--method='));
+                continue;
+            }
+
+            if (str_starts_with($arg, '--fail-on=')) {
+                foreach (explode(',', substr($arg, strlen('--fail-on='))) as $verdict) {
+                    $options['failOn'][] = $verdict;
+                }
+
                 continue;
             }
 
@@ -83,6 +93,14 @@ USAGE;
             $args[] = $arg;
         }
 
+        foreach ($options['failOn'] as $verdict) {
+            if (! in_array($verdict, Observe::ALL_VERDICTS, true)) {
+                fwrite($stderr, "Unknown --fail-on verdict: {$verdict}\n" . self::USAGE);
+
+                return 2;
+            }
+        }
+
         if (! is_dir($options['dir'])) {
             fwrite($stderr, "No such directory: {$options['dir']}\n" . self::USAGE);
 
@@ -96,7 +114,8 @@ USAGE;
                 'observe' => $args !== [],
                 default => $args === [],
             }
-            && ($command === 'impact' || ($options['method'] === null && ! $options['allowUnknown']));
+            && ($command === 'impact' || ($options['method'] === null && ! $options['allowUnknown']))
+            && ($command === 'observe' || $options['failOn'] === []);
         if (! $isValid) {
             fwrite($stderr, self::USAGE);
 
@@ -147,6 +166,14 @@ USAGE;
             foreach ($lines as $line) {
                 fwrite($stdout, json_encode($line, self::JSON) . "\n");
             }
+
+            if ($command === 'observe' && $options['failOn'] !== []) {
+                foreach ($lines as $line) {
+                    if (in_array($line['verdict'], $options['failOn'], true)) {
+                        return 3;
+                    }
+                }
+            }
         } catch (Throwable $e) {
             fwrite($stderr, json_encode(['error' => $e->getMessage(), 'exceptionClass' => $e::class], self::JSON) . "\n");
 
@@ -171,6 +198,17 @@ USAGE;
             fwrite($stderr, json_encode([
                 'warning' => 'No dependency_skipped in the sessions read. BEAR.QueryRepository before 1.19 does not record it, and then holes and untagged children read as unclassified.',
             ], self::JSON) . "\n");
+        }
+
+        foreach ($lines as $line) {
+            if ($line['verdict'] === 'untagged-material') {
+                fwrite($stderr, json_encode([
+                    'warning' => 'untagged-material',
+                    'page' => $line['page'],
+                    'child' => $line['child'],
+                    'message' => 'The page read this child, but the child carries no ETag or Surrogate-Key, so a change to the child never reaches the page; make the child cacheable or render it as a hole.',
+                ], self::JSON) . "\n");
+            }
         }
 
         return $lines;
