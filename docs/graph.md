@@ -97,8 +97,9 @@ line per page and embedded child that a donut write classified ([schema](schemas
 ```
 
 `depends_on` and `dependency_skipped` (BEAR.QueryRepository 1.19+) carry the run-time facts: a skipped child's
-`reason` says whether it had not run (`not_run`, a hole) or ran without a tag (`no_etag_or_surrogate_key`). The
-embed's `usage`, a source-text guess, is used only for `depends_on` and for a skip logged without a reason. The
+`reason` says whether it had no body at write time (`no_body`, read as a hole; a run that left no body, such as a
+204, looks the same) or ran without a tag (`no_etag_or_surrogate_key`). The embed's `usage`, a source-text guess,
+is used only for `depends_on` and for a skip logged without a reason. The
 verdicts that need reading:
 
 - `untagged-material` — the page read the child, but the child carried neither an ETag nor a Surrogate-Key, so a

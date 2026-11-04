@@ -33,8 +33,9 @@ use const JSON_THROW_ON_ERROR;
  * What the semantic log observed about each embedded child, joined with what the code declares
  *
  * `depends_on` and `dependency_skipped` name their parent and child, so where an event sits in the tree does not
- * matter. The reason of a `dependency_skipped` is measured at run time: `not_run` is a hole, and
- * `no_etag_or_surrogate_key` is a child the page read that emits no tag (`untagged-material`): a change to its
+ * matter. The reason of a `dependency_skipped` is what its body showed at write time: `no_body` is read as a hole
+ * (a run that left no body, such as a 204, reads the same), and `no_etag_or_surrogate_key` is a child the page
+ * read that emits no tag (`untagged-material`): a change to its
  * data does not reach the page's template through it. A log without a reason falls back to the declaration's
  * `usage`, a source-text guess.
  *
@@ -53,7 +54,7 @@ final class Observe
     /** Observation => declared usage => verdict; a skip with a run-time reason does not need the usage */
     private const VERDICTS = [
         'depends_on' => ['referenced' => 'material', 'unreferenced' => 'tagged-hole', 'embedded' => 'dependency'],
-        'not_run' => ['referenced' => 'hole', 'unreferenced' => 'hole', 'embedded' => 'hole'],
+        'no_body' => ['referenced' => 'hole', 'unreferenced' => 'hole', 'embedded' => 'hole'],
         'no_etag_or_surrogate_key' => ['referenced' => 'untagged-material', 'unreferenced' => 'untagged-material', 'embedded' => 'untagged-material'],
         'dependency_skipped' => ['referenced' => 'untagged-material', 'unreferenced' => 'hole', 'embedded' => 'skipped'],
     ];
