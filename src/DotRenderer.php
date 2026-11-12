@@ -11,8 +11,9 @@ use function sprintf;
 /**
  * Graphviz view of the declared graph
  *
- * Arrows point the way they are declared (a page to what it embeds, a write to what it
- * refreshes or purges). For the direction invalidation travels, render with `edge [dir=back]`.
+ * Arrows point the way they are declared (a page to what it embeds, a resource to what it
+ * depends on, a write to what it refreshes or purges). For the direction invalidation travels,
+ * render with `edge [dir=back]`.
  *
  * @psalm-import-type Node from GraphBuilder
  */
@@ -36,6 +37,10 @@ final class DotRenderer
             foreach ($node['methods'] ?? [] as $name => $method) {
                 foreach ($method['embed'] ?? [] as $embed) {
                     $lines[] = sprintf('  %s -> %s [label="embed %s"];', self::id($node['uri']), self::id($embed['uri']), addcslashes($embed['rel'], '"\\'));
+                }
+
+                foreach ($method['dependsOn'] ?? [] as $target) {
+                    $lines[] = sprintf('  %s -> %s [label="dependsOn", style=dotted];', self::id($node['uri']), self::id($target['uri']));
                 }
 
                 foreach ($method['refresh'] ?? [] as $target) {

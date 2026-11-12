@@ -125,7 +125,8 @@ USAGE;
         try {
             $cwd = (string) getcwd();
             $scanner = new ResourceScanner();
-            $graph = (new GraphBuilder(new UriConverter(), $cwd))->build($scanner->scan($options['dir']));
+            $classes = $scanner->scan($options['dir']);
+            $graph = (new GraphBuilder(new UriConverter(), $cwd))->build($classes);
             $skipped = count($scanner->skipped);
             foreach ($scanner->skipped as $file) {
                 fwrite($stderr, json_encode(['skipped' => $file['file'], 'reason' => $file['reason']], self::JSON) . "\n");
@@ -137,6 +138,10 @@ USAGE;
                     $options['dir'],
                     $skipped === 0 ? '' : " ({$skipped} file(s) skipped)",
                 ));
+            }
+
+            foreach ((new DependsOnWarnings())($classes, $graph['nodes']) as $warning) {
+                fwrite($stderr, json_encode($warning, self::JSON) . "\n");
             }
 
             if ($command === 'dot') {
@@ -152,7 +157,7 @@ USAGE;
             $lines = match ($command) {
                 'dump' => [[
                     'meta' => [
-                        'version' => 3,
+                        'version' => 4,
                         'namespaces' => $graph['namespaces'],
                         'dir' => $options['dir'],
                         'counts' => self::counts($graph['nodes'], $skipped),
@@ -249,7 +254,7 @@ USAGE;
     }
 
     /**
-     * @param list<array{uri: string, methods?: array<string, array{embed?: list<mixed>, refresh?: list<mixed>, purge?: list<mixed>}>}> $nodes
+     * @param list<array{uri: string, methods?: array<string, array{embed?: list<mixed>, dependsOn?: list<mixed>, refresh?: list<mixed>, purge?: list<mixed>}>}> $nodes
      *
      * @return array{nodes: int, edges: int, skipped: int}
      */
@@ -258,7 +263,7 @@ USAGE;
         $edges = 0;
         foreach ($nodes as $node) {
             foreach ($node['methods'] ?? [] as $method) {
-                $edges += count($method['embed'] ?? []) + count($method['refresh'] ?? []) + count($method['purge'] ?? []);
+                $edges += count($method['embed'] ?? []) + count($method['dependsOn'] ?? []) + count($method['refresh'] ?? []) + count($method['purge'] ?? []);
             }
         }
 

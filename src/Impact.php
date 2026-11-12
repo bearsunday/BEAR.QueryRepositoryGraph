@@ -26,6 +26,9 @@ final class Impact
     /** @var array<string, list<array{uri: string, role: string|null}>> child key => embedders */
     private array $embeddedBy = [];
 
+    /** @var array<string, list<string>> target key => resources whose onGet() declares #[DependsOn] on it */
+    private array $dependedBy = [];
+
     /** @param list<Node> $nodes */
     public function __construct(array $nodes)
     {
@@ -38,6 +41,10 @@ final class Impact
                         'uri' => $node['uri'],
                         'role' => $this->role($node, $embed),
                     ];
+                }
+
+                foreach ($method['dependsOn'] ?? [] as $target) {
+                    $this->dependedBy[$this->converter->key($target['uri'])][] = $node['uri'];
                 }
             }
         }
@@ -106,6 +113,10 @@ final class Impact
                 }
 
                 $queue[] = $parent;
+            }
+
+            foreach ($this->dependedBy[$key] ?? [] as $dependent) {
+                $queue[] = ['uri' => $dependent, 'via' => 'dependsOn', 'by' => $uri, 'depth' => $next['depth'] + 1];
             }
         }
 

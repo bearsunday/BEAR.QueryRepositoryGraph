@@ -8,8 +8,8 @@
     "properties": {
         "uri": {"type": "string"},
         "via": {
-            "description": "`target`: the URI asked about. `refresh`/`purge`: a target of the write method asked about. `embed`: embeds `by`.",
-            "enum": ["target", "refresh", "purge", "embed"]
+            "description": "`target`: the URI asked about. `refresh`/`purge`: a target of the write method asked about. `embed`: embeds `by`. `dependsOn`: its onGet() declares #[DependsOn] on `by`.",
+            "enum": ["target", "refresh", "purge", "embed", "dependsOn"]
         },
         "by": {"type": ["string", "null"]},
         "role": {
@@ -18,7 +18,7 @@
         },
         "depth": {"type": "integer", "minimum": 0},
         "cached": {
-            "description": "Whether the resource declares a cache at all. Tags reach a parent only from a child that already ran, carrying an ETag (the non-donut path), or an ETag or Surrogate-Key (donut materials; holes have not run yet), so an `embed` line whose `by` is not cached is a dependency the cache may not track (for a donut page, a hole rendered per request).",
+            "description": "Whether the resource declares a cache at all. Tags reach a parent only from a child that already ran, carrying an ETag (the non-donut path), or an ETag or Surrogate-Key (donut materials; holes have not run yet), so an `embed` line whose `by` is not cached is a dependency the cache may not track (for a donut page, a hole rendered per request). A `by` reached via `dependsOn` is the exception: its declared tags reach the page that embeds it whether it is cached or not.",
             "type": "boolean"
         },
         "source": {"description": "file:line; null for a URI no scanned resource serves.", "type": ["string", "null"]}

@@ -1,6 +1,6 @@
 # The declared cache graph (`qr-graph`)
 
-Cache behavior in BEAR.QueryRepository is declared: `#[Embed]` says what a resource depends on,
+Cache behavior in BEAR.QueryRepository is declared: `#[Embed]` and `#[DependsOn]` say what a resource depends on,
 `#[Refresh]`/`#[Purge]` say what a write invalidates, and `#[Cacheable]`/`#[CacheableResponse]`/`#[DonutCache]`
 say what is cached at all. `qr-graph` reads those declarations, without running the application, and
 prints the graph they form.
@@ -23,7 +23,7 @@ vendor/bin/qr-graph observe <session.json|dir>... [--dir=src/Resource] [--fail-o
 
 Run it from the application root: classes are loaded through the application's autoloader, and a file
 the autoloader does not resolve is reported on stderr as skipped, never included. Output is JSONL on stdout.
-Skipped files and tool errors are JSONL on stderr; usage errors are plain text, as are PHP's own notices.
+Skipped files, warnings and tool errors are JSONL on stderr; usage errors are plain text, as are PHP's own notices.
 Exit code: 0 ok, 1 error, 2 usage, 3 `observe --fail-on` matched a printed line. An unknown option or an extra
 argument is a usage error (2); `--method` naming a method that refreshes and purges nothing is an error (1).
 A scan that finds no resource classes is an error (1) rather than an empty success: that is what a missing
@@ -35,7 +35,8 @@ application autoloader looks like. `impact` on a URI no scanned resource serves 
 The first line is `meta`; every other line is a resource and the declarations it makes
 ([schema](schemas/graph/dump.json)). Edges start at the resource that declares them, so a line has no `from`.
 `meta` also records `counts` (nodes, edges, skipped), `tool.name` and the installed package version, and the
-`autoload` file relative to the working directory. `meta.version` is 3: v2 added those fields, v3 the embed `usage`.
+`autoload` file relative to the working directory. `meta.version` is 4: v2 added those fields, v3 the embed `usage`,
+v4 `dependsOn`.
 
 ```json
 {"uri":"app://self/user","source":"src/Resource/App/User.php:17","cacheable":{"expiry":"never","expirySecond":0,"expiryAt":"","update":false,"type":"value"},"methods":{"onPut":{"source":"src/Resource/App/User.php:52","refresh":[{"uri":"app://self/user","implicit":"Cacheable"},{"uri":"app://self/user/profile","template":"app://self/user/profile?user_id={id}"}],"purge":[{"uri":"app://self/user/friend","template":"app://self/user/friend?user_id={id}"}]}}}
@@ -44,6 +45,8 @@ The first line is `meta`; every other line is a resource and the declarations it
 - `uri` is `scheme://host/path` without query, exact-matchable everywhere it appears; `template` keeps the
   declaration as written. The PHP class is not repeated: it follows from `uri` and `meta.namespaces`.
 - `source` is `file:line`, to open the declaration.
+- `dependsOn` on `onGet` lists its `#[DependsOn]` declarations, including those on an `onGet()` it overrides.
+  A declaration on a row class is not in the graph: see [what the graph does not know](#what-the-graph-does-not-know).
 - `implicit` marks a refresh nobody wrote: a write method of a `#[Cacheable]`/`#[CacheableResponse]` class,
   or one marked `#[RefreshCache]`, refreshes its own resource.
 - `dynamic` lists source-text hints that the declarations may not be the whole story (the class source
@@ -59,7 +62,7 @@ Local questions are a `grep` away: `grep '"uri":"app://self/user/profile"'` find
 ### `impact` — what an invalidation reaches
 
 Multi-hop questions ("if this changes, what goes stale?") are answered by `impact`, not by repeated `grep`.
-It walks the embed edges breadth-first, one line per reached URI by its shortest path
+It walks the embed and `dependsOn` edges breadth-first, one line per reached URI by its shortest path
 ([schema](schemas/graph/impact.json)). With `--method`, it starts from what that write method refreshes and purges.
 
 ```json
@@ -70,8 +73,9 @@ It walks the embed edges breadth-first, one line per reached URI by its shortest
 are case-insensitive and `-` is ignored, so `galleryArticle` finds `gallery-article`. `cached: false` on the
 resource named by `by` means the cache does not carry that dependency: tags reach a parent only from a child
 that already ran, carrying an ETag (the non-donut path), or an ETag or Surrogate-Key (donut materials; holes
-have not run yet). An `embed` line from a donut-cached page also carries `role`: `material` when the page
-reads that child, `hole` when it is left to render per request.
+have not run yet). A resource reached via `dependsOn` is the exception: its declared tags reach the page that
+embeds it whether it is cached or not. An `embed` line from a donut-cached page also carries `role`: `material`
+when the page reads that child, `hole` when it is left to render per request.
 
 ### `dot` — a picture
 
@@ -79,8 +83,8 @@ reads that child, `hole` when it is left to render per request.
 vendor/bin/qr-graph dot | dot -Tsvg > graph.svg
 ```
 
-Arrows point as declared (a page to what it embeds, a write to what it refreshes or purges); add
-`edge [dir=back]` for the direction invalidation travels. Cached resources are drawn double-bordered,
+Arrows point as declared (a page to what it embeds, a resource to what it depends on, a write to what it
+refreshes or purges); add `edge [dir=back]` for the direction invalidation travels. Cached resources are drawn double-bordered,
 resources with `dynamic` hints dashed.
 
 ### `observe` — the log against the declarations
@@ -125,9 +129,33 @@ unknown verdict name is a usage error (2). Roll it out gradually: watch the `unt
 stderr until there are none, then turn on `--fail-on=untagged-material` in CI so a new one fails the build
 instead of aging silently behind the page's TTL.
 
+## Warnings on `#[DependsOn]`
+
+Every command checks the `onGet()` declarations and writes one line on stderr per finding, without changing
+the exit code. Each is a declaration that stores without an error and then serves stale:
+
+```json
+{"warning":"depends-on-query-mismatch","resource":"app://self/entries","source":"src/Resource/App/Entries.php:14","dependsOn":"app://self/article{?articleId}","message":"The URI carries [articleId], but a write to app://self/article purges the tag of its required onGet() parameters [id]."}
+```
+
+- `depends-on-unknown-resource` — no scanned resource serves the URI.
+- `depends-on-never-invalidated` — no write method refreshes or purges the URI, implicitly or by `#[Refresh]`/`#[Purge]`.
+- `depends-on-query-mismatch` — the query keys the template expands to are not the required `onGet()` parameters
+  of the named resource (as written, or all in snake_case), which is the tag its own write purges. A `#[Purge]`
+  written with the same keys as the declaration does match; the check does not look at it.
+- `depends-on-bound-parameter` — a template variable is a parameter bound by `#[ResourceParam]` or a web-context
+  attribute. The value is not in the request query, so the URI expands from the parameter's default.
+- `depends-on-default-body` — the class gives `$body` a default. Rendered as a hole it reads as already run, so
+  the page takes its declarations and is purged whole instead of recomposed.
+
+A template variable that is not an `onGet()` parameter, and a declaration on the resource class, are not
+reported: they fail the first GET with `DependsOnNotExpandable`.
+
 ## What the graph does not know
 
 - Surrogate keys set in code and resources requested in code (flagged as `dynamic`, not resolved).
+- `#[DependsOn]` on a row class: the class lives outside the scanned directory, and which resource's body holds
+  its instances is known only at run time.
 - Which instance a template reaches: `{id}` is filled from the request at run time. That is the log's part.
 - Bindings: the graph reads attributes, not the application's modules, so it does not know whether
   `DonutCacheModule` is installed or a CDN purger is bound.

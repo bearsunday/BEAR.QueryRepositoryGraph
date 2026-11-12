@@ -47,7 +47,7 @@ class QrGraphTest extends TestCase
         self::assertSame(0, $code, $err);
         $lines = self::jsonl($out);
         $meta = $lines[0]['meta'];
-        self::assertSame(3, $meta['version']);
+        self::assertSame(4, $meta['version']);
         self::assertSame(['self' => 'FakeVendor\HelloWorld'], $meta['namespaces']);
         self::assertSame(self::DIR, $meta['dir']);
         self::assertSame(['nodes' => 115, 'edges' => 123, 'skipped' => 2], $meta['counts']);
@@ -206,7 +206,7 @@ class QrGraphTest extends TestCase
         $this->assertSame(0, $code, $err);
         $lines = self::jsonl($out);
         $meta = $lines[0]['meta'];
-        $this->assertSame(3, $meta['version']);
+        $this->assertSame(4, $meta['version']);
         $this->assertSame(['self' => 'BEAR\QueryRepositoryGraph\Fixture'], $meta['namespaces']);
         $this->assertSame('tests/Fixture/Resource', $meta['dir']);
         $this->assertSame(['nodes' => 2, 'edges' => 0, 'skipped' => 0], $meta['counts']);
@@ -296,6 +296,54 @@ class QrGraphTest extends TestCase
         $this->assertSame(0, $code);
         $lines = self::jsonl($out);
         $this->assertSame('material', $lines[1]['role']);
+    }
+
+    public function testDependsOnIsAnEdgeImpactFollowsToTheEmbeddingPage(): void
+    {
+        $dir = '--dir=tests/Fixture/DependsOn/Resource';
+        [$code, $out, $err] = self::qrGraph(['dump', $dir]);
+        $this->assertSame(0, $code, $err);
+        $this->assertSame('', $err, 'a query in the snake_case of the required parameter, with a defaulted one left out, is not a mismatch');
+        $nodes = [];
+        foreach (explode("\n", trim($out)) as $line) {
+            $this->assertSchema('dump.json', $line);
+            $decoded = json_decode($line, true, 512, JSON_THROW_ON_ERROR);
+            $nodes[$decoded['uri'] ?? 'meta'] = $decoded;
+        }
+
+        $this->assertSame(5, $nodes['meta']['meta']['counts']['edges']);
+        $this->assertSame([
+            ['uri' => 'app://self/article', 'template' => 'app://self/article?id={articleId}'],
+            ['uri' => 'app://self/author', 'template' => 'app://self/author{?author_id}'],
+        ], self::at($nodes['app://self/entries'], 'methods', 'onGet', 'dependsOn'));
+
+        [$code, $out] = self::qrGraph(['impact', 'app://self/article', '--method=onPut', $dir]);
+        $this->assertSame(0, $code);
+        foreach (explode("\n", trim($out)) as $line) {
+            $this->assertSchema('impact.json', $line);
+        }
+
+        $this->assertSame([
+            ['app://self/article', 'refresh', 'app://self/article'],
+            ['app://self/entries', 'dependsOn', 'app://self/article'],
+            ['page://self/index', 'embed', 'app://self/entries'],
+        ], array_map(static fn (array $line): array => [$line['uri'], $line['via'], $line['by']], self::jsonl($out)));
+
+        [, $out] = self::qrGraph(['dot', $dir]);
+        $this->assertStringContainsString('"app://self/entries" -> "app://self/article" [label="dependsOn", style=dotted];', $out);
+    }
+
+    public function testDependsOnDeclarationsNoWriteInvalidatesAreWarnedOnStderr(): void
+    {
+        [$code, , $err] = self::qrGraph(['dump', '--dir=tests/Fixture/DependsOnWarn/Resource']);
+        $this->assertSame(0, $code, $err);
+        $this->assertSame([
+            'app://self/bound' => 'depends-on-bound-parameter',
+            'app://self/default-body' => 'depends-on-default-body',
+            'app://self/mismatch' => 'depends-on-query-mismatch',
+            'app://self/typo' => 'depends-on-unknown-resource',
+            'app://self/unpurged' => 'depends-on-never-invalidated',
+        ], array_column(self::jsonl($err), 'warning', 'resource'));
     }
 
     public function testUsageErrors(): void

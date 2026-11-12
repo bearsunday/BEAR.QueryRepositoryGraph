@@ -16,7 +16,7 @@
                     "type": "object",
                     "required": ["version", "namespaces", "dir"],
                     "properties": {
-                        "version": {"const": 3},
+                        "version": {"const": 4},
                         "namespaces": {
                             "description": "URI host => PHP namespace. `page://self/html/blog-posting` is `{namespaces.self}\\Resource\\Page\\Html\\BlogPosting`.",
                             "type": "object",
@@ -112,6 +112,11 @@
                         },
                         "additionalProperties": false
                     }
+                },
+                "dependsOn": {
+                    "description": "#[DependsOn] on onGet(): the stored resource carries the tag of the URI the template expands to, so a write that invalidates `uri` invalidates this resource and every page that embeds it.",
+                    "type": "array",
+                    "items": {"$ref": "#/$defs/target"}
                 },
                 "refresh": {
                     "description": "Purged then re-generated after a successful write: #[Refresh], and the resource's own onGet (`implicit`).",
