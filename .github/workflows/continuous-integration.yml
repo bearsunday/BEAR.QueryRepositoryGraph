@@ -2,36 +2,25 @@ name: Continuous Integration
 
 on:
   push:
-    paths-ignore:
-      - '**/*.md'
-      - 'LICENSE'
   pull_request:
-    paths-ignore:
-      - '**/*.md'
-      - 'LICENSE'
   workflow_dispatch:
 
 jobs:
-  phpunit:
-    name: PHPUnit (${{ matrix.os }} - PHP ${{ matrix.php-version }} - ${{ matrix.dependencies }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
-        php-version: ["8.2", "8.3", "8.4", "8.5"]
-        dependencies: [lowest, highest]
-        include:
-          - os: windows-latest
-            php-version: "8.5"
-            dependencies: highest
-          - os: macos-latest
-            php-version: "8.5"
-            dependencies: highest
+  build:
 
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        operating-system:
+          - ubuntu-latest
+        php-version:
+          - '8.2'
+          - '8.3'
+          - '8.4'
+          - '8.5'
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup PHP ${{ matrix.php-version }}
@@ -39,12 +28,24 @@ jobs:
         with:
           php-version: ${{ matrix.php-version }}
           coverage: none
-          tools: composer
-          # bear/resource requires ext-fileinfo from 1.26, and the Windows build does not enable it by default.
-          extensions: fileinfo
+          tools: none
+          ini-values: assert.exception=1, zend.assertions=1
+
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-php${{ matrix.php-version }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-php${{ matrix.php-version }}-composer-
+            ${{ runner.os }}-composer-
 
       - name: Install dependencies
-        run: composer update ${{ matrix.dependencies == 'lowest' && '--prefer-lowest' || '' }} --ansi --no-interaction --no-progress --prefer-dist
+        run: composer update --no-interaction --no-progress --prefer-dist --no-plugins
 
-      - name: Run PHPUnit tests
+      - name: Run test suite
         run: ./vendor/bin/phpunit
