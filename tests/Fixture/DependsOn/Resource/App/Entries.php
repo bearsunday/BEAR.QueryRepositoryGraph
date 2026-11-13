@@ -13,4 +13,9 @@ class Entries extends ResourceObject
     {
         return $this;
     }
+
+    public function onPost(string $articleId): static
+    {
+        return $this;
+    }
 }

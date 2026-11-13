@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace BEAR\QueryRepositoryGraph;
 
+use Composer\InstalledVersions;
 use RuntimeException;
 use Throwable;
 
@@ -15,6 +16,7 @@ use function fwrite;
 use function getcwd;
 use function in_array;
 use function is_dir;
+use function is_string;
 use function json_encode;
 use function sprintf;
 use function str_replace;
@@ -32,6 +34,7 @@ use const JSON_UNESCAPED_UNICODE;
  * Output is JSONL on stdout; diagnostics (skipped files, warnings, errors) are JSONL on stderr.
  *
  * @psalm-import-type Node from GraphBuilder
+ * @psalm-type Options = array{dir: string, method: string|null, allowUnknown: bool, failOn: list<string>}
  */
 final class Cli
 {
@@ -57,7 +60,30 @@ USAGE;
      */
     public function __invoke(array $argv, $stdout, $stderr): int
     {
-        $command = array_shift($argv);
+        $command = (string) array_shift($argv);
+        $parsed = self::parse($command, $argv);
+        if (is_string($parsed)) {
+            fwrite($stderr, $parsed . self::USAGE);
+
+            return 2;
+        }
+
+        try {
+            return $this->run($command, $parsed[0], $parsed[1], $stdout, $stderr);
+        } catch (Throwable $e) {
+            fwrite($stderr, json_encode(['error' => $e->getMessage(), 'exceptionClass' => $e::class], self::JSON) . "\n");
+
+            return 1;
+        }
+    }
+
+    /**
+     * @param list<string> $argv
+     *
+     * @return array{Options, list<string>}|string the options and arguments, or the line to print before the usage
+     */
+    private static function parse(string $command, array $argv): array|string
+    {
         $options = ['dir' => 'src/Resource', 'method' => null, 'allowUnknown' => false, 'failOn' => []];
         $args = [];
         foreach ($argv as $arg) {
@@ -85,30 +111,34 @@ USAGE;
             }
 
             if (str_starts_with($arg, '--')) {
-                fwrite($stderr, "Unknown option: {$arg}\n" . self::USAGE);
-
-                return 2;
+                return "Unknown option: {$arg}\n";
             }
 
             $args[] = $arg;
         }
 
+        return self::invalid($command, $options, $args) ?? [$options, $args];
+    }
+
+    /**
+     * @param Options      $options
+     * @param list<string> $args
+     *
+     * @return string|null the line to print before the usage; null when the command line is valid
+     */
+    private static function invalid(string $command, array $options, array $args): string|null
+    {
         foreach ($options['failOn'] as $verdict) {
             if (! in_array($verdict, Observe::ALL_VERDICTS, true)) {
-                fwrite($stderr, "Unknown --fail-on verdict: {$verdict}\n" . self::USAGE);
-
-                return 2;
+                return "Unknown --fail-on verdict: {$verdict}\n";
             }
         }
 
         if (! is_dir($options['dir'])) {
-            fwrite($stderr, "No such directory: {$options['dir']}\n" . self::USAGE);
-
-            return 2;
+            return "No such directory: {$options['dir']}\n";
         }
 
-        $isCommand = in_array($command, ['dump', 'dot', 'impact', 'observe'], true);
-        $isValid = $isCommand
+        $isValid = in_array($command, ['dump', 'dot', 'impact', 'observe'], true)
             && match ($command) {
                 'impact' => count($args) === 1,
                 'observe' => $args !== [],
@@ -116,46 +146,35 @@ USAGE;
             }
             && ($command === 'impact' || ($options['method'] === null && ! $options['allowUnknown']))
             && ($command === 'observe' || $options['failOn'] === []);
-        if (! $isValid) {
-            fwrite($stderr, self::USAGE);
 
-            return 2;
+        return $isValid ? null : '';
+    }
+
+    /**
+     * @param Options      $options
+     * @param list<string> $args
+     * @param resource     $stdout
+     * @param resource     $stderr
+     */
+    private function run(string $command, array $options, array $args, $stdout, $stderr): int
+    {
+        $cwd = (string) getcwd();
+        $graph = self::graph($options['dir'], $cwd, $stderr);
+        $skipped = $graph['skipped'];
+
+        if ($command === 'dot') {
+            fwrite($stdout, (new DotRenderer())($graph['nodes']));
+
+            return 0;
         }
 
-        try {
-            $cwd = (string) getcwd();
-            $scanner = new ResourceScanner();
-            $classes = $scanner->scan($options['dir']);
-            $graph = (new GraphBuilder(new UriConverter(), $cwd))->build($classes);
-            $skipped = count($scanner->skipped);
-            foreach ($scanner->skipped as $file) {
-                fwrite($stderr, json_encode(['skipped' => $file['file'], 'reason' => $file['reason']], self::JSON) . "\n");
-            }
+        if ($command === 'impact') {
+            self::assertTarget($graph['nodes'], $args[0], $options['method'], $options['allowUnknown']);
+        }
 
-            if ($graph['nodes'] === []) {
-                throw new RuntimeException(sprintf(
-                    'No resource classes found in %s%s',
-                    $options['dir'],
-                    $skipped === 0 ? '' : " ({$skipped} file(s) skipped)",
-                ));
-            }
-
-            foreach ((new DependsOnWarnings())($classes, $graph['nodes']) as $warning) {
-                fwrite($stderr, json_encode($warning, self::JSON) . "\n");
-            }
-
-            if ($command === 'dot') {
-                fwrite($stdout, (new DotRenderer())($graph['nodes']));
-
-                return 0;
-            }
-
-            if ($command === 'impact') {
-                self::assertTarget($graph['nodes'], $args[0], $options['method'], $options['allowUnknown']);
-            }
-
-            $lines = match ($command) {
-                'dump' => [[
+        $lines = match ($command) {
+            'dump' => [
+                [
                     'meta' => [
                         'version' => 4,
                         'namespaces' => $graph['namespaces'],
@@ -164,28 +183,66 @@ USAGE;
                         'tool' => ['name' => 'qr-graph', 'version' => self::version()],
                         'autoload' => self::relativeAutoload($this->autoload, $cwd),
                     ],
-                ], ...$graph['nodes']],
-                'observe' => $this->observe($graph['nodes'], $args, $stderr),
-                default => (new Impact($graph['nodes']))($args[0], $options['method']),
-            };
-            foreach ($lines as $line) {
-                fwrite($stdout, json_encode($line, self::JSON) . "\n");
-            }
-
-            if ($command === 'observe' && $options['failOn'] !== []) {
-                foreach ($lines as $line) {
-                    if (in_array($line['verdict'], $options['failOn'], true)) {
-                        return 3;
-                    }
-                }
-            }
-        } catch (Throwable $e) {
-            fwrite($stderr, json_encode(['error' => $e->getMessage(), 'exceptionClass' => $e::class], self::JSON) . "\n");
-
-            return 1;
+                ],
+                ...$graph['nodes'],
+            ],
+            'observe' => $this->observe($graph['nodes'], $args, $stderr),
+            default => (new Impact($graph['nodes']))($args[0], $options['method']),
+        };
+        foreach ($lines as $line) {
+            fwrite($stdout, json_encode($line, self::JSON) . "\n");
         }
 
-        return 0;
+        return $command === 'observe' && self::carries($lines, $options['failOn']) ? 3 : 0;
+    }
+
+    /**
+     * Scans the directory, writing the skipped files and the #[DependsOn] warnings on stderr
+     *
+     * @param resource $stderr
+     *
+     * @return array{namespaces: array<string, string>, nodes: non-empty-list<Node>, skipped: int}
+     *
+     * @throws RuntimeException when no resource class is found.
+     */
+    private static function graph(string $dir, string $cwd, $stderr): array
+    {
+        $scanner = new ResourceScanner();
+        $classes = $scanner->scan($dir);
+        $graph = (new GraphBuilder(new UriConverter(), $cwd))->build($classes);
+        $skipped = count($scanner->skipped);
+        foreach ($scanner->skipped as $file) {
+            fwrite($stderr, json_encode(['skipped' => $file['file'], 'reason' => $file['reason']], self::JSON) . "\n");
+        }
+
+        if ($graph['nodes'] === []) {
+            throw new RuntimeException(sprintf(
+                'No resource classes found in %s%s',
+                $dir,
+                $skipped === 0 ? '' : " ({$skipped} file(s) skipped)",
+            ));
+        }
+
+        foreach ((new DependsOnWarnings())($classes, $graph['nodes']) as $warning) {
+            fwrite($stderr, json_encode($warning, self::JSON) . "\n");
+        }
+
+        return $graph + ['skipped' => $skipped];
+    }
+
+    /**
+     * @param list<array<string, mixed>> $lines
+     * @param list<string>               $verdicts
+     */
+    private static function carries(array $lines, array $verdicts): bool
+    {
+        foreach ($lines as $line) {
+            if (in_array($line['verdict'] ?? null, $verdicts, true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -200,9 +257,7 @@ USAGE;
         $observe = new Observe($nodes);
         $lines = $observe($paths);
         if (! $observe->sawSkipped) {
-            fwrite($stderr, json_encode([
-                'warning' => 'No dependency_skipped in the sessions read. BEAR.QueryRepository before 1.19 does not record it, and then holes and untagged children read as unclassified.',
-            ], self::JSON) . "\n");
+            fwrite($stderr, json_encode(['warning' => 'No dependency_skipped in the sessions read. BEAR.QueryRepository before 1.19 does not record it, and then holes and untagged children read as unclassified.'], self::JSON) . "\n");
         }
 
         foreach ($lines as $line) {
@@ -220,9 +275,9 @@ USAGE;
     }
 
     /**
-     * @param list<array{uri: string, methods?: array<string, array{embed?: list<mixed>, refresh?: list<mixed>, purge?: list<mixed>}>, cacheable?: mixed, donutCache?: mixed, cacheableResponse?: mixed}> $nodes
+     * @param list<Node> $nodes
      *
-     * @throws RuntimeException when the target URI or its write method is not in the graph
+     * @throws RuntimeException when the target URI or its write method is not in the graph.
      */
     private static function assertTarget(array $nodes, string $uri, string|null $method, bool $allowUnknown): void
     {
@@ -254,7 +309,7 @@ USAGE;
     }
 
     /**
-     * @param list<array{uri: string, methods?: array<string, array{embed?: list<mixed>, dependsOn?: list<mixed>, refresh?: list<mixed>, purge?: list<mixed>}>}> $nodes
+     * @param list<Node> $nodes
      *
      * @return array{nodes: int, edges: int, skipped: int}
      */
@@ -291,7 +346,7 @@ USAGE;
         }
 
         try {
-            return \Composer\InstalledVersions::getPrettyVersion('bear/query-repository-graph') ?? 'unknown';
+            return InstalledVersions::getPrettyVersion('bear/query-repository-graph') ?? 'unknown';
         } catch (Throwable) {
             return 'unknown';
         }

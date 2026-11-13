@@ -41,6 +41,7 @@ use function usort;
  * @psalm-type Target = array{uri: string, template?: string, implicit?: string}
  * @psalm-type Method = array{source: string, cacheableResponse?: true, embed?: list<array{rel: string, usage?: string, uri: string, template?: string}>, dependsOn?: list<Target>, refresh?: list<Target>, purge?: list<Target>}
  * @psalm-type Node = array{uri: string, source: string, cacheable?: array{expiry: string, expirySecond: int, expiryAt: string, update: bool, type: string}, donutCache?: true, cacheableResponse?: true, httpCache?: string, methods?: array<string, Method>, dynamic?: list<string>}
+ * @SuppressWarnings("PHPMD.CouplingBetweenObjects")
  */
 final class GraphBuilder
 {
@@ -79,7 +80,7 @@ final class GraphBuilder
             $nodes[] = $this->node($ref, $converted['uri']);
         }
 
-        usort($nodes, static fn (array $a, array $b): int => $a['uri'] <=> $b['uri']);
+        usort($nodes, static fn (array $left, array $right): int => $left['uri'] <=> $right['uri']);
 
         return ['namespaces' => $namespace === null ? [] : ['self' => $namespace], 'nodes' => $nodes];
     }
@@ -91,41 +92,19 @@ final class GraphBuilder
      */
     private function node(ReflectionClass $ref, string $uri): array
     {
-        $node = ['uri' => $uri, 'source' => $this->source((string) $ref->getFileName(), (int) $ref->getStartLine())];
-        $cacheable = $this->attribute($ref, Cacheable::class);
-        if ($cacheable !== null) {
-            $node['cacheable'] = [
-                'expiry' => $cacheable->expiry,
-                'expirySecond' => $cacheable->expirySecond,
-                'expiryAt' => $cacheable->expiryAt,
-                'update' => $cacheable->update,
-                'type' => $cacheable->type,
-            ];
-        }
-
-        if ($this->attribute($ref, DonutCache::class) !== null) {
-            $node['donutCache'] = true;
-        }
-
-        $classCacheableResponse = $this->attribute($ref, CacheableResponse::class) !== null;
-        if ($classCacheableResponse) {
-            $node['cacheableResponse'] = true;
-        }
-
-        $cacheControl = $ref->getAttributes(AbstractCacheControl::class, ReflectionAttribute::IS_INSTANCEOF);
-        if ($cacheControl !== []) {
-            $node['httpCache'] = (string) $cacheControl[0]->newInstance();
-        }
+        $node = ['uri' => $uri, 'source' => $this->source((string) $ref->getFileName(), (int) $ref->getStartLine())] + $this->classDeclarations($ref);
+        $cacheable = isset($node['cacheable']);
+        $classResponse = isset($node['cacheableResponse']);
 
         $methods = [];
-        $donut = $classCacheableResponse || isset($node['donutCache']);
+        $donut = $classResponse || isset($node['donutCache']);
         $classSource = (string) file_get_contents((string) $ref->getFileName());
         foreach ($ref->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
             if (! str_starts_with($method->getName(), 'on') || $method->getDeclaringClass()->getName() === ResourceObject::class) {
                 continue;
             }
 
-            $declared = $this->method($method, $uri, $cacheable !== null, $classCacheableResponse, $donut, $classSource);
+            $declared = $this->method($method, $uri, $cacheable, $classResponse, $donut, $classSource);
             if ($declared !== null) {
                 $methods[$method->getName()] = $declared;
             }
@@ -143,8 +122,43 @@ final class GraphBuilder
         return $node;
     }
 
+    /**
+     * @param ReflectionClass<ResourceObject> $ref
+     *
+     * @return array{cacheable?: array{expiry: string, expirySecond: int, expiryAt: string, update: bool, type: string}, donutCache?: true, cacheableResponse?: true, httpCache?: string}
+     */
+    private function classDeclarations(ReflectionClass $ref): array
+    {
+        $declared = [];
+        $cacheable = $this->attribute($ref, Cacheable::class);
+        if ($cacheable !== null) {
+            $declared['cacheable'] = [
+                'expiry' => $cacheable->expiry,
+                'expirySecond' => $cacheable->expirySecond,
+                'expiryAt' => $cacheable->expiryAt,
+                'update' => $cacheable->update,
+                'type' => $cacheable->type,
+            ];
+        }
+
+        if ($this->attribute($ref, DonutCache::class) !== null) {
+            $declared['donutCache'] = true;
+        }
+
+        if ($this->attribute($ref, CacheableResponse::class) !== null) {
+            $declared['cacheableResponse'] = true;
+        }
+
+        $cacheControl = $ref->getAttributes(AbstractCacheControl::class, ReflectionAttribute::IS_INSTANCEOF);
+        if ($cacheControl !== []) {
+            $declared['httpCache'] = (string) $cacheControl[0]->newInstance();
+        }
+
+        return $declared;
+    }
+
     /** @return Method|null null when the method declares nothing the cache acts on */
-    private function method(ReflectionMethod $method, string $uri, bool $cacheable, bool $classCacheableResponse, bool $donut, string $classSource): array|null
+    private function method(ReflectionMethod $method, string $uri, bool $cacheable, bool $classResponse, bool $donut, string $classSource): array|null
     {
         $embed = [];
         foreach ($method->getAttributes(Embed::class) as $attribute) {
@@ -159,7 +173,7 @@ final class GraphBuilder
 
         // The command interceptors refresh the resource's own onGet before any #[Refresh]/#[Purge].
         $refresh = [];
-        $implicit = $this->implicitRefresh($method, $cacheable, $classCacheableResponse);
+        $implicit = $this->implicitRefresh($method, $cacheable, $classResponse);
         if ($implicit !== null) {
             $refresh[] = ['uri' => $uri, 'implicit' => $implicit];
         }
@@ -228,7 +242,7 @@ final class GraphBuilder
     }
 
     /** @return string|null the attribute that makes the write refresh its own resource */
-    private function implicitRefresh(ReflectionMethod $method, bool $cacheable, bool $classCacheableResponse): string|null
+    private function implicitRefresh(ReflectionMethod $method, bool $cacheable, bool $classResponse): string|null
     {
         if ($method->getAttributes(RefreshCache::class) !== []) {
             return 'RefreshCache';
@@ -247,7 +261,7 @@ final class GraphBuilder
             return 'Cacheable';
         }
 
-        if ($classCacheableResponse || $method->getAttributes(CacheableResponse::class) !== []) {
+        if ($classResponse || $method->getAttributes(CacheableResponse::class) !== []) {
             return 'CacheableResponse';
         }
 

@@ -33,6 +33,7 @@ use const PHP_URL_QUERY;
  * Each of these stores without an error at run time and then serves stale, so only the declarations show it.
  *
  * @psalm-import-type Node from GraphBuilder
+ * @psalm-import-type Target from GraphBuilder
  * @psalm-type Warning = array{warning: string, resource: string, source: string, dependsOn?: string, message: string}
  */
 final class DependsOnWarnings
@@ -46,7 +47,7 @@ final class DependsOnWarnings
 
     /**
      * @param array<class-string<ResourceObject>, ReflectionClass<ResourceObject>> $classes
-     * @param list<Node>                                                         $nodes
+     * @param list<Node>                                                           $nodes
      *
      * @return list<Warning>
      */
@@ -77,52 +78,65 @@ final class DependsOnWarnings
                 continue;
             }
 
-            $at = ['resource' => $node['uri'], 'source' => $onGet['source']];
+            $where = ['resource' => $node['uri'], 'source' => $onGet['source']];
             if ($ref->getDefaultProperties()['body'] !== null) {
-                $warnings[] = ['warning' => 'depends-on-default-body'] + $at + [
-                    'message' => 'The class gives $body a default, so as a hole it reads as already run: the page takes its declarations and is purged whole instead of recomposed. Set the body in onGet().',
+                $warnings[] = ['warning' => 'depends-on-default-body'] + $where + ['message' => 'The class gives $body a default, so as a hole it reads as already run: the page takes its declarations and is purged whole instead of recomposed. Set the body in onGet().'];
+            }
+
+            foreach ($onGet['dependsOn'] as $target) {
+                $warnings = [...$warnings, ...$this->ofTarget($where, $target, $this->boundParameters($ref), $refs, $invalidated)];
+            }
+        }
+
+        return $warnings;
+    }
+
+    /**
+     * @param array{resource: string, source: string}        $where
+     * @param Target                                         $target
+     * @param list<string>                                   $bound       onGet() parameters bound by an attribute
+     * @param array<string, ReflectionClass<ResourceObject>> $refs        keyed by UriConverter::key()
+     * @param array<string, true>                            $invalidated URI keys some write refreshes or purges
+     *
+     * @return list<Warning>
+     */
+    private function ofTarget(array $where, array $target, array $bound, array $refs, array $invalidated): array
+    {
+        $template = $target['template'] ?? $target['uri'];
+        $where += ['dependsOn' => $template];
+        $variables = $this->variables($template);
+        $warnings = [];
+        foreach ($bound as $name) {
+            if (in_array($name, $variables, true)) {
+                $warnings[] = ['warning' => 'depends-on-bound-parameter'] + $where + [
+                    'message' => sprintf("'%s' is bound by a parameter attribute, not by the request query: the URI expands from its default, or fails without one.", $name),
                 ];
             }
+        }
 
-            $bound = $this->boundParameters($ref);
-            foreach ($onGet['dependsOn'] as $target) {
-                $template = $target['template'] ?? $target['uri'];
-                $at['dependsOn'] = $template;
-                $variables = $this->variables($template);
-                foreach ($bound as $name) {
-                    if (in_array($name, $variables, true)) {
-                        $warnings[] = ['warning' => 'depends-on-bound-parameter'] + $at + [
-                            'message' => sprintf("'%s' is bound by a parameter attribute, not by the request query: the URI expands from its default, or fails without one.", $name),
-                        ];
-                    }
-                }
+        $targetKey = $this->converter->key($target['uri']);
+        $targetRef = $refs[$targetKey] ?? null;
+        if ($targetRef === null) {
+            return [...$warnings, ['warning' => 'depends-on-unknown-resource'] + $where + ['message' => sprintf('No resource %s.', $target['uri'])]];
+        }
 
-                $targetKey = $this->converter->key($target['uri']);
-                $targetRef = $refs[$targetKey] ?? null;
-                if ($targetRef === null) {
-                    $warnings[] = ['warning' => 'depends-on-unknown-resource'] + $at + ['message' => sprintf('No resource %s.', $target['uri'])];
-                    continue;
-                }
+        if (! isset($invalidated[$targetKey])) {
+            $warnings[] = ['warning' => 'depends-on-never-invalidated'] + $where + [
+                'message' => sprintf('No write refreshes or purges %s: make it #[Cacheable], or name it in a #[Purge]/#[Refresh].', $target['uri']),
+            ];
+        }
 
-                if (! isset($invalidated[$targetKey])) {
-                    $warnings[] = ['warning' => 'depends-on-never-invalidated'] + $at + [
-                        'message' => sprintf('No write refreshes or purges %s: make it #[Cacheable], or name it in a #[Purge]/#[Refresh].', $target['uri']),
-                    ];
-                }
-
-                $required = $this->requiredParameters($targetRef);
-                $keys = $this->queryKeys($template, $variables);
-                if ($required !== null && $keys !== $required && $keys !== $this->snake($required)) {
-                    $warnings[] = ['warning' => 'depends-on-query-mismatch'] + $at + [
-                        'message' => sprintf(
-                            'The URI carries [%s], but a write to %s purges the tag of its required onGet() parameters [%s].',
-                            implode(', ', $keys),
-                            $target['uri'],
-                            implode(', ', $required),
-                        ),
-                    ];
-                }
-            }
+        $required = $this->requiredParameters($targetRef);
+        $keys = $this->queryKeys($template, $variables);
+        if ($required !== null && $keys !== $required && $keys !== $this->snake($required)) {
+            $warnings[] = ['warning' => 'depends-on-query-mismatch'] + $where + [
+                'message' => sprintf(
+                    'The URI carries [%s], but a write to %s purges the tag of its required onGet() parameters [%s].',
+                    implode(', ', $keys),
+                    $target['uri'],
+                    implode(', ', $required),
+                ),
+            ];
         }
 
         return $warnings;

@@ -1,7 +1,13 @@
 {
     "name": "bear/query-repository-graph",
     "description": "Prints the cache graph that BEAR.QueryRepository attributes declare, without running the application",
-    "keywords": ["cache", "graph", "BEAR.Sunday", "development"],
+    "keywords": [
+        "cache",
+        "graph",
+        "BEAR.Sunday",
+        "development"
+    ],
+    "homepage": "https://github.com/bearsunday/BEAR.QueryRepositoryGraph",
     "license": "MIT",
     "authors": [
         {
@@ -11,10 +17,13 @@
     ],
     "require": {
         "php": "^8.2",
+        "ext-tokenizer": "*",
+        "composer-runtime-api": "^2.0",
         "bear/query-repository": "^1.20",
         "bear/resource": "^1.22.4"
     },
     "require-dev": {
+        "bamarni/composer-bin-plugin": "^1.8",
         "justinrainbow/json-schema": "^5.3 || ^6.0",
         "phpunit/phpunit": "^11.0"
     },
@@ -29,11 +38,75 @@
             "FakeVendor\\HelloWorld\\": "tests/Fake/fake-app/src"
         }
     },
-    "bin": ["bin/qr-graph"],
+    "bin": [
+        "bin/qr-graph"
+    ],
     "scripts": {
-        "test": ["./vendor/bin/phpunit"]
+        "post-install-cmd": "@composer bin all install --ansi",
+        "post-update-cmd": "@composer bin all update --ansi",
+        "bin": "echo 'bin not installed'",
+        "test": "phpunit",
+        "coverage": "php -dzend_extension=xdebug.so -dxdebug.mode=coverage phpunit --coverage-text --coverage-html=build/coverage",
+        "phpdbg": "phpdbg -qrr phpunit --coverage-text --coverage-html ./build/coverage --coverage-clover=build/coverage.xml",
+        "pcov": "php -dextension=pcov.so -d pcov.enabled=1 phpunit --coverage-text --coverage-html=build/coverage --coverage-clover=build/coverage.xml",
+        "mutation": "infection --threads=max --min-msi=80 --min-covered-msi=80",
+        "cs": "phpcs",
+        "cs-fix": "phpcbf src tests",
+        "phpstan": "phpstan analyse -c phpstan.neon",
+        "psalm": "psalm --show-info=false",
+        "phpmd": "phpmd text ./phpmd.xml",
+        "baseline": "phpstan analyse -c phpstan.neon --generate-baseline --allow-empty-baseline && psalm --set-baseline=psalm-baseline.xml",
+        "crc": "composer-require-checker check ./composer.json",
+        "clean": [
+            "phpstan clear-result-cache",
+            "psalm --clear-cache"
+        ],
+        "sa": [
+            "@phpstan",
+            "@psalm"
+        ],
+        "tests": [
+            "@cs",
+            "@sa",
+            "@test"
+        ],
+        "build": [
+            "@clean",
+            "@cs",
+            "@sa",
+            "@coverage",
+            "@crc"
+        ]
+    },
+    "scripts-descriptions": {
+        "bin": "bamarni/composer-bin-plugin command",
+        "test": "Run unit tests",
+        "coverage": "Generate test coverage report",
+        "phpdbg": "Generate test coverage report (phpdbg)",
+        "pcov": "Generate test coverage report (pcov)",
+        "mutation": "Run mutation testing",
+        "cs": "Check the coding style",
+        "cs-fix": "Fix the coding style",
+        "phpmd": "Analyze PHP code for potential issues",
+        "clean": "Remove temporary files",
+        "psalm": "Analyze code for type safety using Psalm",
+        "phpstan": "Analyze code for errors using PHPStan",
+        "sa": "Run static analysis",
+        "baseline": "Generate baseline for PHPStan and Psalm",
+        "crc": "Run composer require checker",
+        "tests": "Run tests and quality checks",
+        "build": "Build project"
     },
     "config": {
-        "sort-packages": true
+        "sort-packages": true,
+        "allow-plugins": {
+            "bamarni/composer-bin-plugin": true
+        }
+    },
+    "extra": {
+        "bamarni-bin": {
+            "bin-links": true,
+            "forward-command": true
+        }
     }
 }
