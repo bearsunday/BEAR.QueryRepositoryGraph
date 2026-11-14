@@ -44,6 +44,7 @@ Usage:
   qr-graph dump   [--dir=src/Resource]                      one JSONL line per resource
   qr-graph impact <uri> [--method=onPut] [--allow-unknown] [--dir=src/Resource]  what invalidating <uri> (or calling its write method) reaches
   qr-graph dot    [--cached] [--dir=src/Resource]           Graphviz view; --cached keeps only cached resources and what they embed
+  qr-graph snapshot [--dir=src/Resource]                    every impact as an indented tree, to keep and review as a diff
   qr-graph observe <session.json|dir>... [--dir=src/Resource] [--fail-on=<verdict>[,<verdict>...]]  each embedded child the log saw, joined with its declaration; --fail-on is repeatable or comma-separated and exits 3 when a printed line carries a listed verdict (e.g. --fail-on=untagged-material)
 
 Exit codes: 0 ok, 1 error, 2 usage, 3 observe printed a line matching --fail-on.
@@ -143,7 +144,7 @@ USAGE;
             return "No such directory: {$options['dir']}\n";
         }
 
-        $isValid = in_array($command, ['dump', 'dot', 'impact', 'observe'], true)
+        $isValid = in_array($command, ['dump', 'dot', 'impact', 'observe', 'snapshot'], true)
             && match ($command) {
                 'impact' => count($args) === 1,
                 'observe' => $args !== [],
@@ -171,6 +172,12 @@ USAGE;
         if ($command === 'dot') {
             $renderer = new DotRenderer();
             fwrite($stdout, $options['cached'] ? $renderer->cached($graph['nodes']) : $renderer($graph['nodes']));
+
+            return 0;
+        }
+
+        if ($command === 'snapshot') {
+            fwrite($stdout, (new SnapshotRenderer())($graph['nodes']));
 
             return 0;
         }

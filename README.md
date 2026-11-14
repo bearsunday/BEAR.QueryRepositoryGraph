@@ -18,6 +18,7 @@ Run it from the application root.
 vendor/bin/qr-graph dump                                  # one JSONL line per resource
 vendor/bin/qr-graph impact app://self/user --method=onPut  # what the write reaches
 vendor/bin/qr-graph dot | dot -Tsvg > graph.svg           # a picture
+vendor/bin/qr-graph snapshot > qr-graph.snapshot.txt      # every impact, to review as a diff
 vendor/bin/qr-graph observe var/log/query-repository      # the semantic log against the declarations
 ```
 
