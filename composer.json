@@ -42,8 +42,8 @@
         "bin/qr-graph"
     ],
     "scripts": {
-        "post-install-cmd": "@composer bin all install --ansi",
-        "post-update-cmd": "@composer bin all update --ansi",
+        "post-install-cmd": "@composer bin all install --ansi --ignore-platform-req=php",
+        "post-update-cmd": "@composer bin all update --ansi --ignore-platform-req=php",
         "bin": "echo 'bin not installed'",
         "test": "phpunit",
         "coverage": "php -dzend_extension=xdebug.so -dxdebug.mode=coverage phpunit --coverage-text --coverage-html=build/coverage",
