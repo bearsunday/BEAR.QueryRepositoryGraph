@@ -112,7 +112,7 @@ final class DependsOnWarnings
             foreach ($node['methods'] ?? [] as $name => $method) {
                 foreach ([...$method['refresh'] ?? [], ...$method['purge'] ?? []] as $target) {
                     if (! isset($target['implicit'])) {
-                        $purged[$this->converter->key($target['uri'])][] = ['uri' => $target['uri'], 'keys' => $this->queryKeys($target['template'] ?? $target['uri'])];
+                        $purged[$this->converter->key($target['uri'])][] = ['uri' => $this->tagUri($target), 'keys' => $this->queryKeys($target['template'] ?? $target['uri'])];
                         continue;
                     }
 
@@ -169,7 +169,7 @@ final class DependsOnWarnings
             ];
         }
 
-        $declared = ['uri' => $target['uri'], 'keys' => $this->queryKeys($template)];
+        $declared = ['uri' => $this->tagUri($target), 'keys' => $this->queryKeys($template)];
         if (! in_array($declared, $candidates, true)) {
             $warnings[] = ['warning' => 'depends-on-tag-mismatch'] + $where + [
                 'message' => sprintf('The tag is %s, but writes purge %s.', self::describe($declared), implode(', ', array_unique(array_map(self::describe(...), $candidates)))),
@@ -209,6 +209,16 @@ final class DependsOnWarnings
     private static function describe(array $tag): string
     {
         return sprintf('%s?[%s]', $tag['uri'], implode(', ', $tag['keys']));
+    }
+
+    /**
+     * The URI a tag is made from: the declaration as written, which may spell the resource's URI another way
+     *
+     * @param Target $target
+     */
+    private function tagUri(array $target): string
+    {
+        return $this->converter->resolve($target['template'] ?? $target['uri'], $target['uri'])['uri'];
     }
 
     /**

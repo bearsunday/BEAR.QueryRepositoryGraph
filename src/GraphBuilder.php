@@ -50,6 +50,9 @@ final class GraphBuilder
 
     private readonly string $cwd;
 
+    /** @var array<string, string> node URIs by UriConverter::key(), for the build in progress */
+    private array $nodeUris = [];
+
     public function __construct(
         private readonly UriConverter $uriConverter = new UriConverter(),
         string|null $cwd = null,
@@ -65,7 +68,7 @@ final class GraphBuilder
     public function build(array $classes): array
     {
         $namespace = null;
-        $nodes = [];
+        $resources = [];
         foreach ($classes as $ref) {
             $converted = $this->uriConverter->fromClass($ref->getName());
             if ($converted === null) {
@@ -77,12 +80,35 @@ final class GraphBuilder
                 throw new RuntimeException(sprintf('One application per graph: found %s and %s', $namespace, $converted['namespace']));
             }
 
-            $nodes[] = $this->node($ref, $converted['uri']);
+            $resources[] = [$ref, $converted['uri']];
+        }
+
+        $this->nodeUris = [];
+        foreach ($resources as [, $uri]) {
+            $this->nodeUris[$this->uriConverter->key($uri)] = $uri;
+        }
+
+        $nodes = [];
+        foreach ($resources as [$ref, $uri]) {
+            $nodes[] = $this->node($ref, $uri);
         }
 
         usort($nodes, static fn (array $left, array $right): int => $left['uri'] <=> $right['uri']);
 
         return ['namespaces' => $namespace === null ? [] : ['self' => $namespace], 'nodes' => $nodes];
+    }
+
+    /**
+     * A declared URI named by the node it reaches, another spelling kept in `template`
+     *
+     * @return array{uri: string, template?: string}
+     */
+    private function target(string $declared, string $base): array
+    {
+        $resolved = $this->uriConverter->resolve($declared, $base);
+        $uri = $this->nodeUris[$this->uriConverter->key($resolved['uri'])] ?? $resolved['uri'];
+
+        return $uri === $resolved['uri'] ? $resolved : ['uri' => $uri, 'template' => $resolved['template'] ?? $resolved['uri']];
     }
 
     /**
@@ -168,7 +194,7 @@ final class GraphBuilder
                 $declaredEmbed['usage'] = $this->referenced($classSource, $instance->rel) ? 'referenced' : 'unreferenced';
             }
 
-            $embed[] = $declaredEmbed + $this->uriConverter->resolve($instance->src, $uri);
+            $embed[] = $declaredEmbed + $this->target($instance->src, $uri);
         }
 
         // The command interceptors refresh the resource's own onGet before any #[Refresh]/#[Purge].
@@ -179,12 +205,12 @@ final class GraphBuilder
         }
 
         foreach ($method->getAttributes(Refresh::class) as $attribute) {
-            $refresh[] = $this->uriConverter->resolve($attribute->newInstance()->uri, $uri);
+            $refresh[] = $this->target($attribute->newInstance()->uri, $uri);
         }
 
         $purge = [];
         foreach ($method->getAttributes(Purge::class) as $attribute) {
-            $purge[] = $this->uriConverter->resolve($attribute->newInstance()->uri, $uri);
+            $purge[] = $this->target($attribute->newInstance()->uri, $uri);
         }
 
         $declared = [];
@@ -214,7 +240,7 @@ final class GraphBuilder
         $targets = [];
         for ($ref = $method->getDeclaringClass(); $ref !== false && $ref->hasMethod('onGet'); $ref = $ref->getParentClass()) {
             foreach ($ref->getMethod('onGet')->getAttributes(DependsOn::class) as $attribute) {
-                $target = $this->uriConverter->resolve($attribute->newInstance()->uri, $uri);
+                $target = $this->target($attribute->newInstance()->uri, $uri);
                 $targets[$target['template'] ?? $target['uri']] = $target;
             }
         }

@@ -265,6 +265,22 @@ class QrGraphTest extends TestCase
         $this->assertSame('app://self/gallery-article', $lines[1]['by']);
     }
 
+    public function testDeclaredTargetNamesTheNodeItReaches(): void
+    {
+        [$code, $out, $err] = self::qrGraph(['dump', '--dir=tests/Fixture/Camel/Resource']);
+        $this->assertSame(0, $code, $err);
+        $parent = self::jsonl($out)[2];
+        $this->assertSame('page://self/camel-parent', $parent['uri']);
+        $this->assertSame(
+            [['rel' => 'article', 'uri' => 'app://self/gallery-article', 'template' => 'app://self/galleryArticle']],
+            self::at($parent, 'methods', 'onGet', 'embed'),
+        );
+
+        [, $out] = self::qrGraph(['dot', '--dir=tests/Fixture/Camel/Resource']);
+        $this->assertStringContainsString('"page://self/camel-parent" -> "app://self/gallery-article" [label="embed article"];', $out);
+        $this->assertStringNotContainsString('galleryArticle', $out);
+    }
+
     public function testDonutEmbedUsageAndImpactRole(): void
     {
         [$code, $out, $err] = self::qrGraph(['dump', '--dir=tests/Fixture/Usage/Resource']);
