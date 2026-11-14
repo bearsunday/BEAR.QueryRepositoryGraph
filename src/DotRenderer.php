@@ -9,6 +9,7 @@ use function array_filter;
 use function array_keys;
 use function array_map;
 use function array_pop;
+use function array_unique;
 use function explode;
 use function htmlspecialchars;
 use function implode;
@@ -79,9 +80,13 @@ final class DotRenderer
             '  edge [fontname="Helvetica", fontsize=10, fontcolor="#333333", arrowhead=empty];',
             ...self::nodeLines($drawn, array_keys($targets)),
         ];
+        $edgeLines = [];
         foreach ($edges as [$from, $to, $attrs]) {
-            $lines[] = sprintf('  %s -> %s [%s];', self::id($from), self::id($to), $attrs);
+            $edgeLines[] = sprintf('  %s -> %s [%s];', self::id($from), self::id($to), $attrs);
         }
+
+        // Declarations that differ only in their query name the same resource: one arrow each.
+        $lines = [...$lines, ...array_unique($edgeLines)];
 
         if ($entries !== []) {
             $lines[] = '  {rank=min; ' . implode('; ', array_map(self::id(...), $entries)) . ';}';

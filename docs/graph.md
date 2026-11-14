@@ -96,7 +96,8 @@ vendor/bin/qr-graph dot | dot -Tsvg > graph.svg
 
 Arrows point as declared (a page to what it embeds, labelled with the relation; a resource to what it depends on,
 dotted; a write to what it refreshes, bold, or purges, dashed); add `edge [dir=back]` for the direction
-invalidation travels. A page is a grey box, any other resource plain text. Under the path, the scheme (with the
+invalidation travels. Declarations that differ only in their query (`?type=news`, `?type=sns`) are one arrow;
+`dump` keeps each `template`. A page is a grey box, any other resource plain text. Under the path, the scheme (with the
 host when it is not `self`) and the cache attributes as declared: `page (cacheable, ttl: medium)`,
 `app (cacheable view, ttl: never)` for `type: 'view'`, `page (cacheable response)`, `page (donut cache)`. Only
 `#[Cacheable]` expires by time, so only it shows a TTL.

@@ -20,6 +20,7 @@ use function json_decode;
 use function json_encode;
 use function rewind;
 use function stream_get_contents;
+use function substr_count;
 use function trim;
 
 use const JSON_THROW_ON_ERROR;
@@ -424,6 +425,7 @@ class QrGraphTest extends TestCase
 
         [, $out] = self::qrGraph(['dot', $dir]);
         $this->assertStringContainsString('"app://self/entries" -> "app://self/article" [label="dependsOn", style=dotted];', $out);
+        $this->assertSame(1, substr_count($out, '"app://self/archive" -> "app://self/author" [label="dependsOn", style=dotted];'), 'two declarations on one URI, differing in their query, are one arrow');
     }
 
     public function testDependsOnDeclarationsNoWriteInvalidatesAreWarnedOnStderr(): void
