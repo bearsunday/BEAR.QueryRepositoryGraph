@@ -93,11 +93,6 @@ final class SnapshotRenderer
         $text = '';
         foreach ($children as $line) {
             $notes = [$line['via'], ...$caches[$line['uri']] ?? []];
-
-            if (isset($line['role'])) {
-                $notes[] = $line['role'];
-            }
-
             $text .= sprintf("%s%s (%s)\n", str_repeat('  ', $depth + 1), $line['uri'], implode(', ', $notes));
             $text .= self::tree($lines, $line['uri'], $depth + 1, $caches);
         }

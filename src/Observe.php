@@ -35,9 +35,8 @@ use const JSON_THROW_ON_ERROR;
  * `depends_on` and `dependency_skipped` name their parent and child, so where an event sits in the tree does not
  * matter. The reason of a `dependency_skipped` is what its body showed at write time: `no_body` is read as a hole
  * (a run that left no body, such as a 204, reads the same), and `no_etag_or_surrogate_key` is a child the page
- * read that emits no tag (`untagged-material`): a change to its
- * data does not reach the page's template through it. A log without a reason falls back to the declaration's
- * `usage`, a source-text guess.
+ * read that emits no tag (`untagged-material`): a change to its data does not reach the page's template through it.
+ * A skip logged without a reason tells neither apart: `skipped`.
  *
  * A `put_donut` says the page's children were classified. A declared child that then left no event was no longer
  * an embedded request at the top of the page's body: `unclassified`.
@@ -51,20 +50,20 @@ final class Observe
 {
     private const EVENTS = ['depends_on', 'dependency_skipped'];
 
-    /** Observation => declared usage => verdict; a skip with a run-time reason does not need the usage */
+    /** Observation => how the page declares the child (`donut`: its class declares a donut cache) => verdict */
     private const VERDICTS = [
-        'depends_on' => ['referenced' => 'material', 'unreferenced' => 'tagged-hole', 'embedded' => 'dependency'],
-        'no_body' => ['referenced' => 'hole', 'unreferenced' => 'hole', 'embedded' => 'hole'],
-        'no_etag_or_surrogate_key' => ['referenced' => 'untagged-material', 'unreferenced' => 'untagged-material', 'embedded' => 'untagged-material'],
-        'dependency_skipped' => ['referenced' => 'untagged-material', 'unreferenced' => 'hole', 'embedded' => 'skipped'],
+        'depends_on' => ['donut' => 'material', 'embedded' => 'dependency'],
+        'no_body' => ['donut' => 'hole', 'embedded' => 'hole'],
+        'no_etag_or_surrogate_key' => ['donut' => 'untagged-material', 'embedded' => 'untagged-material'],
+        'dependency_skipped' => ['donut' => 'skipped', 'embedded' => 'skipped'],
     ];
 
     /** Every verdict a line can carry, as docs/schemas/graph/observe.json enumerates them; the vocabulary `--fail-on` validates against */
-    public const ALL_VERDICTS = ['material', 'hole', 'dependency', 'untagged-material', 'tagged-hole', 'unclassified', 'skipped', 'undeclared', 'mixed'];
+    public const ALL_VERDICTS = ['material', 'hole', 'dependency', 'untagged-material', 'unclassified', 'skipped', 'undeclared', 'mixed'];
 
     private readonly UriConverter $converter;
 
-    /** @var array<string, array<string, array{uri: string, usage: string}>> page key => child key => declared embed */
+    /** @var array<string, array<string, array{uri: string, kind: string}>> page key => child key => declared embed */
     private array $declared = [];
 
     /** @var array<string, array{uri: string, children: array<string, array{uri: string, types: array<string, true>}>}> page key => logged page and children, each observation a VERDICTS key */
@@ -81,11 +80,9 @@ final class Observe
     {
         $this->converter = new UriConverter();
         foreach ($nodes as $node) {
+            $kind = isset($node['cacheableResponse']) || isset($node['donutCache']) ? 'donut' : 'embedded';
             foreach ($node['methods']['onGet']['embed'] ?? [] as $embed) {
-                $this->declared[$this->converter->key($node['uri'])][$this->converter->key($embed['uri'])] = [
-                    'uri' => $embed['uri'],
-                    'usage' => $embed['usage'] ?? 'embedded',
-                ];
+                $this->declared[$this->converter->key($node['uri'])][$this->converter->key($embed['uri'])] = ['uri' => $embed['uri'], 'kind' => $kind];
             }
         }
     }
@@ -109,13 +106,13 @@ final class Observe
         foreach ($this->observed as $pageKey => $page) {
             $children = [];
             foreach ($page['children'] as $childKey => $child) {
-                $children[$child['uri']] = $this->line($page['uri'], $child['uri'], $child['types'], $this->declared[$pageKey][$childKey]['usage'] ?? null);
+                $children[$child['uri']] = $this->line($page['uri'], $child['uri'], $child['types'], $this->declared[$pageKey][$childKey]['kind'] ?? null);
             }
 
             if (isset($this->written[$pageKey])) {
                 foreach ($this->declared[$pageKey] ?? [] as $childKey => $embed) {
                     if (! isset($page['children'][$childKey])) {
-                        $children[$embed['uri']] = $this->line($page['uri'], $embed['uri'], [], $embed['usage']);
+                        $children[$embed['uri']] = $this->line($page['uri'], $embed['uri'], [], $embed['kind']);
                     }
                 }
             }

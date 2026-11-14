@@ -38,7 +38,7 @@ The first line is `meta`; every other line is a resource and the declarations it
 ([schema](schemas/graph/dump.json)). Edges start at the resource that declares them, so a line has no `from`.
 `meta` also records `counts` (nodes, edges, skipped), `tool.name` and the installed package version, and the
 `autoload` file relative to the working directory. `meta.version` is 5: v2 added those fields, v3 the embed `usage`,
-v4 `dependsOn`, v5 dropped the source-text `dynamic` hints.
+v4 `dependsOn`, v5 dropped the source-text guesses, `dynamic` and the embed `usage`.
 
 ```json
 {"uri":"app://self/user","source":"src/Resource/App/User.php:17","cacheable":{"expiry":"never","expirySecond":0,"expiryAt":"","update":false,"type":"value"},"methods":{"onPut":{"source":"src/Resource/App/User.php:52","refresh":[{"uri":"app://self/user","implicit":"Cacheable"},{"uri":"app://self/user/profile","template":"app://self/user/profile?user_id={id}"}],"purge":[{"uri":"app://self/user/friend","template":"app://self/user/friend?user_id={id}"}]}}}
@@ -52,11 +52,6 @@ v4 `dependsOn`, v5 dropped the source-text `dynamic` hints.
   A declaration on a row class is not in the graph: see [what the graph does not know](#what-the-graph-does-not-know).
 - `implicit` marks a refresh nobody wrote: a write method of a `#[Cacheable]`/`#[CacheableResponse]` class,
   or one marked `#[RefreshCache]`, refreshes its own resource.
-- `usage` on an embed of a donut-cached page (`#[CacheableResponse]`/`#[DonutCache]` on the class) says whether the method
-  reads the relation: `referenced` children become materials (their tags are stored with the page), and
-  `unreferenced` ones are holes, rendered per request. This is a source-text heuristic; an indirect read
-  (one that replaces the relation's body with an array) is not detected. A page with `#[CacheableResponse]` on
-  `onGet()` only is donut-cached at run time too, but its embeds carry no `usage`, and `impact` no `role`.
 
 Local questions are a `grep` away: `grep '"uri":"app://self/user/profile"'` finds the resource, and
 `grep 'app://self/user/profile"'` also finds every line that embeds, refreshes or purges it.
@@ -83,8 +78,7 @@ are case-insensitive and `-` is ignored, so `galleryArticle` finds `gallery-arti
 resource named by `by` means the cache does not carry that dependency: tags reach a parent only from a child
 that already ran, carrying an ETag (the non-donut path), or an ETag or Surrogate-Key (donut materials; holes
 have not run yet). A resource reached via `dependsOn` is the exception: once it has run inside the page (not as a
-hole), its declared tags reach the page whether it is cached or not. An `embed` line from a donut-cached page also carries `role`: `material`
-when the page reads that child, `hole` when it is left to render per request.
+hole), its declared tags reach the page whether it is cached or not.
 
 ### `dot` — a picture
 
@@ -116,14 +110,13 @@ vendor/bin/qr-graph snapshot | diff -u qr-graph.snapshot.txt -   # in CI: what a
 
 Every `impact` as an indented tree: a block per resource whose invalidation reaches another, then a block
 (`<uri> <method>`) per write method declaring `#[Refresh]` or `#[Purge]`. A line reads
-`<uri> (<via>[, <cache>][, <role>])` under the URI named by its `by`, the cache named as `dot` names it
+`<uri> (<via>[, <cache>])` under the URI named by its `by`, the cache named as `dot` names it
 (`cacheable, ttl: medium`, `cacheable response`); children are sorted by URI and no line
 carries a `source`, so moving code does not change the text. Like `by`, the tree shows each reached URI once,
 by one shortest path. The text is for diffs, not parsing: regenerate it after upgrading `qr-graph`.
 
 To design the cache before the code, write the resource classes with their attributes and empty methods, agree on
-`dot` and `snapshot`, commit the snapshot, then write the methods: the snapshot stays the same, except on a donut
-page, whose embeds are a `material` only once the method reads them (see `usage` above).
+`dot` and `snapshot`, commit the snapshot, then write the methods: the snapshot stays the same.
 
 ### `observe` — the log against the declarations
 
@@ -135,14 +128,14 @@ Reads semantic log sessions (a directory contributes its timestamped files, not 
 line per page and embedded child that a donut write classified ([schema](schemas/graph/observe.json)):
 
 ```json
-{"page":"page://self/blog","child":"app://self/channel","observed":["dependency_skipped"],"declared":"referenced","verdict":"untagged-material"}
+{"page":"page://self/blog","child":"app://self/channel","observed":["no_etag_or_surrogate_key"],"declared":"donut","verdict":"untagged-material"}
 ```
 
 `depends_on` and `dependency_skipped` (BEAR.QueryRepository 1.19+) carry the run-time facts: a skipped child's
 `reason` says whether it had no body at write time (`no_body`, read as a hole; a run that left no body, such as a
-204, looks the same) or ran without a tag (`no_etag_or_surrogate_key`). The embed's `usage`, a source-text guess,
-is used only for `depends_on` and for a skip logged without a reason. The
-verdicts that need reading:
+204, looks the same) or ran without a tag (`no_etag_or_surrogate_key`). A skip logged without a reason tells
+neither apart and is `skipped`. `declared` is `donut` when the page's class declares `#[CacheableResponse]` or
+`#[DonutCache]`, `embedded` otherwise. The verdicts that need reading:
 
 - `untagged-material` — the page read the child, but the child carried neither an ETag nor a Surrogate-Key, so a
   change to the child's data does not reach the page's template **through this child**. `observe` writes a
@@ -155,7 +148,6 @@ verdicts that need reading:
   the top of its body: removed with `unset()`, replaced by its body array, or moved into a nested array. The
   classification looks at the top of the body only, so such a child adds no tag to the page even when the page
   read it. An `unset()` of a child the page never needed is the same verdict and harmless.
-- `tagged-hole` — the source scan says the page does not read the child, yet the child carried tags before the write.
 
 Only pages written in the sessions read are judged; a page served from cache classifies nothing. Sessions without a
 single `dependency_skipped` are reported with a warning on stderr: they may come from a version that does not record

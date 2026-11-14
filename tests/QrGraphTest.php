@@ -343,34 +343,6 @@ class QrGraphTest extends TestCase
         $this->assertStringNotContainsString('galleryArticle', $out);
     }
 
-    public function testDonutEmbedUsageAndImpactRole(): void
-    {
-        [$code, $out, $err] = self::qrGraph(['dump', '--dir=tests/Fixture/Usage/Resource']);
-        $this->assertSame(0, $code, $err);
-        $lines = self::jsonl($out);
-        $nodes = [];
-        foreach (array_slice($lines, 1) as $line) {
-            /** @var string $uri */
-            $uri = $line['uri'];
-            $nodes[$uri] = $line;
-        }
-
-        $embeds = self::at($nodes['page://self/donut-page'], 'methods', 'onGet', 'embed');
-        $this->assertIsArray($embeds);
-        $this->assertSame(['read' => 'referenced', 'ignored' => 'unreferenced'], array_column($embeds, 'usage', 'rel'));
-
-        [$code, $out] = self::qrGraph(['impact', 'app://self/ignored-child', '--json', '--dir=tests/Fixture/Usage/Resource']);
-        $this->assertSame(0, $code);
-        $lines = self::jsonl($out);
-        $this->assertSame(['app://self/ignored-child', 'page://self/donut-page'], array_column($lines, 'uri'));
-        $this->assertSame('hole', $lines[1]['role']);
-
-        [$code, $out] = self::qrGraph(['impact', 'app://self/read-child', '--json', '--dir=tests/Fixture/Usage/Resource']);
-        $this->assertSame(0, $code);
-        $lines = self::jsonl($out);
-        $this->assertSame('material', $lines[1]['role']);
-    }
-
     public function testDependsOnIsAnEdgeImpactFollowsOnlyFromAUriItselfPurged(): void
     {
         $dir = '--dir=tests/Fixture/DependsOn/Resource';
@@ -490,7 +462,7 @@ class QrGraphTest extends TestCase
         $this->assertStringContainsString('No such directory: no/such/dir', $err);
     }
 
-    public function testObserveJudgesEachLoggedChildAgainstItsDeclaredUsage(): void
+    public function testObserveJudgesEachLoggedChildAgainstItsDeclaration(): void
     {
         $this->assertSame([
             ['page://self/donut-page', 'app://self/ignored-child', 'hole'],
@@ -499,27 +471,27 @@ class QrGraphTest extends TestCase
         ], $this->verdicts(self::SESSIONS . '/expected.json'));
     }
 
-    public function testObserveFlagsAReadChildThatCarriedNoTag(): void
+    public function testObserveFlagsAChildThatCarriedNoTag(): void
     {
         $this->assertSame([
-            ['page://self/donut-page', 'app://self/ignored-child', 'tagged-hole'],
+            ['page://self/donut-page', 'app://self/ignored-child', 'material'],
             ['page://self/donut-page', 'app://self/read-child', 'untagged-material'],
         ], $this->verdicts(self::SESSIONS . '/contrary.json'));
     }
 
-    public function testObserveTrustsTheRunTimeReasonOverTheSourceGuess(): void
+    public function testObserveTakesAHoleFromTheRunTimeReason(): void
     {
         $this->assertSame([
-            ['page://self/donut-page', 'app://self/ignored-child', 'tagged-hole'],
+            ['page://self/donut-page', 'app://self/ignored-child', 'material'],
             ['page://self/donut-page', 'app://self/read-child', 'hole'],
-        ], $this->verdicts(self::SESSIONS . '/runtime.json'), 'the scan guesses read-child is referenced, but it had not run');
+        ], $this->verdicts(self::SESSIONS . '/runtime.json'));
     }
 
-    public function testObserveFallsBackToTheSourceGuessWithoutAReason(): void
+    public function testObserveCannotTellASkipLoggedWithoutAReason(): void
     {
         $this->assertSame([
-            ['page://self/donut-page', 'app://self/ignored-child', 'tagged-hole'],
-            ['page://self/donut-page', 'app://self/read-child', 'untagged-material'],
+            ['page://self/donut-page', 'app://self/ignored-child', 'material'],
+            ['page://self/donut-page', 'app://self/read-child', 'skipped'],
         ], $this->verdicts(self::SESSIONS . '/reasonless.json'));
     }
 
