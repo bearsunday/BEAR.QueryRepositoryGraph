@@ -25,7 +25,8 @@ vendor/bin/qr-graph observe var/log/query-repository      # the semantic log aga
 ```
 
 `dump` and `impact` are JSONL for tools and AI agents (`jq`, `grep`); `dot` is for the eye; `snapshot` is for
-review. The commands, their output and its limits are described in [docs/graph.md](docs/graph.md); the output
+review; `observe` checks what the cache did against what the code declares. The commands, their output and its
+limits are described in [docs/graph.md](docs/graph.md); the output
 shapes are the JSON Schemas under [docs/schemas/graph](docs/schemas/graph).
 
 ## Reading the picture
@@ -41,7 +42,7 @@ shapes are the JSON Schemas under [docs/schemas/graph](docs/schemas/graph).
 | dotted arrow | `#[DependsOn]` |
 | bold arrow | a write that refreshes (`onPut refresh`) |
 | dashed arrow | a write that purges (`onPost purge`) |
-| leftmost column | pages nothing points to: where a request starts |
+| leftmost column | pages no other resource points to: where a request starts (none in this example: `digest` points to `index`) |
 
 Arrows point the way they are declared. Invalidation travels against them: purging `article` reaches `entries`
 through its dotted arrow, and `index` through the solid one.
