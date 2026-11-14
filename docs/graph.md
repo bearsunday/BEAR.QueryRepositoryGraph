@@ -94,7 +94,8 @@ dotted; a write to what it refreshes, bold, or purges, dashed); add `edge [dir=b
 invalidation travels. A page is a grey box, any other resource plain text. Under the path, the scheme (with the
 host when it is not `self`) and the cache attributes as declared: `page (cacheable, ttl: medium)`,
 `page (cacheable response)`, `page (donut cache)`. Only `#[Cacheable]` expires by time, so only it shows a TTL.
-Pages nothing embeds, where a request starts, line up in the leftmost column.
+Pages no drawn arrow points to (other than their own refresh), where a request starts, line up in the leftmost
+column; with `--cached`, an arrow from a resource left out does not count.
 
 `--cached` draws only the cached resources (what `impact` reports as `cached: true`) and what they embed,
 directly or not; a `dependsOn`, refresh or purge arrow is kept when both of its ends are drawn.

@@ -13,7 +13,6 @@ use function explode;
 use function htmlspecialchars;
 use function implode;
 use function sprintf;
-use function str_starts_with;
 
 use const ENT_XML1;
 
@@ -127,7 +126,7 @@ final class DotRenderer
         [$scheme, $host] = explode('://', $uri, 2) + [1 => ''];
         $host = explode('/', $host, 2)[0];
         $kind = $host === 'self' ? $scheme : $scheme . '://' . $host;
-        $cache = $node === null ? [] : self::cache($node);
+        $cache = $node === null ? [] : Impact::caches($node);
         if ($cache !== []) {
             $kind .= ' (' . implode(', ', $cache) . ')';
         }
@@ -142,45 +141,6 @@ final class DotRenderer
             : 'shape=plaintext, margin="0.11,0.055"';
 
         return sprintf('  %s [%s, label=%s];', self::id($uri), $shape, $label);
-    }
-
-    /**
-     * The cache attributes as named in the code; only #[Cacheable] expires by time, so only it carries a TTL
-     *
-     * @param Node $node
-     *
-     * @return list<string>
-     */
-    private static function cache(array $node): array
-    {
-        $cache = [];
-        $cacheable = $node['cacheable'] ?? null;
-        if ($cacheable !== null) {
-            $ttl = $cacheable['expirySecond'] > 0 ? $cacheable['expirySecond'] . 's' : ($cacheable['expiryAt'] !== '' ? 'until ' . $cacheable['expiryAt'] : $cacheable['expiry']);
-            $cache[] = 'cacheable, ttl: ' . $ttl;
-        }
-
-        if (isset($node['cacheableResponse']) || self::onGetCacheableResponse($node)) {
-            $cache[] = 'cacheable response';
-        }
-
-        if (isset($node['donutCache'])) {
-            $cache[] = 'donut cache';
-        }
-
-        return $cache;
-    }
-
-    /** @param Node $node */
-    private static function onGetCacheableResponse(array $node): bool
-    {
-        foreach ($node['methods'] ?? [] as $name => $method) {
-            if (str_starts_with($name, 'onGet') && isset($method['cacheableResponse'])) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static function scheme(string $uri): string
