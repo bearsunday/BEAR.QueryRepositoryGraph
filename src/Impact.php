@@ -26,6 +26,9 @@ final class Impact
     /** @var array<string, list<array{uri: string, role: string|null}>> child key => embedders */
     private array $embeddedBy = [];
 
+    /** @var array<string, list<string>> target key => resources whose onGet() declares #[DependsOn] on it */
+    private array $dependedBy = [];
+
     /** @param list<Node> $nodes */
     public function __construct(array $nodes)
     {
@@ -38,6 +41,10 @@ final class Impact
                         'uri' => $node['uri'],
                         'role' => $this->role($node, $embed),
                     ];
+                }
+
+                foreach ($method['dependsOn'] ?? [] as $target) {
+                    $this->dependedBy[$this->converter->key($target['uri'])][] = $node['uri'];
                 }
             }
         }
@@ -74,7 +81,7 @@ final class Impact
                 'via' => $next['via'],
                 'by' => $next['by'],
                 'depth' => $next['depth'],
-                'cached' => $node !== null && $this->isCached($node),
+                'cached' => $node !== null && self::isCached($node),
                 'source' => $node['source'] ?? null,
             ];
             if (isset($next['role'])) {
@@ -94,6 +101,15 @@ final class Impact
                 }
 
                 $queue[] = $parent;
+            }
+
+            // A declaration carries the exact tag of the URI it names, so it reaches its resource only when that URI itself is purged.
+            if ($next['via'] === 'embed' || $next['via'] === 'dependsOn') {
+                continue;
+            }
+
+            foreach ($this->dependedBy[$key] ?? [] as $dependent) {
+                $queue[] = ['uri' => $dependent, 'via' => 'dependsOn', 'by' => $uri, 'depth' => $next['depth'] + 1];
             }
         }
 
@@ -142,8 +158,12 @@ final class Impact
         return $this->nodes[$this->converter->key($uri)]['uri'] ?? $uri;
     }
 
-    /** @param Node $node */
-    private function isCached(array $node): bool
+    /**
+     * Whether the resource declares a cache at all, on the class or on onGet()
+     *
+     * @param Node $node
+     */
+    public static function isCached(array $node): bool
     {
         if (isset($node['cacheable']) || isset($node['donutCache']) || isset($node['cacheableResponse'])) {
             return true;

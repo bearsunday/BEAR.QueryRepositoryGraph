@@ -7,6 +7,7 @@ namespace BEAR\QueryRepositoryGraph;
 use BEAR\RepositoryModule\Annotation\AbstractCacheControl;
 use BEAR\RepositoryModule\Annotation\Cacheable;
 use BEAR\RepositoryModule\Annotation\CacheableResponse;
+use BEAR\RepositoryModule\Annotation\DependsOn;
 use BEAR\RepositoryModule\Annotation\DonutCache;
 use BEAR\RepositoryModule\Annotation\Purge;
 use BEAR\RepositoryModule\Annotation\Refresh;
@@ -19,6 +20,7 @@ use ReflectionMethod;
 use RuntimeException;
 
 use function array_filter;
+use function array_values;
 use function file_get_contents;
 use function getcwd;
 use function preg_match;
@@ -34,10 +36,10 @@ use function usort;
  * Builds the declared cache graph: one record per resource, its declarations nested under it
  *
  * Every edge starts at the resource that declares it, so a record carries no `from`.
- * The record's shape is `docs/schemas/graph/resource.json`.
+ * The record's shape is the `resource` definition in `docs/schemas/graph/dump.json`.
  *
  * @psalm-type Target = array{uri: string, template?: string, implicit?: string}
- * @psalm-type Method = array{source: string, cacheableResponse?: true, embed?: list<array{rel: string, usage?: string, uri: string, template?: string}>, refresh?: list<Target>, purge?: list<Target>}
+ * @psalm-type Method = array{source: string, cacheableResponse?: true, embed?: list<array{rel: string, usage?: string, uri: string, template?: string}>, dependsOn?: list<array{uri: string, template?: string}>, refresh?: list<Target>, purge?: list<Target>}
  * @psalm-type Node = array{uri: string, source: string, cacheable?: array{expiry: string, expirySecond: int, expiryAt: string, update: bool, type: string}, donutCache?: true, cacheableResponse?: true, httpCache?: string, methods?: array<string, Method>, dynamic?: list<string>}
  * @SuppressWarnings("PHPMD.CouplingBetweenObjects")
  */
@@ -190,12 +192,34 @@ final class GraphBuilder
             $declared['cacheableResponse'] = true;
         }
 
-        $declared += array_filter(['embed' => $embed, 'refresh' => $refresh, 'purge' => $purge]);
+        $declared += array_filter(['embed' => $embed, 'dependsOn' => $this->dependsOn($method, $uri), 'refresh' => $refresh, 'purge' => $purge]);
         if ($declared === []) {
             return null;
         }
 
         return ['source' => $this->source((string) $method->getFileName(), (int) $method->getStartLine())] + $declared;
+    }
+
+    /**
+     * #[DependsOn] is read on onGet() only, together with each onGet() it overrides
+     *
+     * @return list<array{uri: string, template?: string}>
+     */
+    private function dependsOn(ReflectionMethod $method, string $uri): array
+    {
+        if ($method->getName() !== 'onGet') {
+            return [];
+        }
+
+        $targets = [];
+        for ($ref = $method->getDeclaringClass(); $ref !== false && $ref->hasMethod('onGet'); $ref = $ref->getParentClass()) {
+            foreach ($ref->getMethod('onGet')->getAttributes(DependsOn::class) as $attribute) {
+                $target = $this->uriConverter->resolve($attribute->newInstance()->uri, $uri);
+                $targets[$target['template'] ?? $target['uri']] = $target;
+            }
+        }
+
+        return array_values($targets);
     }
 
     /**

@@ -1,6 +1,6 @@
 # The declared cache graph (`qr-graph`)
 
-Cache behavior in BEAR.QueryRepository is declared: `#[Embed]` says what a resource depends on,
+Cache behavior in BEAR.QueryRepository is declared: `#[Embed]` and `#[DependsOn]` say what a resource depends on,
 `#[Refresh]`/`#[Purge]` say what a write invalidates, and `#[Cacheable]`/`#[CacheableResponse]`/`#[DonutCache]`
 say what is cached at all. `qr-graph` reads those declarations, without running the application, and
 prints the graph they form.
@@ -23,7 +23,7 @@ vendor/bin/qr-graph observe <session.json|dir>... [--dir=src/Resource] [--fail-o
 
 Run it from the application root: classes are loaded through the application's autoloader, and a file
 the autoloader does not resolve is reported on stderr as skipped, never included. Output is JSONL on stdout.
-Skipped files and tool errors are JSONL on stderr; usage errors are plain text, as are PHP's own notices.
+Skipped files, warnings and tool errors are JSONL on stderr; usage errors are plain text, as are PHP's own notices.
 Exit code: 0 ok, 1 error, 2 usage, 3 `observe --fail-on` matched a printed line. An unknown option or an extra
 argument is a usage error (2); `--method` naming a method that refreshes and purges nothing is an error (1).
 A scan that finds no resource classes is an error (1) rather than an empty success: that is what a missing
@@ -35,7 +35,8 @@ application autoloader looks like. `impact` on a URI no scanned resource serves 
 The first line is `meta`; every other line is a resource and the declarations it makes
 ([schema](schemas/graph/dump.json)). Edges start at the resource that declares them, so a line has no `from`.
 `meta` also records `counts` (nodes, edges, skipped), `tool.name` and the installed package version, and the
-`autoload` file relative to the working directory. `meta.version` is 3: v2 added those fields, v3 the embed `usage`.
+`autoload` file relative to the working directory. `meta.version` is 4: v2 added those fields, v3 the embed `usage`,
+v4 `dependsOn`.
 
 ```json
 {"uri":"app://self/user","source":"src/Resource/App/User.php:17","cacheable":{"expiry":"never","expirySecond":0,"expiryAt":"","update":false,"type":"value"},"methods":{"onPut":{"source":"src/Resource/App/User.php:52","refresh":[{"uri":"app://self/user","implicit":"Cacheable"},{"uri":"app://self/user/profile","template":"app://self/user/profile?user_id={id}"}],"purge":[{"uri":"app://self/user/friend","template":"app://self/user/friend?user_id={id}"}]}}}
@@ -44,14 +45,17 @@ The first line is `meta`; every other line is a resource and the declarations it
 - `uri` is `scheme://host/path` without query, exact-matchable everywhere it appears; `template` keeps the
   declaration as written. The PHP class is not repeated: it follows from `uri` and `meta.namespaces`.
 - `source` is `file:line`, to open the declaration.
+- `dependsOn` on `onGet` lists its `#[DependsOn]` declarations, including those on an `onGet()` it overrides.
+  A declaration on a row class is not in the graph: see [what the graph does not know](#what-the-graph-does-not-know).
 - `implicit` marks a refresh nobody wrote: a write method of a `#[Cacheable]`/`#[CacheableResponse]` class,
   or one marked `#[RefreshCache]`, refreshes its own resource.
 - `dynamic` lists source-text hints that the declarations may not be the whole story (the class source
   mentions a `surrogate-key`, or `ResourceInject`/`ResourceInterface` for a `resource-request` outside `#[Embed]`). A hint is a reason to read the source; its absence proves nothing.
-- `usage` on an embed of a donut-cached page (`#[CacheableResponse]`/`#[DonutCache]`) says whether the method
+- `usage` on an embed of a donut-cached page (`#[CacheableResponse]`/`#[DonutCache]` on the class) says whether the method
   reads the relation: `referenced` children become materials (their tags are stored with the page), and
   `unreferenced` ones are holes, rendered per request. This is a source-text heuristic; an indirect read
-  (one that replaces the relation's body with an array) is not detected.
+  (one that replaces the relation's body with an array) is not detected. A page with `#[CacheableResponse]` on
+  `onGet()` only is donut-cached at run time too, but its embeds carry no `usage`, and `impact` no `role`.
 
 Local questions are a `grep` away: `grep '"uri":"app://self/user/profile"'` finds the resource, and
 `grep 'app://self/user/profile"'` also finds every line that embeds, refreshes or purges it.
@@ -59,8 +63,12 @@ Local questions are a `grep` away: `grep '"uri":"app://self/user/profile"'` find
 ### `impact` — what an invalidation reaches
 
 Multi-hop questions ("if this changes, what goes stale?") are answered by `impact`, not by repeated `grep`.
-It walks the embed edges breadth-first, one line per reached URI by its shortest path
+It walks the embed and `dependsOn` edges breadth-first, one line per reached URI by its shortest path
 ([schema](schemas/graph/impact.json)). With `--method`, it starts from what that write method refreshes and purges.
+A `dependsOn` edge is followed only from a URI that is purged itself (the one asked about, or a `refresh`/`purge`
+target): a declaration carries the exact tag of the URI it names, not the tags that URI carries. `impact` does
+not compare tags: an edge whose declaration does not match what the write purges is reported on stderr as
+`depends-on-tag-mismatch` or `depends-on-never-invalidated`, and still listed here.
 
 ```json
 {"uri":"page://self/dep/diamond-top","via":"embed","by":"page://self/dep/diamond-left","depth":2,"cached":true,"source":"src/Resource/Page/Dep/DiamondTop.php:10"}
@@ -70,8 +78,9 @@ It walks the embed edges breadth-first, one line per reached URI by its shortest
 are case-insensitive and `-` is ignored, so `galleryArticle` finds `gallery-article`. `cached: false` on the
 resource named by `by` means the cache does not carry that dependency: tags reach a parent only from a child
 that already ran, carrying an ETag (the non-donut path), or an ETag or Surrogate-Key (donut materials; holes
-have not run yet). An `embed` line from a donut-cached page also carries `role`: `material` when the page
-reads that child, `hole` when it is left to render per request.
+have not run yet). A resource reached via `dependsOn` is the exception: once it has run inside the page (not as a
+hole), its declared tags reach the page whether it is cached or not. An `embed` line from a donut-cached page also carries `role`: `material`
+when the page reads that child, `hole` when it is left to render per request.
 
 ### `dot` — a picture
 
@@ -79,8 +88,8 @@ reads that child, `hole` when it is left to render per request.
 vendor/bin/qr-graph dot | dot -Tsvg > graph.svg
 ```
 
-Arrows point as declared (a page to what it embeds, a write to what it refreshes or purges); add
-`edge [dir=back]` for the direction invalidation travels. Cached resources are drawn double-bordered,
+Arrows point as declared (a page to what it embeds, a resource to what it depends on, a write to what it
+refreshes or purges); add `edge [dir=back]` for the direction invalidation travels. Cached resources are drawn double-bordered,
 resources with `dynamic` hints dashed.
 
 ### `observe` — the log against the declarations
@@ -125,9 +134,44 @@ unknown verdict name is a usage error (2). Roll it out gradually: watch the `unt
 stderr until there are none, then turn on `--fail-on=untagged-material` in CI so a new one fails the build
 instead of aging silently behind the page's TTL.
 
+## Warnings on `#[DependsOn]`
+
+Every command checks the `onGet()` declarations and writes one line on stderr per finding, without changing
+the exit code. None of them fails at run time:
+
+```json
+{"warning":"depends-on-tag-mismatch","resource":"app://self/entries","source":"src/Resource/App/Entries.php:14","dependsOn":"app://self/article{?articleId}","message":"The tag is app://self/article?[articleId], but writes purge app://self/article?[id]."}
+```
+
+These leave the resource stale after a write to what it depends on:
+
+- `depends-on-unknown-resource` — no scanned resource serves the URI.
+- `depends-on-never-invalidated` — no write refreshes or purges the URI. A write method refreshes its own resource
+  implicitly, but an `onPost()` does so only when its arguments carry every required `onGet()` one, under the same
+  name or its snake_case form: otherwise the refresh is skipped for lack of them. This assumes the POST query uses
+  the `onPost()` argument names. A resource cached by `#[DonutCache]`, or by `#[CacheableResponse]` on `onGet()`
+  only, is refreshed only by a write method that carries `#[RefreshCache]` or `#[CacheableResponse]`.
+- `depends-on-tag-mismatch` — the tag the declaration expands to (its path as written, and its query keys) is none
+  of the tags a write purges. A write refreshes its own resource under the required `onGet()` parameters, as named
+  or all in snake_case, at the resource's own path; a `#[Refresh]`/`#[Purge]` purges the URI it names.
+- `depends-on-bound-parameter` — a template variable is a parameter bound by a web-context attribute
+  (`#[QueryParam]`, `#[CookieParam]`, ...). The value is not in the request query, so the URI expands from the
+  parameter's default.
+
+This one purges more than it should:
+
+- `depends-on-default-body` — the class gives `$body` a default, or `$code` one other than 200. Rendered as a hole
+  it reads as already run, so the page takes its declarations and is purged whole on every write to them, instead
+  of recomposed.
+
+A template variable that is not an `onGet()` parameter, one bound by `#[ResourceParam]`, and a declaration on the
+resource class are not reported: they fail the first GET with `DependsOnNotExpandable`.
+
 ## What the graph does not know
 
 - Surrogate keys set in code and resources requested in code (flagged as `dynamic`, not resolved).
+- `#[DependsOn]` on a row class: the class lives outside the scanned directory, and which resource's body holds
+  its instances is known only at run time.
 - Which instance a template reaches: `{id}` is filled from the request at run time. That is the log's part.
 - Bindings: the graph reads attributes, not the application's modules, so it does not know whether
   `DonutCacheModule` is installed or a CDN purger is bound.

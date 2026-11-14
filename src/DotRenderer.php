@@ -11,10 +11,12 @@ use function sprintf;
 /**
  * Graphviz view of the declared graph
  *
- * Arrows point the way they are declared (a page to what it embeds, a write to what it
- * refreshes or purges). For the direction invalidation travels, render with `edge [dir=back]`.
+ * Arrows point the way they are declared (a page to what it embeds, a resource to what it
+ * depends on, a write to what it refreshes or purges). For the direction invalidation travels,
+ * render with `edge [dir=back]`.
  *
  * @psalm-import-type Node from GraphBuilder
+ * @psalm-import-type Method from GraphBuilder
  */
 final class DotRenderer
 {
@@ -34,23 +36,40 @@ final class DotRenderer
 
             $lines[] = sprintf('  %s%s;', self::id($node['uri']), $attrs === [] ? '' : ' [' . implode(', ', $attrs) . ']');
             foreach ($node['methods'] ?? [] as $name => $method) {
-                foreach ($method['embed'] ?? [] as $embed) {
-                    $lines[] = sprintf('  %s -> %s [label="embed %s"];', self::id($node['uri']), self::id($embed['uri']), addcslashes($embed['rel'], '"\\'));
-                }
-
-                foreach ($method['refresh'] ?? [] as $target) {
-                    $lines[] = sprintf('  %s -> %s [label="%s refresh", style=bold];', self::id($node['uri']), self::id($target['uri']), $name);
-                }
-
-                foreach ($method['purge'] ?? [] as $target) {
-                    $lines[] = sprintf('  %s -> %s [label="%s purge", style=dashed];', self::id($node['uri']), self::id($target['uri']), $name);
-                }
+                $lines = [...$lines, ...self::edges(self::id($node['uri']), $name, $method)];
             }
         }
 
         $lines[] = '}';
 
         return implode("\n", $lines) . "\n";
+    }
+
+    /**
+     * @param Method $method
+     *
+     * @return list<string>
+     */
+    private static function edges(string $from, string $name, array $method): array
+    {
+        $lines = [];
+        foreach ($method['embed'] ?? [] as $embed) {
+            $lines[] = sprintf('  %s -> %s [label="embed %s"];', $from, self::id($embed['uri']), addcslashes($embed['rel'], '"\\'));
+        }
+
+        foreach ($method['dependsOn'] ?? [] as $target) {
+            $lines[] = sprintf('  %s -> %s [label="dependsOn", style=dotted];', $from, self::id($target['uri']));
+        }
+
+        foreach ($method['refresh'] ?? [] as $target) {
+            $lines[] = sprintf('  %s -> %s [label="%s refresh", style=bold];', $from, self::id($target['uri']), $name);
+        }
+
+        foreach ($method['purge'] ?? [] as $target) {
+            $lines[] = sprintf('  %s -> %s [label="%s purge", style=dashed];', $from, self::id($target['uri']), $name);
+        }
+
+        return $lines;
     }
 
     private static function id(string $uri): string

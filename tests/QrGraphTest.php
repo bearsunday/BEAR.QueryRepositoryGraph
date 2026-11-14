@@ -44,7 +44,7 @@ class QrGraphTest extends TestCase
         self::assertSame(0, $code, $err);
         $lines = self::jsonl($out);
         $meta = $lines[0];
-        self::assertSame(3, self::at($meta, 'meta', 'version'));
+        self::assertSame(4, self::at($meta, 'meta', 'version'));
         self::assertSame(['self' => 'FakeVendor\HelloWorld'], self::at($meta, 'meta', 'namespaces'));
         self::assertSame(self::DIR, self::at($meta, 'meta', 'dir'));
         self::assertSame(['nodes' => 115, 'edges' => 123, 'skipped' => 2], self::at($meta, 'meta', 'counts'));
@@ -203,7 +203,7 @@ class QrGraphTest extends TestCase
         $this->assertSame(0, $code, $err);
         $lines = self::jsonl($out);
         $meta = $lines[0];
-        $this->assertSame(3, self::at($meta, 'meta', 'version'));
+        $this->assertSame(4, self::at($meta, 'meta', 'version'));
         $this->assertSame(['self' => 'BEAR\QueryRepositoryGraph\Fixture'], self::at($meta, 'meta', 'namespaces'));
         $this->assertSame('tests/Fixture/Resource', self::at($meta, 'meta', 'dir'));
         $this->assertSame(['nodes' => 2, 'edges' => 0, 'skipped' => 0], self::at($meta, 'meta', 'counts'));
@@ -291,6 +291,113 @@ class QrGraphTest extends TestCase
         $this->assertSame(0, $code);
         $lines = self::jsonl($out);
         $this->assertSame('material', $lines[1]['role']);
+    }
+
+    public function testDependsOnIsAnEdgeImpactFollowsOnlyFromAUriItselfPurged(): void
+    {
+        $dir = '--dir=tests/Fixture/DependsOn/Resource';
+        [$code, $out, $err] = self::qrGraph(['dump', $dir]);
+        $this->assertSame(0, $code, $err);
+        $this->assertSame('', $err, 'a query in the snake_case of the required parameter, with a defaulted one left out, is not a mismatch');
+        $nodes = [];
+        foreach (explode("\n", trim($out)) as $line) {
+            $this->assertSchema('dump.json', $line);
+        }
+
+        foreach (self::jsonl($out) as $decoded) {
+            /** @var string $uri */
+            $uri = $decoded['uri'] ?? 'meta';
+            $nodes[$uri] = $decoded;
+        }
+
+        $this->assertSame(14, self::at($nodes['meta'], 'meta', 'counts', 'edges'));
+        $this->assertSame([
+            ['uri' => 'app://self/article', 'template' => 'app://self/article?id={articleId}'],
+            ['uri' => 'app://self/author', 'template' => 'app://self/author{?author_id}'],
+        ], self::at($nodes['app://self/entries'], 'methods', 'onGet', 'dependsOn'));
+        // Archive overrides Entries::onGet(): its own declaration first, then the overridden one's, each template kept
+        $this->assertSame([
+            ['uri' => 'app://self/author', 'template' => 'app://self/author?author_id={author_id}'],
+            ['uri' => 'app://self/article', 'template' => 'app://self/article?id={articleId}'],
+            ['uri' => 'app://self/author', 'template' => 'app://self/author{?author_id}'],
+        ], self::at($nodes['app://self/archive'], 'methods', 'onGet', 'dependsOn'));
+        $this->assertNull(self::at($nodes['app://self/entries'], 'methods', 'onPost'), 'only onGet() declarations are read');
+
+        [$code, $out] = self::qrGraph(['impact', 'app://self/article', '--method=onPut', $dir]);
+        $this->assertSame(0, $code);
+        foreach (explode("\n", trim($out)) as $line) {
+            $this->assertSchema('impact.json', $line);
+        }
+
+        // Outer depends on middle and Digest on index: neither URI is purged itself, so neither is reached.
+        $this->assertSame([
+            ['app://self/article', 'refresh', 'app://self/article', 1],
+            ['app://self/archive', 'dependsOn', 'app://self/article', 2],
+            ['app://self/entries', 'dependsOn', 'app://self/article', 2],
+            ['app://self/middle', 'dependsOn', 'app://self/article', 2],
+            ['page://self/index', 'embed', 'app://self/entries', 3],
+        ], array_map(static fn (array $line): array => [$line['uri'], $line['via'], $line['by'], $line['depth']], self::jsonl($out)));
+
+        // A #[Purge] on another resource: `by` names the purged URI from the second hop on.
+        [, $out] = self::qrGraph(['impact', 'app://self/writer', '--method=onPost', $dir]);
+        $this->assertSame([
+            ['app://self/article', 'purge', 'app://self/writer', 1],
+            ['app://self/archive', 'dependsOn', 'app://self/article', 2],
+            ['app://self/entries', 'dependsOn', 'app://self/article', 2],
+            ['app://self/middle', 'dependsOn', 'app://self/article', 2],
+            ['page://self/index', 'embed', 'app://self/entries', 3],
+        ], array_map(static fn (array $line): array => [$line['uri'], $line['via'], $line['by'], $line['depth']], self::jsonl($out)));
+
+        [, $out] = self::qrGraph(['impact', 'app://self/middle', $dir]);
+        $this->assertSame(['app://self/middle', 'app://self/outer'], array_column(self::jsonl($out), 'uri'), 'a URI asked about is purged itself');
+
+        [, $out] = self::qrGraph(['dot', $dir]);
+        $this->assertStringContainsString('"app://self/entries" -> "app://self/article" [label="dependsOn", style=dotted];', $out);
+    }
+
+    public function testDependsOnDeclarationsNoWriteInvalidatesAreWarnedOnStderr(): void
+    {
+        [$code, , $err] = self::qrGraph(['dump', '--dir=tests/Fixture/DependsOnWarn/Resource']);
+        $this->assertSame(0, $code, $err);
+        $warnings = [];
+        $messages = [];
+        foreach (self::jsonl($err) as $line) {
+            $this->assertIsString($line['message'] ?? null);
+            $this->assertIsString($line['resource'] ?? null);
+            $messages[$line['resource']] = $line['message'];
+            unset($line['message'], $line['source']);
+            $warnings[] = $line;
+        }
+
+        // Not warned: PairList, CamelKeys and SnakeKeys name the keys in another order or in snake_case, PurgedList
+        // matches a #[Purge], PostCarriesList's target has an onPost() whose argument is the key in snake_case (PostCamel's, the reverse, is not found), and ResourceBound fails
+        // its first GET instead.
+        $this->assertSame([
+            ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/alias', 'dependsOn' => 'app://self/camelPair{?leftId,rightId}'],
+            ['warning' => 'depends-on-bound-parameter', 'resource' => 'app://self/bound', 'dependsOn' => 'app://self/article{?id}'],
+            ['warning' => 'depends-on-default-body', 'resource' => 'app://self/default-body'],
+            ['warning' => 'depends-on-default-body', 'resource' => 'app://self/default-code'],
+            ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/donut-refresh-post-list', 'dependsOn' => 'app://self/donut-refresh-post{?id}'],
+            ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/method-cached-list', 'dependsOn' => 'app://self/method-cached{?id}'],
+            ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/mismatch', 'dependsOn' => 'app://self/article{?articleId}'],
+            ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/mixed-keys', 'dependsOn' => 'app://self/camel-pair{?leftId,right_id}'],
+            ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/no-write-list', 'dependsOn' => 'app://self/no-write{?id}'],
+            ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/origin-by-id', 'dependsOn' => 'app://self/origin{?id}'],
+            ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/plain-refresh-list', 'dependsOn' => 'app://self/plain-refresh{?id}'],
+            ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/post-camel-list', 'dependsOn' => 'app://self/post-camel?article_id={id}'],
+            ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/post-only-list', 'dependsOn' => 'app://self/post-only{?id}'],
+            ['warning' => 'depends-on-unknown-resource', 'resource' => 'app://self/typo', 'dependsOn' => 'app://self/artcle{?id}'],
+            ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/unpurged', 'dependsOn' => 'app://self/plain{?id}'],
+            ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/with-page', 'dependsOn' => 'app://self/camel-pair{?leftId,rightId,page}'],
+        ], $warnings);
+        $this->assertSame('The tag is app://self/article?[articleId], but writes purge app://self/article?[id].', $messages['app://self/mismatch']);
+        $this->assertSame('The tag is app://self/origin?[id], but writes purge app://self/origin?[articleId], app://self/origin?[].', $messages['app://self/origin-by-id']);
+        $this->assertStringContainsString('make it #[Cacheable]', $messages['app://self/unpurged']);
+        $this->assertStringContainsString('the writes that refresh it are onPost() whose arguments', $messages['app://self/post-only-list']);
+        $this->assertStringContainsString('the writes that refresh it are onPost() whose arguments', $messages['app://self/donut-refresh-post-list'], 'its onPost() already has #[RefreshCache]');
+        $this->assertStringContainsString('it is cached, but has no write method', $messages['app://self/no-write-list']);
+        $this->assertStringContainsString('the writes that refresh it are onPost() whose arguments', $messages['app://self/plain-refresh-list'], 'uncached, refreshed only by a #[RefreshCache] onPost() that is skipped');
+        $this->assertStringContainsString('only when the write method carries #[RefreshCache] or #[CacheableResponse]', $messages['app://self/method-cached-list'], '#[CacheableResponse] on onGet() caches it, and binds no write');
     }
 
     public function testUsageErrors(): void

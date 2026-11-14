@@ -159,20 +159,8 @@ USAGE;
     private function run(string $command, array $options, array $args, $stdout, $stderr): int
     {
         $cwd = (string) getcwd();
-        $scanner = new ResourceScanner();
-        $graph = (new GraphBuilder(new UriConverter(), $cwd))->build($scanner->scan($options['dir']));
-        $skipped = count($scanner->skipped);
-        foreach ($scanner->skipped as $file) {
-            fwrite($stderr, json_encode(['skipped' => $file['file'], 'reason' => $file['reason']], self::JSON) . "\n");
-        }
-
-        if ($graph['nodes'] === []) {
-            throw new RuntimeException(sprintf(
-                'No resource classes found in %s%s',
-                $options['dir'],
-                $skipped === 0 ? '' : " ({$skipped} file(s) skipped)",
-            ));
-        }
+        $graph = self::graph($options['dir'], $cwd, $stderr);
+        $skipped = $graph['skipped'];
 
         if ($command === 'dot') {
             fwrite($stdout, (new DotRenderer())($graph['nodes']));
@@ -188,7 +176,7 @@ USAGE;
             'dump' => [
                 [
                     'meta' => [
-                        'version' => 3,
+                        'version' => 4,
                         'namespaces' => $graph['namespaces'],
                         'dir' => $options['dir'],
                         'counts' => self::counts($graph['nodes'], $skipped),
@@ -206,6 +194,40 @@ USAGE;
         }
 
         return $command === 'observe' && self::carries($lines, $options['failOn']) ? 3 : 0;
+    }
+
+    /**
+     * Scans the directory, writing the skipped files and the #[DependsOn] warnings on stderr
+     *
+     * @param resource $stderr
+     *
+     * @return array{namespaces: array<string, string>, nodes: non-empty-list<Node>, skipped: int}
+     *
+     * @throws RuntimeException when no resource class is found.
+     */
+    private static function graph(string $dir, string $cwd, $stderr): array
+    {
+        $scanner = new ResourceScanner();
+        $classes = $scanner->scan($dir);
+        $graph = (new GraphBuilder(new UriConverter(), $cwd))->build($classes);
+        $skipped = count($scanner->skipped);
+        foreach ($scanner->skipped as $file) {
+            fwrite($stderr, json_encode(['skipped' => $file['file'], 'reason' => $file['reason']], self::JSON) . "\n");
+        }
+
+        if ($graph['nodes'] === []) {
+            throw new RuntimeException(sprintf(
+                'No resource classes found in %s%s',
+                $dir,
+                $skipped === 0 ? '' : " ({$skipped} file(s) skipped)",
+            ));
+        }
+
+        foreach ((new DependsOnWarnings())($classes, $graph['nodes']) as $warning) {
+            fwrite($stderr, json_encode($warning, self::JSON) . "\n");
+        }
+
+        return $graph + ['skipped' => $skipped];
     }
 
     /**
@@ -296,7 +318,7 @@ USAGE;
         $edges = 0;
         foreach ($nodes as $node) {
             foreach ($node['methods'] ?? [] as $method) {
-                $edges += count($method['embed'] ?? []) + count($method['refresh'] ?? []) + count($method['purge'] ?? []);
+                $edges += count($method['embed'] ?? []) + count($method['dependsOn'] ?? []) + count($method['refresh'] ?? []) + count($method['purge'] ?? []);
             }
         }
 
