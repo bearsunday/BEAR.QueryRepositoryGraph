@@ -6,6 +6,7 @@ namespace BEAR\QueryRepositoryGraph;
 
 use JsonSchema\Validator;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 use function array_column;
 use function array_key_first;
@@ -15,15 +16,20 @@ use function count;
 use function dirname;
 use function explode;
 use function fopen;
+use function getcwd;
 use function is_array;
 use function json_decode;
 use function json_encode;
+use function preg_match;
 use function rewind;
+use function shell_exec;
+use function sort;
 use function stream_get_contents;
 use function substr_count;
 use function trim;
 
 use const JSON_THROW_ON_ERROR;
+use const PHP_BINARY;
 
 /**
  * The declared cache graph of the fake application, as `qr-graph` prints it
@@ -259,6 +265,66 @@ class QrGraphTest extends TestCase
         $this->assertSame("app://self/digest\n", $out, 'a resource that reaches nothing is its name alone, as the graph spells it');
 
         [$code] = self::qrGraph(['dump', '--json', $dir]);
+        $this->assertSame(2, $code);
+    }
+
+    public function testHtmlLightsWhatImpactReachesAndWhatReachesIt(): void
+    {
+        $dir = 'tests/Fixture/DependsOn/Resource';
+        $nodes = (new GraphBuilder(new UriConverter(), (string) getcwd()))->build((new ResourceScanner())->scan($dir))['nodes'];
+        $html = (new HtmlRenderer([PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo "<?xml version=\"1.0\"?>\n<svg></svg>\n";']))($nodes, (new DotRenderer())($nodes));
+        $this->assertStringContainsString("<main>\n<svg></svg>", $html, 'the SVG goes in without its XML prolog');
+        $glow = self::glow($html);
+
+        [, $out] = self::qrGraph(['impact', 'app://self/article', '--json', '--dir=' . $dir]);
+        $reached = array_column(array_slice(self::jsonl($out), 1), 'uri');
+        sort($reached);
+        $this->assertSame($reached, self::at($glow, 'app://self/article', 'reaches', 'nodes'));
+        $this->assertContains(['app://self/entries', 'page://self/index'], (array) self::at($glow, 'app://self/article', 'reaches', 'edges'));
+        $this->assertSame(['app://self/writer'], self::at($glow, 'app://self/article', 'reachedBy', 'nodes'));
+        $this->assertSame(['app://self/archive', 'app://self/article', 'app://self/entries', 'app://self/middle', 'page://self/index'], self::at($glow, 'app://self/writer', 'reaches', 'nodes'), 'a write method reaches what it purges');
+        $this->assertSame(
+            [['app://self/article', 'app://self/entries'], ['app://self/author', 'app://self/entries'], ['app://self/entries', 'page://self/index'], ['app://self/writer', 'app://self/article']],
+            self::at($glow, 'page://self/index', 'reachedBy', 'edges'),
+            'reachedBy lights each start\'s path to it',
+        );
+    }
+
+    public function testHtmlTellsAWriteFromWhatAResourceShows(): void
+    {
+        $nodes = (new GraphBuilder(new UriConverter(), (string) getcwd()))->build((new ResourceScanner())->scan('tests/Fixture/Html/Resource'))['nodes'];
+        $html = (new HtmlRenderer([PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo "<svg></svg>";']))($nodes, (new DotRenderer())($nodes));
+        $glow = self::glow($html);
+
+        $this->assertSame(['app://self/admin', 'app://self/banner'], self::at($glow, 'page://self/front', 'reachedBy', 'nodes'));
+        $this->assertSame(['app://self/admin'], self::at($glow, 'page://self/front', 'writers'), 'banner also reaches front as an embed, so it is not a writer only');
+        $this->assertSame([['app://self/admin', 'app://self/banner'], ['app://self/banner', 'page://self/front']], self::at($glow, 'page://self/front', 'reachedBy', 'writes'), 'the purge and the refresh on the way are writes');
+    }
+
+    public function testHtmlDrawsTheDotPicture(): void
+    {
+        if ((string) shell_exec('command -v dot') === '') {
+            $this->markTestSkipped('Graphviz dot is not installed');
+        }
+
+        [$code, $out, $err] = self::qrGraph(['html', '--cached', '--dir=tests/Fixture/DependsOn/Resource']);
+        $this->assertSame(0, $code, $err);
+        $this->assertStringContainsString('<title>app://self/article</title>', $out);
+        $this->assertSame(['app://self/writer'], self::at(self::glow($out), 'app://self/article', 'reachedBy', 'nodes'));
+    }
+
+    public function testHtmlFailsWhenDotCannotDraw(): void
+    {
+        foreach ([['/no/such/dot'], [PHP_BINARY, '-r', 'stream_get_contents(STDIN); fwrite(STDERR, "syntax error"); exit(1);'], [PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo "no picture";']] as $dot) {
+            try {
+                (new HtmlRenderer($dot))([], 'digraph qr {}');
+                $this->fail('no exception');
+            } catch (RuntimeException $e) {
+                $this->assertStringContainsString($dot[0], $e->getMessage());
+            }
+        }
+
+        [$code] = self::qrGraph(['html', 'app://self/article', '--dir=tests/Fixture/DependsOn/Resource']);
         $this->assertSame(2, $code);
     }
 
@@ -623,6 +689,23 @@ class QrGraphTest extends TestCase
         }
 
         return $value;
+    }
+
+    /**
+     * The JSON the page embeds for its script
+     *
+     * @return array<string, mixed>
+     */
+    private static function glow(string $html): array
+    {
+        if (preg_match('#<script type="application/json" id="qr-graph-data">(.*?)</script>#s', $html, $match) !== 1) {
+            self::fail('no embedded JSON');
+        }
+
+        /** @var array<string, mixed> $glow */
+        $glow = json_decode($match[1], true, 512, JSON_THROW_ON_ERROR);
+
+        return $glow;
     }
 
     private function assertSchema(string $schema, string $line): void

@@ -19,6 +19,7 @@ Run it from the application root.
 ```bash
 vendor/bin/qr-graph dot | dot -Tsvg > graph.svg                   # the picture
 vendor/bin/qr-graph dot --cached | dot -Tsvg > cached.svg         # the cached part and the writes that reach it
+vendor/bin/qr-graph html > graph.html                             # click a resource: what invalidates it, and what it invalidates
 vendor/bin/qr-graph impact app://self/article                     # what invalidating a resource reaches
 vendor/bin/qr-graph impact app://self/admin/article --method=onPut  # what a write reaches
 vendor/bin/qr-graph snapshot > qr-graph.snapshot.txt              # every impact, kept in the repository
@@ -44,6 +45,9 @@ JSONL, described by the [JSON Schemas](docs/schemas/graph). Each command and its
 
 Arrows point the way they are declared. Invalidation travels against them: refreshing `article` reaches `ranking`
 through its grey arrow, and `index` through the black one.
+
+`qr-graph html > graph.html` writes the same picture as one page. Click a resource: what invalidates it glows green,
+the writes that invalidate it blue, and what it invalidates orange, each side counted; the rest dims.
 
 ## What a change reaches
 

@@ -18,13 +18,14 @@ is declared but never observed, or observed but never declared.
 vendor/bin/qr-graph dump [--dir=src/Resource]
 vendor/bin/qr-graph impact <uri> [--method=onPut] [--allow-unknown] [--json] [--dir=src/Resource]
 vendor/bin/qr-graph dot [--cached] [--dir=src/Resource]
+vendor/bin/qr-graph html [--cached] [--dir=src/Resource]
 vendor/bin/qr-graph snapshot [--dir=src/Resource]
 vendor/bin/qr-graph observe <session.json|dir>... [--dir=src/Resource] [--fail-on=<verdict>[,<verdict>...]]
 ```
 
 Run it from the application root: classes are loaded through the application's autoloader, and a file
 the autoloader does not resolve is reported on stderr as skipped, never included. `dump`, `impact --json` and
-`observe` print JSONL on stdout; `impact`, `dot` and `snapshot` print text.
+`observe` print JSONL on stdout; `impact`, `dot` and `snapshot` print text, `html` an HTML page.
 Skipped files, warnings and tool errors are JSONL on stderr; usage errors are plain text, as are PHP's own notices.
 Exit code: 0 ok, 1 error, 2 usage, 3 `observe --fail-on` matched a printed line. An unknown option or an extra
 argument is a usage error (2); `--method` naming a method that refreshes and purges nothing is an error (1).
@@ -102,6 +103,21 @@ column; with `--cached`, an arrow from a resource left out does not count.
 `--cached` draws the cached resources (what `impact` reports as `cached: true`) and what they embed, directly or
 not; then what those name in `#[DependsOn]`, often a resource nothing caches whose URI writes purge, and the
 resources whose writes refresh or purge any of these. Other arrows are kept when both of their ends are drawn.
+
+### `html` — the picture to click
+
+```bash
+vendor/bin/qr-graph html > graph.html
+```
+
+One self-contained page, readable from `file://`: the `dot` picture (`--cached` as for `dot`) rendered by Graphviz,
+whose `dot` must be on the `PATH` (without it, an error, 1). Click a resource: what invalidates it glows green, what
+it invalidates glows orange, and a write that invalidates it (a resource reaching it only through its own refresh or
+purge) glows blue with its arrows; the rest dims. The legend counts each side among the resources drawn, so
+`--cached` counts fewer. A resource can also be focused and selected with Enter; clicking it again, clicking
+elsewhere or Escape clears. The page embeds, as JSON, what `impact` computes from each resource and from each of its
+write methods that refresh or purge, with which starts reach it only through a write: one shortest path per reached
+resource, as `impact` shows it; a resource's refresh of itself is not lit.
 
 ### `snapshot` — impacts to review as a diff
 

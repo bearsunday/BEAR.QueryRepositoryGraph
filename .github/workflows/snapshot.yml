@@ -20,3 +20,20 @@ jobs:
       - run: composer install --no-interaction --no-progress --prefer-dist
 
       - run: php bin/qr-graph snapshot --dir=demo/src/Resource | diff -u demo/qr-graph.snapshot.txt -
+
+  html:
+    name: html with Graphviz
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          coverage: none
+
+      - run: sudo apt-get update && sudo apt-get install -y graphviz
+
+      - run: composer install --no-interaction --no-progress --prefer-dist
+
+      - run: vendor/bin/phpunit --filter 'testHtml' --fail-on-skipped
