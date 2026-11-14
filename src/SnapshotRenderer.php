@@ -28,11 +28,16 @@ final class SnapshotRenderer
     public function __invoke(array $nodes): string
     {
         $impact = new Impact($nodes);
+        $caches = [];
+        foreach ($nodes as $node) {
+            $caches[$node['uri']] = Impact::caches($node);
+        }
+
         $blocks = [];
         foreach ($nodes as $node) {
             $reached = array_filter($impact($node['uri']), static fn (array $line): bool => $line['depth'] > 0);
             if ($reached !== []) {
-                $blocks[] = $node['uri'] . "\n" . self::tree($reached, $node['uri'], 0);
+                $blocks[] = $node['uri'] . "\n" . self::tree($reached, $node['uri'], 0, $caches);
             }
         }
 
@@ -41,7 +46,7 @@ final class SnapshotRenderer
             ksort($methods);
             foreach ($methods as $name => $method) {
                 if (self::declaresInvalidation($method)) {
-                    $blocks[] = $node['uri'] . ' ' . $name . "\n" . self::tree($impact($node['uri'], $name), $node['uri'], 0);
+                    $blocks[] = $node['uri'] . ' ' . $name . "\n" . self::tree($impact($node['uri'], $name), $node['uri'], 0, $caches);
                 }
             }
         }
@@ -52,25 +57,23 @@ final class SnapshotRenderer
     /**
      * The lines one step deeper whose `by` is the parent: a write's own resource can be both its root and one of its lines
      *
-     * @param array<ImpactLine> $lines
+     * @param array<ImpactLine>           $lines
+     * @param array<string, list<string>> $caches the cache attributes of each resource, as Impact::caches() names them
      */
-    private static function tree(array $lines, string $parent, int $depth): string
+    private static function tree(array $lines, string $parent, int $depth, array $caches): string
     {
         $children = array_filter($lines, static fn (array $line): bool => $line['by'] === $parent && $line['depth'] === $depth + 1);
         usort($children, static fn (array $left, array $right): int => $left['uri'] <=> $right['uri']);
         $text = '';
         foreach ($children as $line) {
-            $notes = [$line['via']];
-            if ($line['cached']) {
-                $notes[] = 'cached';
-            }
+            $notes = [$line['via'], ...$caches[$line['uri']] ?? []];
 
             if (isset($line['role'])) {
                 $notes[] = $line['role'];
             }
 
             $text .= sprintf("%s%s (%s)\n", str_repeat('  ', $depth + 1), $line['uri'], implode(', ', $notes));
-            $text .= self::tree($lines, $line['uri'], $depth + 1);
+            $text .= self::tree($lines, $line['uri'], $depth + 1, $caches);
         }
 
         return $text;

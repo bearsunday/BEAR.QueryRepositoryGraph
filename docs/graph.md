@@ -111,7 +111,8 @@ vendor/bin/qr-graph snapshot | diff -u qr-graph.snapshot.txt -   # in CI: what a
 
 Every `impact` as an indented tree: a block per resource whose invalidation reaches another, then a block
 (`<uri> <method>`) per write method declaring `#[Refresh]` or `#[Purge]`. A line reads
-`<uri> (<via>[, cached][, <role>])` under the URI named by its `by`; children are sorted by URI and no line
+`<uri> (<via>[, <cache>][, <role>])` under the URI named by its `by`, the cache named as `dot` names it
+(`cacheable, ttl: medium`, `cacheable response`); children are sorted by URI and no line
 carries a `source`, so moving code does not change the text. Like `by`, the tree shows each reached URI once,
 by one shortest path. The text is for diffs, not parsing: regenerate it after upgrading `qr-graph`.
 
