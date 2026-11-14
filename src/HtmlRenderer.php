@@ -220,9 +220,9 @@ final class HtmlRenderer
 </head>
 <body>
 <header>
+  <span class="key"><span class="swatch reached-by"></span>invalidates this <span class="count" id="count-reached-by"></span></span>
   <span class="key"><span class="swatch selected"></span>clicked</span>
-  <span class="key"><span class="swatch reached-by"></span>makes it stale <span class="count" id="count-reached-by"></span></span>
-  <span class="key"><span class="swatch reaches"></span>goes stale when it changes <span class="count" id="count-reaches"></span></span>
+  <span class="key"><span class="swatch reaches"></span>invalidated by this <span class="count" id="count-reaches"></span></span>
   <span id="status">Click a resource; click it again or the background to clear.</span>
 </header>
 <main>
