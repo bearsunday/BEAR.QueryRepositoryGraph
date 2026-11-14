@@ -4,18 +4,15 @@ declare(strict_types=1);
 
 namespace BEAR\QueryRepositoryGraph;
 
-use BEAR\QueryRepositoryGraph\Cli;
-use BEAR\QueryRepositoryGraph\UriConverter;
 use JsonSchema\Validator;
 use PHPUnit\Framework\TestCase;
 
 use function array_column;
 use function array_key_first;
-use function array_key_last;
 use function array_map;
 use function array_slice;
+use function count;
 use function dirname;
-use function end;
 use function explode;
 use function fopen;
 use function is_array;
@@ -46,15 +43,15 @@ class QrGraphTest extends TestCase
         [$code, $out, $err] = self::qrGraph(['dump', '--dir=' . self::DIR]);
         self::assertSame(0, $code, $err);
         $lines = self::jsonl($out);
-        $meta = $lines[0]['meta'];
-        self::assertSame(3, $meta['version']);
-        self::assertSame(['self' => 'FakeVendor\HelloWorld'], $meta['namespaces']);
-        self::assertSame(self::DIR, $meta['dir']);
-        self::assertSame(['nodes' => 115, 'edges' => 123, 'skipped' => 2], $meta['counts']);
-        self::assertSame('qr-graph', $meta['tool']['name']);
-        self::assertIsString($meta['tool']['version']);
-        self::assertNotSame('', $meta['tool']['version']);
-        self::assertNull($meta['autoload']);
+        $meta = $lines[0];
+        self::assertSame(3, self::at($meta, 'meta', 'version'));
+        self::assertSame(['self' => 'FakeVendor\HelloWorld'], self::at($meta, 'meta', 'namespaces'));
+        self::assertSame(self::DIR, self::at($meta, 'meta', 'dir'));
+        self::assertSame(['nodes' => 115, 'edges' => 123, 'skipped' => 2], self::at($meta, 'meta', 'counts'));
+        self::assertSame('qr-graph', self::at($meta, 'meta', 'tool', 'name'));
+        self::assertIsString(self::at($meta, 'meta', 'tool', 'version'));
+        self::assertNotSame('', self::at($meta, 'meta', 'tool', 'version'));
+        self::assertNull(self::at($meta, 'meta', 'autoload'));
         foreach ($lines as $i => $line) {
             if ($i === 0) {
                 continue;
@@ -205,11 +202,11 @@ class QrGraphTest extends TestCase
         [$code, $out, $err] = self::qrGraph(['dump', '--dir=tests/Fixture/Resource']);
         $this->assertSame(0, $code, $err);
         $lines = self::jsonl($out);
-        $meta = $lines[0]['meta'];
-        $this->assertSame(3, $meta['version']);
-        $this->assertSame(['self' => 'BEAR\QueryRepositoryGraph\Fixture'], $meta['namespaces']);
-        $this->assertSame('tests/Fixture/Resource', $meta['dir']);
-        $this->assertSame(['nodes' => 2, 'edges' => 0, 'skipped' => 0], $meta['counts']);
+        $meta = $lines[0];
+        $this->assertSame(3, self::at($meta, 'meta', 'version'));
+        $this->assertSame(['self' => 'BEAR\QueryRepositoryGraph\Fixture'], self::at($meta, 'meta', 'namespaces'));
+        $this->assertSame('tests/Fixture/Resource', self::at($meta, 'meta', 'dir'));
+        $this->assertSame(['nodes' => 2, 'edges' => 0, 'skipped' => 0], self::at($meta, 'meta', 'counts'));
         $this->assertSame(['page://self/braced', 'page://self/inline-attr'], array_column(array_slice($lines, 1), 'uri'));
         $this->assertSame([], self::jsonl($err), 'a declaration PHP can see is never dropped silently');
     }
@@ -242,12 +239,8 @@ class QrGraphTest extends TestCase
         [$code, $out, $err] = self::qrGraph(['dump', '--dir=tests/Fixture/Orphan/Resource']);
         $this->assertSame(1, $code);
         $this->assertSame('', $out);
-        $lines = self::jsonl($err);
-        $this->assertSame('skipped', array_key_first($lines[0]));
-        $this->assertStringContainsString(
-            'No resource classes found in tests/Fixture/Orphan/Resource',
-            $lines[array_key_last($lines)]['error'],
-        );
+        $this->assertSame('skipped', array_key_first(self::jsonl($err)[0]));
+        $this->assertStringContainsString('No resource classes found in tests/Fixture/Orphan/Resource', $this->lastError($err));
     }
 
     public function testUnknownTargetUriIsAnErrorUnlessAllowed(): void
@@ -255,8 +248,7 @@ class QrGraphTest extends TestCase
         [$code, $out, $err] = self::qrGraph(['impact', 'app://self/typo', '--dir=' . self::DIR]);
         $this->assertSame(1, $code);
         $this->assertSame('', $out);
-        $lines = self::jsonl($err);
-        $this->assertStringContainsString('No resource app://self/typo', $lines[array_key_last($lines)]['error']);
+        $this->assertStringContainsString('No resource app://self/typo', $this->lastError($err));
 
         [$code, $out] = self::qrGraph(['impact', 'app://self/typo', '--allow-unknown', '--dir=' . self::DIR]);
         $this->assertSame(0, $code);
@@ -280,10 +272,13 @@ class QrGraphTest extends TestCase
         $lines = self::jsonl($out);
         $nodes = [];
         foreach (array_slice($lines, 1) as $line) {
-            $nodes[$line['uri']] = $line;
+            /** @var string $uri */
+            $uri = $line['uri'];
+            $nodes[$uri] = $line;
         }
 
-        $embeds = $nodes['page://self/donut-page']['methods']['onGet']['embed'];
+        $embeds = self::at($nodes['page://self/donut-page'], 'methods', 'onGet', 'embed');
+        $this->assertIsArray($embeds);
         $this->assertSame(['read' => 'referenced', 'ignored' => 'unreferenced'], array_column($embeds, 'usage', 'rel'));
 
         [$code, $out] = self::qrGraph(['impact', 'app://self/ignored-child', '--dir=tests/Fixture/Usage/Resource']);
@@ -425,11 +420,22 @@ class QrGraphTest extends TestCase
         $verdicts = [];
         foreach (explode("\n", trim($out)) as $line) {
             $this->assertSchema('observe.json', $line);
+            /** @var array{page: string, child: string, verdict: string} $decoded */
             $decoded = json_decode($line, true, 512, JSON_THROW_ON_ERROR);
             $verdicts[] = [$decoded['page'], $decoded['child'], $decoded['verdict']];
         }
 
         return $verdicts;
+    }
+
+    /** The message of the error line Cli writes last on stderr */
+    private function lastError(string $err): string
+    {
+        $lines = self::jsonl($err);
+        $error = self::at($lines[count($lines) - 1] ?? [], 'error');
+        $this->assertIsString($error);
+
+        return $error;
     }
 
     /**

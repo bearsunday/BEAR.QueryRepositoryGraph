@@ -79,7 +79,7 @@ final class ResourceScanner
         }
 
         ksort($classes);
-        usort($this->skipped, static fn (array $a, array $b): int => $a['file'] <=> $b['file']);
+        usort($this->skipped, static fn (array $left, array $right): int => $left['file'] <=> $right['file']);
 
         return $classes;
     }
@@ -87,7 +87,7 @@ final class ResourceScanner
     /**
      * Classes declared in the file, in declaration order
      *
-     * @return list<class-string>
+     * @return list<string>
      */
     private function classNames(string $path): array
     {
@@ -100,46 +100,74 @@ final class ResourceScanner
             }
 
             if ($token[0] === T_NAMESPACE) {
-                $namespace = '';
-                for ($j = $i + 1; isset($tokens[$j]); $j++) {
-                    $next = $tokens[$j];
-                    if ($next === ';' || $next === '{') {
-                        break;
-                    }
-
-                    if (! is_array($next) || in_array($next[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
-                        continue;
-                    }
-
-                    $namespace .= $next[1];
-                }
-
+                $namespace = self::namespaceAfter($tokens, $i);
                 continue;
             }
 
-            if ($token[0] !== T_CLASS) {
-                continue;
+            $class = $token[0] === T_CLASS ? self::classDeclaredAt($tokens, $i) : null;
+            if ($class !== null) {
+                $classes[] = ($namespace === '' ? '' : $namespace . '\\') . $class;
             }
-
-            // Foo::class is not a declaration.
-            for ($p = $i - 1; isset($tokens[$p]) && is_array($tokens[$p]) && $tokens[$p][0] === T_WHITESPACE; $p--);
-            if (isset($tokens[$p]) && is_array($tokens[$p]) && $tokens[$p][0] === T_DOUBLE_COLON) {
-                continue;
-            }
-
-            // An anonymous class has no name token.
-            $j = $i + 1;
-            while (isset($tokens[$j]) && is_array($tokens[$j]) && $tokens[$j][0] === T_WHITESPACE) {
-                $j++;
-            }
-
-            if (! isset($tokens[$j]) || ! is_array($tokens[$j]) || $tokens[$j][0] !== T_STRING) {
-                continue;
-            }
-
-            $classes[] = ($namespace === '' ? '' : $namespace . '\\') . $tokens[$j][1];
         }
 
         return $classes;
+    }
+
+    /** @param list<string|array{0: int, 1: string, 2: int}> $tokens */
+    private static function namespaceAfter(array $tokens, int $i): string
+    {
+        $namespace = '';
+        for ($j = $i + 1; isset($tokens[$j]); $j++) {
+            $next = $tokens[$j];
+            if ($next === ';' || $next === '{') {
+                break;
+            }
+
+            if (! is_array($next) || in_array($next[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
+                continue;
+            }
+
+            $namespace .= $next[1];
+        }
+
+        return $namespace;
+    }
+
+    /**
+     * @param list<string|array{0: int, 1: string, 2: int}> $tokens
+     *
+     * @return string|null the name the `class` token at `$i` declares; null for `Foo::class` and an anonymous class
+     */
+    private static function classDeclaredAt(array $tokens, int $i): string|null
+    {
+        $previous = self::adjacent($tokens, $i, -1);
+        if ($previous !== null && $previous[0] === T_DOUBLE_COLON) {
+            return null;
+        }
+
+        $next = self::adjacent($tokens, $i, 1);
+
+        return $next !== null && $next[0] === T_STRING ? $next[1] : null;
+    }
+
+    /**
+     * @param list<string|array{0: int, 1: string, 2: int}> $tokens
+     *
+     * @return array{0: int, 1: string, 2: int}|null the nearest token past whitespace in the direction of `$step`; null at a single-character token or the end
+     */
+    private static function adjacent(array $tokens, int $i, int $step): array|null
+    {
+        for ($j = $i + $step; isset($tokens[$j]); $j += $step) {
+            $token = $tokens[$j];
+            if (! is_array($token)) {
+                return null;
+            }
+
+            if ($token[0] !== T_WHITESPACE) {
+                return $token;
+            }
+        }
+
+        return null;
     }
 }

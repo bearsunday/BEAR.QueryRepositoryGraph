@@ -95,27 +95,16 @@ final class Observe
      *
      * @return list<ObserveLine>
      *
-     * @throws RuntimeException when no session is found or one is not JSON
+     * @throws RuntimeException when no session is found or one is not JSON.
      */
     public function __invoke(array $paths): array
     {
-        $this->observed = $this->written = [];
-        $this->sawSkipped = false;
-        foreach ($this->sessions($paths) as $file) {
-            try {
-                $session = json_decode((string) file_get_contents($file), true, 512, JSON_THROW_ON_ERROR);
-            } catch (JsonException $e) {
-                throw new RuntimeException(sprintf('%s: not JSON (%s)', $file, $e->getMessage()), 0, $e);
-            }
-
-            $this->collect($session);
-        }
-
+        $this->read($paths);
         foreach ($this->written as $pageKey => $page) {
             $this->observed[$pageKey] ??= ['uri' => $page, 'children' => []];
         }
 
-        uasort($this->observed, static fn (array $a, array $b): int => $a['uri'] <=> $b['uri']);
+        uasort($this->observed, static fn (array $left, array $right): int => $left['uri'] <=> $right['uri']);
         $lines = [];
         foreach ($this->observed as $pageKey => $page) {
             $children = [];
@@ -141,6 +130,28 @@ final class Observe
     }
 
     /**
+     * @param list<string> $paths
+     *
+     * @throws RuntimeException when no session is found or one is not JSON.
+     */
+    private function read(array $paths): void
+    {
+        $this->observed = [];
+        $this->written = [];
+        $this->sawSkipped = false;
+        foreach ($this->sessions($paths) as $file) {
+            try {
+                /** @var mixed $session */
+                $session = json_decode((string) file_get_contents($file), true, 512, JSON_THROW_ON_ERROR);
+            } catch (JsonException $e) {
+                throw new RuntimeException(sprintf('%s: not JSON (%s)', $file, $e->getMessage()), 0, $e);
+            }
+
+            $this->collect($session);
+        }
+    }
+
+    /**
      * Directories contribute their timestamped sessions; `latest.json` repeats one of them
      *
      * @param list<string> $paths
@@ -160,7 +171,8 @@ final class Observe
                 throw new RuntimeException(sprintf('No such session file or directory: %s', $path));
             }
 
-            foreach (glob($path . '/*.json') ?: [] as $file) {
+            $found = glob($path . '/*.json');
+            foreach ($found === false ? [] : $found as $file) {
                 if (basename($file) !== LogFileWriter::LATEST) {
                     $files[] = $file;
                 }
@@ -182,12 +194,15 @@ final class Observe
             return;
         }
 
+        /** @var mixed $type */
         $type = $node['type'] ?? null;
+        /** @var mixed $context */
         $context = $node['context'] ?? null;
         if (is_array($context)) {
             $this->record($type, $context);
         }
 
+        /** @var mixed $value */
         foreach ($node as $value) {
             $this->collect($value);
         }
@@ -196,22 +211,27 @@ final class Observe
     /** @param array<array-key, mixed> $context */
     private function record(mixed $type, array $context): void
     {
-        if ($type === 'put_donut' && is_string($context['uri'] ?? null)) {
-            $page = self::withoutQuery($context['uri']);
+        /** @var mixed $uri */
+        $uri = $context['uri'] ?? null;
+        if ($type === 'put_donut' && is_string($uri)) {
+            $page = self::withoutQuery($uri);
             $this->written[$this->converter->key($page)] = $page;
 
             return;
         }
 
-        if (! in_array($type, self::EVENTS, true) || ! is_string($context['parent'] ?? null) || ! is_string($context['child'] ?? null)) {
+        $parent = $context['parent'] ?? null;
+        $child = $context['child'] ?? null;
+        if (! in_array($type, self::EVENTS, true) || ! is_string($parent) || ! is_string($child)) {
             return;
         }
 
         $this->sawSkipped = $this->sawSkipped || $type === 'dependency_skipped';
+        /** @var mixed $reason */
         $reason = $context['reason'] ?? null;
         $observation = $type === 'dependency_skipped' && is_string($reason) && isset(self::VERDICTS[$reason]) ? $reason : $type;
-        $page = self::withoutQuery($context['parent']);
-        $child = self::withoutQuery($context['child']);
+        $page = self::withoutQuery($parent);
+        $child = self::withoutQuery($child);
         $pageKey = $this->converter->key($page);
         $childKey = $this->converter->key($child);
         $this->observed[$pageKey] ??= ['uri' => $page, 'children' => []];

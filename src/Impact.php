@@ -14,7 +14,7 @@ use function str_starts_with;
  * The shape is `docs/schemas/graph/impact.json`.
  *
  * @psalm-import-type Node from GraphBuilder
- * @psalm-type ImpactLine = array{uri: string, via: string, by: string|null, depth: int, cached: bool, source: string|null}
+ * @psalm-type ImpactLine = array{uri: string, via: string, by: string|null, depth: int, cached: bool, source: string|null, role?: string}
  */
 final class Impact
 {
@@ -55,19 +55,7 @@ final class Impact
         $key = $this->converter->key($uri);
         $start = $this->nodes[$key]['uri'] ?? $uri;
         /** @var list<array{uri: string, via: string, by: string|null, depth: int, role?: string}> $queue */
-        $queue = [];
-        if ($method === null) {
-            $queue[] = ['uri' => $start, 'via' => 'target', 'by' => null, 'depth' => 0];
-        } else {
-            $declared = $this->nodes[$key]['methods'][$method] ?? [];
-            foreach ($declared['refresh'] ?? [] as $target) {
-                $queue[] = ['uri' => $this->canonical($target['uri']), 'via' => 'refresh', 'by' => $start, 'depth' => 1];
-            }
-
-            foreach ($declared['purge'] ?? [] as $target) {
-                $queue[] = ['uri' => $this->canonical($target['uri']), 'via' => 'purge', 'by' => $start, 'depth' => 1];
-            }
-        }
+        $queue = $method === null ? [['uri' => $start, 'via' => 'target', 'by' => null, 'depth' => 0]] : $this->writeTargets($key, $start, $method);
 
         $lines = [];
         $seen = [];
@@ -112,10 +100,26 @@ final class Impact
         return $lines;
     }
 
+    /** @return list<array{uri: string, via: string, by: string, depth: int}> what the write method refreshes, then what it purges */
+    private function writeTargets(string $key, string $start, string $method): array
+    {
+        $declared = $this->nodes[$key]['methods'][$method] ?? [];
+        $targets = [];
+        foreach ($declared['refresh'] ?? [] as $target) {
+            $targets[] = ['uri' => $this->canonical($target['uri']), 'via' => 'refresh', 'by' => $start, 'depth' => 1];
+        }
+
+        foreach ($declared['purge'] ?? [] as $target) {
+            $targets[] = ['uri' => $this->canonical($target['uri']), 'via' => 'purge', 'by' => $start, 'depth' => 1];
+        }
+
+        return $targets;
+    }
+
     /**
      * Whether the embedding page stores this child as a material or renders it as a hole
      *
-     * @param Node $node
+     * @param Node                                                               $node
      * @param array{rel: string, uri: string, template?: string, usage?: string} $embed
      */
     private function role(array $node, array $embed): string|null
