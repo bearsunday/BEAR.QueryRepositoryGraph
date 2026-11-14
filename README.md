@@ -41,7 +41,7 @@ JSONL, described by the [JSON Schemas](docs/schemas/graph). Each command and its
 | black arrow | embeds, labelled with the relation (`index` embeds `ranking` as `ranking`) |
 | grey arrow | `#[DependsOn]` |
 | bold arrow | a write that refreshes (`onPut refresh`) |
-| dashed arrow | a write that purges (`onPost purge`) |
+| red arrow | a write that purges (`onPost purge`) |
 
 Arrows point the way they are declared. Invalidation travels against them: refreshing `article` reaches `ranking`
 through its grey arrow, and `index` through the black one.
