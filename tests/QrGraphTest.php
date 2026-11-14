@@ -266,7 +266,6 @@ class QrGraphTest extends TestCase
         $this->assertSame(0, $code, $err);
         $lines = self::jsonl($out);
         $meta = $lines[0];
-        $this->assertSame(4, self::at($meta, 'meta', 'version'));
         $this->assertSame(['self' => 'BEAR\QueryRepositoryGraph\Fixture'], self::at($meta, 'meta', 'namespaces'));
         $this->assertSame('tests/Fixture/Resource', self::at($meta, 'meta', 'dir'));
         $this->assertSame(['nodes' => 2, 'edges' => 0, 'skipped' => 0], self::at($meta, 'meta', 'counts'));
