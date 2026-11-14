@@ -103,6 +103,11 @@ final class Impact
                 $queue[] = $parent;
             }
 
+            // A declaration carries the exact tag of the URI it names, so it reaches its resource only when that URI itself is purged.
+            if ($next['via'] === 'embed' || $next['via'] === 'dependsOn') {
+                continue;
+            }
+
             foreach ($this->dependedBy[$key] ?? [] as $dependent) {
                 $queue[] = ['uri' => $dependent, 'via' => 'dependsOn', 'by' => $uri, 'depth' => $next['depth'] + 1];
             }

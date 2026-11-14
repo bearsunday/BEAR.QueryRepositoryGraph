@@ -14,4 +14,9 @@ class Index extends ResourceObject
     {
         return $this;
     }
+
+    public function onDelete(string $id): static
+    {
+        return $this;
+    }
 }

@@ -64,6 +64,8 @@ Local questions are a `grep` away: `grep '"uri":"app://self/user/profile"'` find
 Multi-hop questions ("if this changes, what goes stale?") are answered by `impact`, not by repeated `grep`.
 It walks the embed and `dependsOn` edges breadth-first, one line per reached URI by its shortest path
 ([schema](schemas/graph/impact.json)). With `--method`, it starts from what that write method refreshes and purges.
+A `dependsOn` edge is followed only from a URI that is purged itself (the one asked about, or a `refresh`/`purge`
+target): a declaration carries the exact tag of the URI it names, not the tags that URI carries.
 
 ```json
 {"uri":"page://self/dep/diamond-top","via":"embed","by":"page://self/dep/diamond-left","depth":2,"cached":true,"source":"src/Resource/Page/Dep/DiamondTop.php:10"}
@@ -73,8 +75,8 @@ It walks the embed and `dependsOn` edges breadth-first, one line per reached URI
 are case-insensitive and `-` is ignored, so `galleryArticle` finds `gallery-article`. `cached: false` on the
 resource named by `by` means the cache does not carry that dependency: tags reach a parent only from a child
 that already ran, carrying an ETag (the non-donut path), or an ETag or Surrogate-Key (donut materials; holes
-have not run yet). A resource reached via `dependsOn` is the exception: its declared tags reach the page that
-embeds it whether it is cached or not. An `embed` line from a donut-cached page also carries `role`: `material`
+have not run yet). A resource reached via `dependsOn` is the exception: once it has run inside the page (not as a
+hole), its declared tags reach the page whether it is cached or not. An `embed` line from a donut-cached page also carries `role`: `material`
 when the page reads that child, `hole` when it is left to render per request.
 
 ### `dot` — a picture
@@ -132,24 +134,32 @@ instead of aging silently behind the page's TTL.
 ## Warnings on `#[DependsOn]`
 
 Every command checks the `onGet()` declarations and writes one line on stderr per finding, without changing
-the exit code. Each is a declaration that stores without an error and then serves stale:
+the exit code. None of them fails at run time:
 
 ```json
-{"warning":"depends-on-query-mismatch","resource":"app://self/entries","source":"src/Resource/App/Entries.php:14","dependsOn":"app://self/article{?articleId}","message":"The URI carries [articleId], but a write to app://self/article purges the tag of its required onGet() parameters [id]."}
+{"warning":"depends-on-tag-mismatch","resource":"app://self/entries","source":"src/Resource/App/Entries.php:14","dependsOn":"app://self/article{?articleId}","message":"The tag is app://self/article?[articleId], but writes purge app://self/article?[id]."}
 ```
 
-- `depends-on-unknown-resource` — no scanned resource serves the URI.
-- `depends-on-never-invalidated` — no write method refreshes or purges the URI, implicitly or by `#[Refresh]`/`#[Purge]`.
-- `depends-on-query-mismatch` — the query keys the template expands to are not the required `onGet()` parameters
-  of the named resource (as written, or all in snake_case), which is the tag its own write purges. A `#[Purge]`
-  written with the same keys as the declaration does match; the check does not look at it.
-- `depends-on-bound-parameter` — a template variable is a parameter bound by `#[ResourceParam]` or a web-context
-  attribute. The value is not in the request query, so the URI expands from the parameter's default.
-- `depends-on-default-body` — the class gives `$body` a default. Rendered as a hole it reads as already run, so
-  the page takes its declarations and is purged whole instead of recomposed.
+These leave the resource stale after a write to what it depends on:
 
-A template variable that is not an `onGet()` parameter, and a declaration on the resource class, are not
-reported: they fail the first GET with `DependsOnNotExpandable`.
+- `depends-on-unknown-resource` — no scanned resource serves the URI.
+- `depends-on-never-invalidated` — no write refreshes or purges the URI. A write method refreshes its own resource
+  implicitly, but an `onPost()` does so only when its arguments carry every required `onGet()` one: otherwise the
+  refresh is skipped for lack of them.
+- `depends-on-tag-mismatch` — the tag the declaration expands to (its path as written, and its query keys) is none
+  of the tags a write purges. A write refreshes its own resource under the required `onGet()` parameters, as named
+  or all in snake_case, at the resource's own path; a `#[Refresh]`/`#[Purge]` purges the URI it names.
+- `depends-on-bound-parameter` — a template variable is a parameter bound by a web-context attribute
+  (`#[QueryParam]`, `#[CookieParam]`, ...). The value is not in the request query, so the URI expands from the
+  parameter's default.
+
+This one purges more than it should:
+
+- `depends-on-default-body` — the class gives `$body` a default. Rendered as a hole it reads as already run, so
+  the page takes its declarations and is purged whole on every write to them, instead of recomposed.
+
+A template variable that is not an `onGet()` parameter, one bound by `#[ResourceParam]`, and a declaration on the
+resource class are not reported: they fail the first GET with `DependsOnNotExpandable`.
 
 ## What the graph does not know
 

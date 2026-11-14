@@ -114,9 +114,9 @@
                     }
                 },
                 "dependsOn": {
-                    "description": "#[DependsOn] on onGet(): the stored resource carries the tag of the URI the template expands to, so a write that invalidates `uri` invalidates this resource and every page that embeds it.",
+                    "description": "#[DependsOn] on onGet(): the stored resource carries the exact tag of the URI the template expands to. A write that purges that same tag (same path as written, same query keys) invalidates this resource, and every page that took this resource's tags when it embedded it.",
                     "type": "array",
-                    "items": {"$ref": "#/$defs/target"}
+                    "items": {"$ref": "#/$defs/dependency"}
                 },
                 "refresh": {
                     "description": "Purged then re-generated after a successful write: #[Refresh], and the resource's own onGet (`implicit`).",
@@ -128,6 +128,15 @@
                     "type": "array",
                     "items": {"$ref": "#/$defs/target"}
                 }
+            },
+            "additionalProperties": false
+        },
+        "dependency": {
+            "type": "object",
+            "required": ["uri"],
+            "properties": {
+                "uri": {"$ref": "#/$defs/uri"},
+                "template": {"$ref": "#/$defs/template"}
             },
             "additionalProperties": false
         },

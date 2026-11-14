@@ -293,7 +293,7 @@ class QrGraphTest extends TestCase
         $this->assertSame('material', $lines[1]['role']);
     }
 
-    public function testDependsOnIsAnEdgeImpactFollowsToTheEmbeddingPage(): void
+    public function testDependsOnIsAnEdgeImpactFollowsOnlyFromAUriItselfPurged(): void
     {
         $dir = '--dir=tests/Fixture/DependsOn/Resource';
         [$code, $out, $err] = self::qrGraph(['dump', $dir]);
@@ -310,11 +310,18 @@ class QrGraphTest extends TestCase
             $nodes[$uri] = $decoded;
         }
 
-        $this->assertSame(5, self::at($nodes['meta'], 'meta', 'counts', 'edges'));
+        $this->assertSame(13, self::at($nodes['meta'], 'meta', 'counts', 'edges'));
         $this->assertSame([
             ['uri' => 'app://self/article', 'template' => 'app://self/article?id={articleId}'],
             ['uri' => 'app://self/author', 'template' => 'app://self/author{?author_id}'],
         ], self::at($nodes['app://self/entries'], 'methods', 'onGet', 'dependsOn'));
+        // Archive overrides Entries::onGet(): its own declaration first, then the overridden one's, each template kept
+        $this->assertSame([
+            ['uri' => 'app://self/author', 'template' => 'app://self/author?author_id={author_id}'],
+            ['uri' => 'app://self/article', 'template' => 'app://self/article?id={articleId}'],
+            ['uri' => 'app://self/author', 'template' => 'app://self/author{?author_id}'],
+        ], self::at($nodes['app://self/archive'], 'methods', 'onGet', 'dependsOn'));
+        $this->assertNull(self::at($nodes['app://self/entries'], 'methods', 'onPost'), 'only onGet() declarations are read');
 
         [$code, $out] = self::qrGraph(['impact', 'app://self/article', '--method=onPut', $dir]);
         $this->assertSame(0, $code);
@@ -322,11 +329,17 @@ class QrGraphTest extends TestCase
             $this->assertSchema('impact.json', $line);
         }
 
+        // Outer depends on middle and Digest on index: neither URI is purged itself, so neither is reached.
         $this->assertSame([
-            ['app://self/article', 'refresh', 'app://self/article'],
-            ['app://self/entries', 'dependsOn', 'app://self/article'],
-            ['page://self/index', 'embed', 'app://self/entries'],
-        ], array_map(static fn (array $line): array => [$line['uri'], $line['via'], $line['by']], self::jsonl($out)));
+            ['app://self/article', 'refresh', 'app://self/article', 1],
+            ['app://self/archive', 'dependsOn', 'app://self/article', 2],
+            ['app://self/entries', 'dependsOn', 'app://self/article', 2],
+            ['app://self/middle', 'dependsOn', 'app://self/article', 2],
+            ['page://self/index', 'embed', 'app://self/entries', 3],
+        ], array_map(static fn (array $line): array => [$line['uri'], $line['via'], $line['by'], $line['depth']], self::jsonl($out)));
+
+        [, $out] = self::qrGraph(['impact', 'app://self/middle', $dir]);
+        $this->assertSame(['app://self/middle', 'app://self/outer'], array_column(self::jsonl($out), 'uri'), 'a URI asked about is purged itself');
 
         [, $out] = self::qrGraph(['dot', $dir]);
         $this->assertStringContainsString('"app://self/entries" -> "app://self/article" [label="dependsOn", style=dotted];', $out);
@@ -337,20 +350,34 @@ class QrGraphTest extends TestCase
         [$code, , $err] = self::qrGraph(['dump', '--dir=tests/Fixture/DependsOnWarn/Resource']);
         $this->assertSame(0, $code, $err);
         $warnings = [];
+        $messages = [];
         foreach (self::jsonl($err) as $line) {
             $this->assertIsString($line['message'] ?? null);
+            $this->assertIsString($line['resource'] ?? null);
+            $messages[$line['resource']] = $line['message'];
             unset($line['message'], $line['source']);
             $warnings[] = $line;
         }
 
-        // PairList names Pair's keys in another order: a match.
+        // Not warned: PairList, CamelKeys and SnakeKeys name the keys in another order or in snake_case, PurgedList
+        // matches a #[Purge], PostCarriesList's target has an onPost() that carries the key, and ResourceBound fails
+        // its first GET instead.
         $this->assertSame([
+            ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/alias', 'dependsOn' => 'app://self/camelPair{?leftId,rightId}'],
             ['warning' => 'depends-on-bound-parameter', 'resource' => 'app://self/bound', 'dependsOn' => 'app://self/article{?id}'],
             ['warning' => 'depends-on-default-body', 'resource' => 'app://self/default-body'],
-            ['warning' => 'depends-on-query-mismatch', 'resource' => 'app://self/mismatch', 'dependsOn' => 'app://self/article{?articleId}'],
+            ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/mismatch', 'dependsOn' => 'app://self/article{?articleId}'],
+            ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/mixed-keys', 'dependsOn' => 'app://self/camel-pair{?leftId,right_id}'],
+            ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/origin-by-id', 'dependsOn' => 'app://self/origin{?id}'],
+            ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/post-only-list', 'dependsOn' => 'app://self/post-only{?id}'],
             ['warning' => 'depends-on-unknown-resource', 'resource' => 'app://self/typo', 'dependsOn' => 'app://self/artcle{?id}'],
             ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/unpurged', 'dependsOn' => 'app://self/plain{?id}'],
+            ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/with-page', 'dependsOn' => 'app://self/camel-pair{?leftId,rightId,page}'],
         ], $warnings);
+        $this->assertSame('The tag is app://self/article?[articleId], but writes purge app://self/article?[id].', $messages['app://self/mismatch']);
+        $this->assertSame('The tag is app://self/origin?[id], but writes purge app://self/origin?[articleId], app://self/origin?[].', $messages['app://self/origin-by-id']);
+        $this->assertStringContainsString('make it #[Cacheable]', $messages['app://self/unpurged']);
+        $this->assertStringContainsString('it is cached, but none of its write methods refreshes it', $messages['app://self/post-only-list']);
     }
 
     public function testUsageErrors(): void

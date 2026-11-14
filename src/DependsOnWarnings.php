@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace BEAR\QueryRepositoryGraph;
 
-use BEAR\Resource\Annotation\RequestParamInterface;
 use BEAR\Resource\ResourceObject;
+use Ray\WebContextParam\Annotation\AbstractWebContextParam;
 use ReflectionAttribute;
 use ReflectionClass;
+use ReflectionMethod;
 
 use function array_keys;
 use function array_map;
+use function array_unique;
 use function explode;
 use function implode;
 use function in_array;
@@ -21,6 +23,7 @@ use function preg_match_all;
 use function preg_replace;
 use function sort;
 use function sprintf;
+use function str_starts_with;
 use function strtolower;
 use function strval;
 use function uri_template;
@@ -28,13 +31,14 @@ use function uri_template;
 use const PHP_URL_QUERY;
 
 /**
- * #[DependsOn] declarations that add a tag no write invalidates
+ * #[DependsOn] declarations whose tag no write purges, or that purge more than they should
  *
- * Each of these stores without an error at run time and then serves stale, so only the declarations show it.
+ * None of these fails at run time, so only the declarations show it.
  *
  * @psalm-import-type Node from GraphBuilder
  * @psalm-import-type Target from GraphBuilder
  * @psalm-type Warning = array{warning: string, resource: string, source: string, dependsOn?: string, message: string}
+ * @psalm-type Purged = array{uri: string, keys: list<string>}
  */
 final class DependsOnWarnings
 {
@@ -61,15 +65,12 @@ final class DependsOnWarnings
             }
         }
 
-        $invalidated = [];
+        $byKey = [];
         foreach ($nodes as $node) {
-            foreach ($node['methods'] ?? [] as $method) {
-                foreach ([...$method['refresh'] ?? [], ...$method['purge'] ?? []] as $target) {
-                    $invalidated[$this->converter->key($target['uri'])] = true;
-                }
-            }
+            $byKey[$this->converter->key($node['uri'])] = $node;
         }
 
+        $purged = $this->purged($nodes, $refs);
         $warnings = [];
         foreach ($nodes as $node) {
             $onGet = $node['methods']['onGet'] ?? null;
@@ -80,78 +81,126 @@ final class DependsOnWarnings
 
             $where = ['resource' => $node['uri'], 'source' => $onGet['source']];
             if ($ref->getDefaultProperties()['body'] !== null) {
-                $warnings[] = ['warning' => 'depends-on-default-body'] + $where + ['message' => 'The class gives $body a default, so as a hole it reads as already run: the page takes its declarations and is purged whole instead of recomposed. Set the body in onGet().'];
+                $warnings[] = ['warning' => 'depends-on-default-body'] + $where + ['message' => 'The class gives $body a default, so as a hole it reads as already run: the page takes its declarations and is purged whole on every write to them, instead of recomposed. Set the body in onGet().'];
             }
 
             foreach ($onGet['dependsOn'] as $target) {
-                $warnings = [...$warnings, ...$this->ofTarget($where, $target, $this->boundParameters($ref), $refs, $invalidated)];
+                $warnings = [...$warnings, ...$this->ofTarget($where, $target, $this->webContextParameters($ref), $refs, $byKey, $purged)];
             }
         }
 
         return $warnings;
+    }
+
+    /**
+     * The tags each write purges, by the key of the resource they belong to
+     *
+     * A write refreshes its own resource with the required onGet() arguments, under their names or all in snake_case;
+     * an onPost() does so only when its own arguments carry them. A #[Refresh]/#[Purge] purges the URI it names.
+     *
+     * @param list<Node>                                     $nodes
+     * @param array<string, ReflectionClass<ResourceObject>> $refs
+     *
+     * @return array<string, list<Purged>>
+     */
+    private function purged(array $nodes, array $refs): array
+    {
+        $purged = [];
+        foreach ($nodes as $node) {
+            $nodeKey = $this->converter->key($node['uri']);
+            foreach ($node['methods'] ?? [] as $name => $method) {
+                foreach ([...$method['refresh'] ?? [], ...$method['purge'] ?? []] as $target) {
+                    if (! isset($target['implicit'])) {
+                        $purged[$this->converter->key($target['uri'])][] = ['uri' => $target['uri'], 'keys' => $this->queryKeys($target['template'] ?? $target['uri'])];
+                        continue;
+                    }
+
+                    $required = isset($refs[$nodeKey]) ? $this->requiredParameters($refs[$nodeKey]) : null;
+                    if ($required === null || (str_starts_with($name, 'onPost') && ! $this->carries($refs[$nodeKey]->getMethod($name), $required))) {
+                        continue;
+                    }
+
+                    $purged[$nodeKey][] = ['uri' => $node['uri'], 'keys' => $required];
+                    $purged[$nodeKey][] = ['uri' => $node['uri'], 'keys' => $this->snake($required)];
+                }
+            }
+        }
+
+        return $purged;
     }
 
     /**
      * @param array{resource: string, source: string}        $where
      * @param Target                                         $target
-     * @param list<string>                                   $bound       onGet() parameters bound by an attribute
-     * @param array<string, ReflectionClass<ResourceObject>> $refs        keyed by UriConverter::key()
-     * @param array<string, true>                            $invalidated URI keys some write refreshes or purges
+     * @param list<string>                                   $bound  onGet() parameters a web-context attribute binds
+     * @param array<string, ReflectionClass<ResourceObject>> $refs   keyed by UriConverter::key()
+     * @param array<string, Node>                            $byKey
+     * @param array<string, list<Purged>>                    $purged
      *
      * @return list<Warning>
      */
-    private function ofTarget(array $where, array $target, array $bound, array $refs, array $invalidated): array
+    private function ofTarget(array $where, array $target, array $bound, array $refs, array $byKey, array $purged): array
     {
         $template = $target['template'] ?? $target['uri'];
         $where += ['dependsOn' => $template];
-        $variables = $this->variables($template);
         $warnings = [];
         foreach ($bound as $name) {
-            if (in_array($name, $variables, true)) {
+            if (in_array($name, $this->variables($template), true)) {
                 $warnings[] = ['warning' => 'depends-on-bound-parameter'] + $where + [
-                    'message' => sprintf("'%s' is bound by a parameter attribute, not by the request query: the URI expands from its default, or fails without one.", $name),
+                    'message' => sprintf("'%s' is bound by a web-context attribute, not by the request query: the URI expands from the parameter's default, so a write to the bound value never purges it.", $name),
                 ];
             }
         }
 
         $targetKey = $this->converter->key($target['uri']);
-        $targetRef = $refs[$targetKey] ?? null;
-        if ($targetRef === null) {
+        if (! isset($refs[$targetKey])) {
             return [...$warnings, ['warning' => 'depends-on-unknown-resource'] + $where + ['message' => sprintf('No resource %s.', $target['uri'])]];
         }
 
-        if (! isset($invalidated[$targetKey])) {
-            $warnings[] = ['warning' => 'depends-on-never-invalidated'] + $where + [
-                'message' => sprintf('No write refreshes or purges %s: make it #[Cacheable], or name it in a #[Purge]/#[Refresh].', $target['uri']),
+        $candidates = $purged[$targetKey] ?? [];
+        if ($candidates === []) {
+            $cached = isset($byKey[$targetKey]['cacheable']) || isset($byKey[$targetKey]['cacheableResponse']) || isset($byKey[$targetKey]['donutCache']);
+
+            return [
+                ...$warnings,
+                ['warning' => 'depends-on-never-invalidated'] + $where +
+                [
+                    'message' => sprintf(
+                        $cached
+                        ? 'No write refreshes or purges %s: it is cached, but none of its write methods refreshes it (an onPost() does only when its arguments carry the required onGet() ones); add one that does, or name it in a #[Purge]/#[Refresh].'
+                        : 'No write refreshes or purges %s: make it #[Cacheable], or name it in a #[Purge]/#[Refresh].',
+                        $target['uri'],
+                    ),
+                ],
             ];
         }
 
-        $required = $this->requiredParameters($targetRef);
-        $keys = $this->queryKeys($template, $variables);
-        if ($required !== null && $keys !== $required && $keys !== $this->snake($required)) {
-            $warnings[] = ['warning' => 'depends-on-query-mismatch'] + $where + [
-                'message' => sprintf(
-                    'The URI carries [%s], but a write to %s purges the tag of its required onGet() parameters [%s].',
-                    implode(', ', $keys),
-                    $target['uri'],
-                    implode(', ', $required),
-                ),
+        $declared = ['uri' => $target['uri'], 'keys' => $this->queryKeys($template)];
+        if (! in_array($declared, $candidates, true)) {
+            $warnings[] = ['warning' => 'depends-on-tag-mismatch'] + $where + [
+                'message' => sprintf('The tag is %s, but writes purge %s.', self::describe($declared), implode(', ', array_unique(array_map(self::describe(...), $candidates)))),
             ];
         }
 
         return $warnings;
     }
 
+    /** @param Purged $tag */
+    private static function describe(array $tag): string
+    {
+        return sprintf('%s?[%s]', $tag['uri'], implode(', ', $tag['keys']));
+    }
+
     /**
      * @param ReflectionClass<ResourceObject> $ref
      *
-     * @return list<string> onGet() parameters a #[ResourceParam] or web-context attribute binds
+     * @return list<string> onGet() parameters a web-context attribute (#[QueryParam], #[CookieParam], ...) binds
      */
-    private function boundParameters(ReflectionClass $ref): array
+    private function webContextParameters(ReflectionClass $ref): array
     {
         $bound = [];
         foreach ($ref->getMethod('onGet')->getParameters() as $parameter) {
-            if ($parameter->getAttributes(RequestParamInterface::class, ReflectionAttribute::IS_INSTANCEOF) !== []) {
+            if ($parameter->getAttributes(AbstractWebContextParam::class, ReflectionAttribute::IS_INSTANCEOF) !== []) {
                 $bound[] = $parameter->name;
             }
         }
@@ -183,14 +232,27 @@ final class DependsOnWarnings
     }
 
     /**
-     * @param list<string> $variables
+     * Whether the write's arguments, and so its query, carry each required onGet() argument
      *
-     * @return list<string> sorted query keys of the URI the template expands to
+     * @param list<string> $required
      */
-    private function queryKeys(string $template, array $variables): array
+    private function carries(ReflectionMethod $write, array $required): bool
+    {
+        $arguments = $this->snake(array_map(static fn ($parameter): string => $parameter->name, $write->getParameters()));
+        foreach ($this->snake($required) as $name) {
+            if (! in_array($name, $arguments, true)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** @return list<string> sorted query keys of the URI the template expands to */
+    private function queryKeys(string $template): array
     {
         $values = [];
-        foreach ($variables as $variable) {
+        foreach ($this->variables($template) as $variable) {
             $values[$variable] = 'x';
         }
 
@@ -216,11 +278,11 @@ final class DependsOnWarnings
     }
 
     /**
-     * The spelling BEAR.Resource also accepts for a parameter, which a write purges as well
+     * The spelling BEAR.Resource also accepts for a parameter
      *
      * @param list<string> $names
      *
-     * @return list<string>
+     * @return list<string> sorted
      */
     private function snake(array $names): array
     {
