@@ -37,8 +37,8 @@ application autoloader looks like. `impact` on a URI no scanned resource serves 
 The first line is `meta`; every other line is a resource and the declarations it makes
 ([schema](schemas/graph/dump.json)). Edges start at the resource that declares them, so a line has no `from`.
 `meta` also records `counts` (nodes, edges, skipped), `tool.name` and the installed package version, and the
-`autoload` file relative to the working directory. `meta.version` is 4: v2 added those fields, v3 the embed `usage`,
-v4 `dependsOn`.
+`autoload` file relative to the working directory. `meta.version` is 5: v2 added those fields, v3 the embed `usage`,
+v4 `dependsOn`, v5 dropped the source-text `dynamic` hints.
 
 ```json
 {"uri":"app://self/user","source":"src/Resource/App/User.php:17","cacheable":{"expiry":"never","expirySecond":0,"expiryAt":"","update":false,"type":"value"},"methods":{"onPut":{"source":"src/Resource/App/User.php:52","refresh":[{"uri":"app://self/user","implicit":"Cacheable"},{"uri":"app://self/user/profile","template":"app://self/user/profile?user_id={id}"}],"purge":[{"uri":"app://self/user/friend","template":"app://self/user/friend?user_id={id}"}]}}}
@@ -52,8 +52,6 @@ v4 `dependsOn`.
   A declaration on a row class is not in the graph: see [what the graph does not know](#what-the-graph-does-not-know).
 - `implicit` marks a refresh nobody wrote: a write method of a `#[Cacheable]`/`#[CacheableResponse]` class,
   or one marked `#[RefreshCache]`, refreshes its own resource.
-- `dynamic` lists source-text hints that the declarations may not be the whole story (the class source
-  mentions a `surrogate-key`, or `ResourceInject`/`ResourceInterface` for a `resource-request` outside `#[Embed]`). A hint is a reason to read the source; its absence proves nothing.
 - `usage` on an embed of a donut-cached page (`#[CacheableResponse]`/`#[DonutCache]` on the class) says whether the method
   reads the relation: `referenced` children become materials (their tags are stored with the page), and
   `unreferenced` ones are holes, rendered per request. This is a source-text heuristic; an indirect read
@@ -204,7 +202,7 @@ resource class are not reported: they fail the first GET with `DependsOnNotExpan
 
 ## What the graph does not know
 
-- Surrogate keys set in code and resources requested in code (flagged as `dynamic`, not resolved).
+- Surrogate keys set in code and resources requested in code.
 - `#[DependsOn]` on a row class: the class lives outside the scanned directory, and which resource's body holds
   its instances is known only at run time.
 - Which instance a template reaches: `{id}` is filled from the request at run time. That is the log's part.

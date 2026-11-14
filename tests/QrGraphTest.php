@@ -45,7 +45,7 @@ class QrGraphTest extends TestCase
         self::assertSame(0, $code, $err);
         $lines = self::jsonl($out);
         $meta = $lines[0];
-        self::assertSame(4, self::at($meta, 'meta', 'version'));
+        self::assertSame(5, self::at($meta, 'meta', 'version'));
         self::assertSame(['self' => 'FakeVendor\HelloWorld'], self::at($meta, 'meta', 'namespaces'));
         self::assertSame(self::DIR, self::at($meta, 'meta', 'dir'));
         self::assertSame(['nodes' => 115, 'edges' => 123, 'skipped' => 2], self::at($meta, 'meta', 'counts'));
@@ -136,13 +136,11 @@ class QrGraphTest extends TestCase
         );
     }
 
-    public function testDonutPageAndDynamicSurrogateKey(): void
+    public function testDonutPageRefreshesItselfImplicitly(): void
     {
         $node = self::$nodes['page://self/html/blog-posting'];
         $this->assertTrue($node['cacheableResponse']);
-        $this->assertSame(['surrogate-key'], $node['dynamic']);
         $this->assertSame([['uri' => 'page://self/html/blog-posting', 'implicit' => 'CacheableResponse']], self::at($node, 'methods', 'onDelete', 'refresh'));
-        $this->assertArrayNotHasKey('dynamic', self::$nodes['page://self/dep/level-one']);
     }
 
     public function testHttpCacheIsTheDeclaredCacheControl(): void

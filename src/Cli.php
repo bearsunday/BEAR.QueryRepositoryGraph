@@ -201,7 +201,7 @@ USAGE;
             'dump' => [
                 [
                     'meta' => [
-                        'version' => 4,
+                        'version' => 5,
                         'namespaces' => $graph['namespaces'],
                         'dir' => $options['dir'],
                         'counts' => self::counts($graph['nodes'], $skipped),

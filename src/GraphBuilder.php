@@ -40,7 +40,7 @@ use function usort;
  *
  * @psalm-type Target = array{uri: string, template?: string, implicit?: string}
  * @psalm-type Method = array{source: string, cacheableResponse?: true, embed?: list<array{rel: string, usage?: string, uri: string, template?: string}>, dependsOn?: list<array{uri: string, template?: string}>, refresh?: list<Target>, purge?: list<Target>}
- * @psalm-type Node = array{uri: string, source: string, cacheable?: array{expiry: string, expirySecond: int, expiryAt: string, update: bool, type: string}, donutCache?: true, cacheableResponse?: true, httpCache?: string, methods?: array<string, Method>, dynamic?: list<string>}
+ * @psalm-type Node = array{uri: string, source: string, cacheable?: array{expiry: string, expirySecond: int, expiryAt: string, update: bool, type: string}, donutCache?: true, cacheableResponse?: true, httpCache?: string, methods?: array<string, Method>}
  * @SuppressWarnings("PHPMD.CouplingBetweenObjects")
  */
 final class GraphBuilder
@@ -138,11 +138,6 @@ final class GraphBuilder
 
         if ($methods !== []) {
             $node['methods'] = $methods;
-        }
-
-        $dynamic = $this->dynamic((string) $ref->getFileName());
-        if ($dynamic !== []) {
-            $node['dynamic'] = $dynamic;
         }
 
         return $node;
@@ -292,28 +287,6 @@ final class GraphBuilder
         }
 
         return null;
-    }
-
-    /**
-     * Source-text hints that the declarations may not tell the whole story
-     *
-     * A hint is a reason to read the code; its absence proves nothing.
-     *
-     * @return list<string>
-     */
-    private function dynamic(string $file): array
-    {
-        $code = (string) file_get_contents($file);
-        $hints = [];
-        if (preg_match('/SURROGATE_KEY|surrogate-key/i', $code)) {
-            $hints[] = 'surrogate-key';
-        }
-
-        if (preg_match('/\b(?:ResourceInject|ResourceInterface)\b/', $code)) {
-            $hints[] = 'resource-request';
-        }
-
-        return $hints;
     }
 
     private function source(string $file, int $line): string
