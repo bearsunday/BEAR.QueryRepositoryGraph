@@ -80,8 +80,9 @@ final class DependsOnWarnings
             }
 
             $where = ['resource' => $node['uri'], 'source' => $onGet['source']];
-            if ($ref->getDefaultProperties()['body'] !== null) {
-                $warnings[] = ['warning' => 'depends-on-default-body'] + $where + ['message' => 'The class gives $body a default, so as a hole it reads as already run: the page takes its declarations and is purged whole on every write to them, instead of recomposed. Set the body in onGet().'];
+            $defaults = $ref->getDefaultProperties();
+            if ($defaults['body'] !== null || $defaults['code'] !== 200) {
+                $warnings[] = ['warning' => 'depends-on-default-body'] + $where + ['message' => 'The class gives $body a default, or $code one other than 200, so as a hole it reads as already run: the page takes its declarations and is purged whole on every write to them, instead of recomposed. Set them in onGet().'];
             }
 
             foreach ($onGet['dependsOn'] as $target) {
@@ -179,7 +180,7 @@ final class DependsOnWarnings
     }
 
     /**
-     * What makes a write refresh the resource, by the cache it declares
+     * What makes a write refresh the resource, by the cache it declares and the writes it has
      *
      * @param Node|null $node
      */
@@ -189,8 +190,16 @@ final class DependsOnWarnings
             return 'make it #[Cacheable], or name it in a #[Purge]/#[Refresh].';
         }
 
+        foreach ($node['methods'] ?? [] as $method) {
+            foreach ($method['refresh'] ?? [] as $target) {
+                if (isset($target['implicit'])) {
+                    return 'the writes that refresh it are onPost() whose arguments, the keys of a POST query that uses their names, do not carry the required onGet() ones; add them, or name it in a #[Purge]/#[Refresh].';
+                }
+            }
+        }
+
         if (isset($node['cacheable']) || isset($node['cacheableResponse'])) {
-            return 'it is cached, but none of its write methods refreshes it (an onPost() does only when its arguments, the keys of a POST query that uses their names, carry the required onGet() ones); add one that does, or name it in a #[Purge]/#[Refresh].';
+            return 'it is cached, but has no write method; add one, or name it in a #[Purge]/#[Refresh].';
         }
 
         return 'it is cached by #[DonutCache] or by #[CacheableResponse] on onGet(), so a write refreshes it only when the write method carries #[RefreshCache] or #[CacheableResponse]; add one, or name it in a #[Purge]/#[Refresh].';

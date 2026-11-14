@@ -310,7 +310,7 @@ class QrGraphTest extends TestCase
             $nodes[$uri] = $decoded;
         }
 
-        $this->assertSame(13, self::at($nodes['meta'], 'meta', 'counts', 'edges'));
+        $this->assertSame(14, self::at($nodes['meta'], 'meta', 'counts', 'edges'));
         $this->assertSame([
             ['uri' => 'app://self/article', 'template' => 'app://self/article?id={articleId}'],
             ['uri' => 'app://self/author', 'template' => 'app://self/author{?author_id}'],
@@ -332,6 +332,16 @@ class QrGraphTest extends TestCase
         // Outer depends on middle and Digest on index: neither URI is purged itself, so neither is reached.
         $this->assertSame([
             ['app://self/article', 'refresh', 'app://self/article', 1],
+            ['app://self/archive', 'dependsOn', 'app://self/article', 2],
+            ['app://self/entries', 'dependsOn', 'app://self/article', 2],
+            ['app://self/middle', 'dependsOn', 'app://self/article', 2],
+            ['page://self/index', 'embed', 'app://self/entries', 3],
+        ], array_map(static fn (array $line): array => [$line['uri'], $line['via'], $line['by'], $line['depth']], self::jsonl($out)));
+
+        // A #[Purge] on another resource: `by` names the purged URI from the second hop on.
+        [, $out] = self::qrGraph(['impact', 'app://self/writer', '--method=onPost', $dir]);
+        $this->assertSame([
+            ['app://self/article', 'purge', 'app://self/writer', 1],
             ['app://self/archive', 'dependsOn', 'app://self/article', 2],
             ['app://self/entries', 'dependsOn', 'app://self/article', 2],
             ['app://self/middle', 'dependsOn', 'app://self/article', 2],
@@ -366,9 +376,12 @@ class QrGraphTest extends TestCase
             ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/alias', 'dependsOn' => 'app://self/camelPair{?leftId,rightId}'],
             ['warning' => 'depends-on-bound-parameter', 'resource' => 'app://self/bound', 'dependsOn' => 'app://self/article{?id}'],
             ['warning' => 'depends-on-default-body', 'resource' => 'app://self/default-body'],
+            ['warning' => 'depends-on-default-body', 'resource' => 'app://self/default-code'],
+            ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/donut-refresh-post-list', 'dependsOn' => 'app://self/donut-refresh-post{?id}'],
             ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/method-cached-list', 'dependsOn' => 'app://self/method-cached{?id}'],
             ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/mismatch', 'dependsOn' => 'app://self/article{?articleId}'],
             ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/mixed-keys', 'dependsOn' => 'app://self/camel-pair{?leftId,right_id}'],
+            ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/no-write-list', 'dependsOn' => 'app://self/no-write{?id}'],
             ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/origin-by-id', 'dependsOn' => 'app://self/origin{?id}'],
             ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/post-camel-list', 'dependsOn' => 'app://self/post-camel?article_id={id}'],
             ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/post-only-list', 'dependsOn' => 'app://self/post-only{?id}'],
@@ -379,7 +392,9 @@ class QrGraphTest extends TestCase
         $this->assertSame('The tag is app://self/article?[articleId], but writes purge app://self/article?[id].', $messages['app://self/mismatch']);
         $this->assertSame('The tag is app://self/origin?[id], but writes purge app://self/origin?[articleId], app://self/origin?[].', $messages['app://self/origin-by-id']);
         $this->assertStringContainsString('make it #[Cacheable]', $messages['app://self/unpurged']);
-        $this->assertStringContainsString('it is cached, but none of its write methods refreshes it', $messages['app://self/post-only-list']);
+        $this->assertStringContainsString('the writes that refresh it are onPost() whose arguments', $messages['app://self/post-only-list']);
+        $this->assertStringContainsString('the writes that refresh it are onPost() whose arguments', $messages['app://self/donut-refresh-post-list'], 'its onPost() already has #[RefreshCache]');
+        $this->assertStringContainsString('it is cached, but has no write method', $messages['app://self/no-write-list']);
         $this->assertStringContainsString('only when the write method carries #[RefreshCache] or #[CacheableResponse]', $messages['app://self/method-cached-list'], '#[CacheableResponse] on onGet() caches it, and binds no write');
     }
 

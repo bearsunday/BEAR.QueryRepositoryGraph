@@ -36,10 +36,10 @@ use function usort;
  * Builds the declared cache graph: one record per resource, its declarations nested under it
  *
  * Every edge starts at the resource that declares it, so a record carries no `from`.
- * The record's shape is `docs/schemas/graph/resource.json`.
+ * The record's shape is the `resource` definition in `docs/schemas/graph/dump.json`.
  *
  * @psalm-type Target = array{uri: string, template?: string, implicit?: string}
- * @psalm-type Method = array{source: string, cacheableResponse?: true, embed?: list<array{rel: string, usage?: string, uri: string, template?: string}>, dependsOn?: list<Target>, refresh?: list<Target>, purge?: list<Target>}
+ * @psalm-type Method = array{source: string, cacheableResponse?: true, embed?: list<array{rel: string, usage?: string, uri: string, template?: string}>, dependsOn?: list<array{uri: string, template?: string}>, refresh?: list<Target>, purge?: list<Target>}
  * @psalm-type Node = array{uri: string, source: string, cacheable?: array{expiry: string, expirySecond: int, expiryAt: string, update: bool, type: string}, donutCache?: true, cacheableResponse?: true, httpCache?: string, methods?: array<string, Method>, dynamic?: list<string>}
  * @SuppressWarnings("PHPMD.CouplingBetweenObjects")
  */
@@ -203,7 +203,7 @@ final class GraphBuilder
     /**
      * #[DependsOn] is read on onGet() only, together with each onGet() it overrides
      *
-     * @return list<Target>
+     * @return list<array{uri: string, template?: string}>
      */
     private function dependsOn(ReflectionMethod $method, string $uri): array
     {

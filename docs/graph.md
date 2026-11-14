@@ -159,8 +159,9 @@ These leave the resource stale after a write to what it depends on:
 
 This one purges more than it should:
 
-- `depends-on-default-body` — the class gives `$body` a default. Rendered as a hole it reads as already run, so
-  the page takes its declarations and is purged whole on every write to them, instead of recomposed.
+- `depends-on-default-body` — the class gives `$body` a default, or `$code` one other than 200. Rendered as a hole
+  it reads as already run, so the page takes its declarations and is purged whole on every write to them, instead
+  of recomposed.
 
 A template variable that is not an `onGet()` parameter, one bound by `#[ResourceParam]`, and a declaration on the
 resource class are not reported: they fail the first GET with `DependsOnNotExpandable`.
