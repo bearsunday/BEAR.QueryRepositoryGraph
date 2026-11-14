@@ -1,0 +1,85 @@
+app://self/article
+  app://self/articles (dependsOn, cacheable, ttl: never)
+    app://self/category (embed, cacheable, ttl: never)
+      page://self/category (embed, cacheable, ttl: medium)
+    app://self/tag (embed, cacheable, ttl: never)
+    page://self/author (embed, cacheable, ttl: medium)
+    page://self/index (embed, cacheable, ttl: short)
+  app://self/ranking (dependsOn, cacheable, ttl: short)
+  app://self/related (dependsOn, cacheable, ttl: never)
+  app://self/tags (dependsOn, cacheable, ttl: never)
+    page://self/tag (embed, cacheable, ttl: medium)
+  page://self/article (embed, cacheable, ttl: medium)
+
+app://self/articles
+  app://self/category (embed, cacheable, ttl: never)
+    page://self/category (embed, cacheable, ttl: medium)
+  app://self/tag (embed, cacheable, ttl: never)
+    page://self/tag (embed, cacheable, ttl: medium)
+  page://self/author (embed, cacheable, ttl: medium)
+  page://self/index (embed, cacheable, ttl: short)
+
+app://self/author
+  app://self/article (embed, cacheable, ttl: never)
+    page://self/article (embed, cacheable, ttl: medium)
+  page://self/author (embed, cacheable, ttl: medium)
+
+app://self/categories
+  page://self/index (embed, cacheable, ttl: short)
+
+app://self/category
+  page://self/category (embed, cacheable, ttl: medium)
+
+app://self/comments
+  page://self/article (embed, cacheable, ttl: medium)
+
+app://self/ranking
+  page://self/index (embed, cacheable, ttl: short)
+
+app://self/related
+  page://self/article (embed, cacheable, ttl: medium)
+
+app://self/tag
+  page://self/tag (embed, cacheable, ttl: medium)
+
+app://self/tags
+  page://self/index (embed, cacheable, ttl: short)
+  page://self/tag (embed, cacheable, ttl: medium)
+
+app://self/admin/article onDelete
+  app://self/article (purge, cacheable, ttl: never)
+    app://self/ranking (dependsOn, cacheable, ttl: short)
+    app://self/related (dependsOn, cacheable, ttl: never)
+    app://self/tags (dependsOn, cacheable, ttl: never)
+      page://self/tag (embed, cacheable, ttl: medium)
+    page://self/article (embed, cacheable, ttl: medium)
+  app://self/articles (purge, cacheable, ttl: never)
+    app://self/category (embed, cacheable, ttl: never)
+      page://self/category (embed, cacheable, ttl: medium)
+    app://self/tag (embed, cacheable, ttl: never)
+    page://self/author (embed, cacheable, ttl: medium)
+    page://self/index (embed, cacheable, ttl: short)
+
+app://self/admin/article onPost
+  app://self/articles (purge, cacheable, ttl: never)
+    app://self/category (embed, cacheable, ttl: never)
+      page://self/category (embed, cacheable, ttl: medium)
+    app://self/tag (embed, cacheable, ttl: never)
+    page://self/author (embed, cacheable, ttl: medium)
+    page://self/index (embed, cacheable, ttl: short)
+  app://self/tags (purge, cacheable, ttl: never)
+    page://self/tag (embed, cacheable, ttl: medium)
+
+app://self/admin/article onPut
+  app://self/article (refresh, cacheable, ttl: never)
+    app://self/articles (dependsOn, cacheable, ttl: never)
+      app://self/category (embed, cacheable, ttl: never)
+        page://self/category (embed, cacheable, ttl: medium)
+      app://self/tag (embed, cacheable, ttl: never)
+      page://self/author (embed, cacheable, ttl: medium)
+    app://self/related (dependsOn, cacheable, ttl: never)
+    app://self/tags (dependsOn, cacheable, ttl: never)
+      page://self/tag (embed, cacheable, ttl: medium)
+    page://self/article (embed, cacheable, ttl: medium)
+  app://self/ranking (purge, cacheable, ttl: short)
+    page://self/index (embed, cacheable, ttl: short)

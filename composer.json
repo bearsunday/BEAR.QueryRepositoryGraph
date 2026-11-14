@@ -35,7 +35,8 @@
     "autoload-dev": {
         "psr-4": {
             "BEAR\\QueryRepositoryGraph\\": "tests/",
-            "FakeVendor\\HelloWorld\\": "tests/Fake/fake-app/src"
+            "FakeVendor\\HelloWorld\\": "tests/Fake/fake-app/src",
+            "QrGraphDemo\\": "demo/src"
         }
     },
     "bin": [
