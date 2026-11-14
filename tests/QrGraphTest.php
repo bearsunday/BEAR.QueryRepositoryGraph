@@ -201,6 +201,10 @@ class QrGraphTest extends TestCase
         $this->assertMatchesRegularExpression('#"app://self/counter" \[shape=plaintext, [^\n]*>counter</TD>[^\n]*>app<#', $out);
         $this->assertMatchesRegularExpression('#\{rank=min;[^\n]* "page://self/dep/level-one";#', $out, 'a page nothing embeds starts the leftmost column');
         $this->assertDoesNotMatchRegularExpression('#\{rank=min;[^\n]*"page://self/dep/level-two"#', $out, 'an embedded page stays where the layout puts it');
+
+        [, $out] = self::qrGraph(['dot', '--dir=tests/Fixture/CachedView/Resource']);
+        $this->assertStringNotContainsString('app://self/plain', $out, 'a resource no arrow touches is left out');
+        $this->assertStringContainsString('"app://self/settled" [', $out, 'unless it is cached, changed by its TTL alone');
     }
 
     public function testDotCachedKeepsCachedResourcesAndWhatInvalidatesThem(): void

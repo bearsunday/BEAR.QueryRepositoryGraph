@@ -101,6 +101,7 @@ invalidation travels. Declarations that differ only in their query (`?type=news`
 host when it is not `self`) and the cache attributes as declared: `page (cacheable, ttl: medium)`,
 `app (cacheable view, ttl: never)` for `type: 'view'`, `page (cacheable response)`, `page (donut cache)`. Only
 `#[Cacheable]` expires by time, so only it shows a TTL.
+A resource no arrow touches is left out unless it is cached: then it shows a cache no declared write invalidates.
 Pages no drawn arrow points to (other than their own arrows to themselves), where a request starts, line up in the leftmost
 column; with `--cached`, an arrow from a resource left out does not count.
 

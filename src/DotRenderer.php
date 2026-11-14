@@ -65,11 +65,17 @@ final class DotRenderer
         }
 
         $targets = [];
+        $touched = [];
         foreach ($edges as [$from, $to]) {
+            $touched[$from] = true;
+            $touched[$to] = true;
             if ($from !== $to) {
                 $targets[$to] = true;
             }
         }
+
+        // A resource no arrow touches says nothing about cache dependencies, unless it is a cache no declared write invalidates.
+        $drawn = array_filter($drawn, static fn (array $node): bool => isset($touched[$node['uri']]) || Impact::isCached($node));
 
         // A page nothing embeds is where a request starts: those line up in the leftmost column.
         $entries = array_keys(array_filter($drawn, static fn (array $node): bool => self::scheme($node['uri']) === 'page' && ! isset($targets[$node['uri']])));
