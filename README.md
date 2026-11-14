@@ -1,9 +1,10 @@
 # BEAR.QueryRepositoryGraph
 
-`qr-graph` prints the cache graph that [BEAR.QueryRepository](https://github.com/bearsunday/BEAR.QueryRepository)
-attributes declare, without running the application: what each resource embeds, what each write refreshes and
-purges, and what an invalidation reaches. It answers "when I write X, which cached resources go stale?" from the
-code alone.
+Static analysis of the cache graph that [BEAR.QueryRepository](https://github.com/bearsunday/BEAR.QueryRepository)
+attributes declare. `qr-graph` reads the declarations without running the application: what each resource embeds,
+what each write refreshes and purges, and what an invalidation reaches.
+
+![dot of the demo application](docs/images/dot.svg)
 
 ## Installation
 
@@ -16,56 +17,77 @@ composer require --dev bear/query-repository-graph
 Run it from the application root.
 
 ```bash
-vendor/bin/qr-graph dump                                  # one JSONL line per resource
-vendor/bin/qr-graph impact app://self/user --method=onPut  # what the write reaches
-vendor/bin/qr-graph dot | dot -Tsvg > graph.svg           # a picture
-vendor/bin/qr-graph dot --cached | dot -Tsvg > cached.svg # only cached resources and what they embed
-vendor/bin/qr-graph snapshot > qr-graph.snapshot.txt      # every impact, to review as a diff
-vendor/bin/qr-graph observe var/log/query-repository      # the semantic log against the declarations
+vendor/bin/qr-graph dot | dot -Tsvg > graph.svg                   # the picture
+vendor/bin/qr-graph dot --cached | dot -Tsvg > cached.svg         # the cached part and the writes that reach it
+vendor/bin/qr-graph impact app://self/article                     # what invalidating a resource reaches
+vendor/bin/qr-graph impact app://self/admin/article --method=onPut  # what a write reaches
+vendor/bin/qr-graph snapshot > qr-graph.snapshot.txt              # every impact, kept in the repository
+vendor/bin/qr-graph dump                                          # one JSONL line per resource
+vendor/bin/qr-graph observe var/log/query-repository              # the semantic log against the declarations
 ```
 
-`dump` and `impact` are JSONL for tools and AI agents (`jq`, `grep`); `dot` is for the eye; `snapshot` is for
-review; `observe` checks what the cache did against what the code declares. The commands, their output and its
-limits are described in [docs/graph.md](docs/graph.md); the output
-shapes are the JSON Schemas under [docs/schemas/graph](docs/schemas/graph).
+People read the picture, `impact` and `snapshot`. Tools and AI agents read `dump`, `impact --json` and `observe`:
+JSONL, described by the [JSON Schemas](docs/schemas/graph). Each command and its limits are in
+[docs/graph.md](docs/graph.md). The picture above is `php bin/qr-graph dot --dir=demo/src/Resource`, run on
+[demo](demo/src/Resource): resource classes that carry their attributes and nothing else.
 
 ## Reading the picture
 
-![dot of tests/Fixture/DependsOn](docs/images/dot.svg)
-
 | | |
 |---|---|
-| grey rounded box | a `page` resource |
+| grey rounded box | a `page` resource; pages nothing points to, where a request starts, line up on the left |
 | plain text | any other resource (`app`); a host other than `self` is shown, as in `app://blog` |
-| second row | the scheme and the cache as declared: `cacheable, ttl: never`, `cacheable view, ttl: …`, `cacheable response`, `donut cache`; nothing when the resource is not cached |
-| solid arrow | embeds, labelled with the relation (`index` embeds `entries` as `entries`) |
-| dotted arrow | `#[DependsOn]` |
-| bold arrow | a write that refreshes (`onPut refresh`) |
-| dashed arrow | a write that purges (`onPost purge`) |
-| leftmost column | pages no other resource points to: where a request starts (none in this example: `digest` points to `index`) |
+| second row | the scheme and the cache as declared: `cacheable, ttl: short`, `cacheable view, ttl: …`, `cacheable response`, `donut cache`; nothing when the resource is not cached |
+| black arrow | embeds, labelled with the relation (`index` embeds `ranking` as `ranking`) |
+| grey arrow | `#[DependsOn]` |
+| blue arrow | a write that refreshes or purges, labelled `onPut refresh`, `onPost purge` |
 
-Arrows point the way they are declared. Invalidation travels against them: purging `article` reaches `entries`
-through its dotted arrow, and `index` through the solid one.
+Arrows point the way they are declared. Invalidation travels against them: refreshing `article` reaches `ranking`
+through its grey arrow, and `index` through the black one.
 
-## Reading the snapshot
+## What a change reaches
 
 ```
-app://self/article
-  app://self/archive (dependsOn)
-  app://self/entries (dependsOn)
-    page://self/index (embed, cacheable, ttl: never)
-  app://self/middle (dependsOn, cacheable, ttl: never)
+$ vendor/bin/qr-graph impact app://self/admin/article --method=onPut
+app://self/admin/article onPut
+  app://self/article (refresh, cacheable, ttl: never)
+    app://self/articles (dependsOn, cacheable, ttl: never)
+      app://self/category (embed, cacheable, ttl: never)
+        page://self/category (embed, cacheable, ttl: medium)
+      app://self/tag (embed, cacheable, ttl: never)
+      page://self/author (embed, cacheable, ttl: medium)
+    app://self/related (dependsOn, cacheable, ttl: never)
+    app://self/tags (dependsOn, cacheable, ttl: never)
+      page://self/tag (embed, cacheable, ttl: medium)
+    page://self/article (embed, cacheable, ttl: medium)
+  app://self/ranking (purge, cacheable, ttl: short)
+    page://self/index (embed, cacheable, ttl: short)
+
+$ vendor/bin/qr-graph impact app://self/login
+app://self/login
 ```
 
-A block reads "invalidating `app://self/article` reaches these". Each line is reached from the line above it at
-one less indent, by the relation in parentheses, followed by its cache and, for an embed of a donut page, whether
-it is a `material` or a `hole`. Write blocks (`app://self/writer onPost`) start from what the write refreshes and
-purges.
+Each line is reached from the line above it at one less indent, by the relation in parentheses, and shows its
+cache. A resource two paths reach is listed once, under a shortest one. `app://self/login` alone means a change to
+it reaches nothing.
 
-Keep the file in the repository and check it in CI:
+## The snapshot as the source of truth
+
+`snapshot` writes such a tree for every resource and every write. Keep it in the repository and check it in CI:
 
 ```bash
 vendor/bin/qr-graph snapshot | diff -u qr-graph.snapshot.txt -
 ```
 
-A pull request that changes what a write invalidates then shows it as a diff of this file.
+The demo keeps [its snapshot](demo/qr-graph.snapshot.txt), checked this way by [CI](.github/workflows/snapshot.yml).
+
+The runtime acts on the declarations; people and agents read and agree on the snapshot; CI keeps the two equal, as
+`composer.lock` follows `composer.json`. A pull request that changes what a write invalidates shows it as a diff of
+this file. Design the cache before the code the same way:
+
+1. Write the resource classes with their attributes only, as in [demo](demo/src/Resource).
+2. Agree on the picture and the snapshot, and commit the snapshot.
+3. Write the methods. The snapshot does not change.
+
+Only declarations reach the graph. Invalidation written as code, a `purge()` call or a surrogate key set by hand,
+never shows in the snapshot, so it cannot produce the tree that was agreed: what the cache does stays declared.

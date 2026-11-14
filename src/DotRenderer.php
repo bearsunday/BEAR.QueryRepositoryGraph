@@ -9,6 +9,7 @@ use function array_filter;
 use function array_keys;
 use function array_map;
 use function array_pop;
+use function array_unique;
 use function explode;
 use function htmlspecialchars;
 use function implode;
@@ -35,13 +36,13 @@ final class DotRenderer
     }
 
     /**
-     * Only the cached resources and what they embed, directly or not
+     * The cached resources, what they embed, directly or not, what those depend on, and the writes that invalidate them
      *
      * @param list<Node> $nodes
      */
     public function cached(array $nodes): string
     {
-        return self::render($nodes, self::cachedAndEmbedded($nodes));
+        return self::render($nodes, self::cachedAndInvalidators($nodes));
     }
 
     /**
@@ -64,11 +65,17 @@ final class DotRenderer
         }
 
         $targets = [];
+        $touched = [];
         foreach ($edges as [$from, $to]) {
+            $touched[$from] = true;
+            $touched[$to] = true;
             if ($from !== $to) {
                 $targets[$to] = true;
             }
         }
+
+        // A resource no arrow touches says nothing about cache dependencies, unless it is a cache no declared write invalidates.
+        $drawn = array_filter($drawn, static fn (array $node): bool => isset($touched[$node['uri']]) || Impact::isCached($node));
 
         // A page nothing embeds is where a request starts: those line up in the leftmost column.
         $entries = array_keys(array_filter($drawn, static fn (array $node): bool => self::scheme($node['uri']) === 'page' && ! isset($targets[$node['uri']])));
@@ -79,9 +86,13 @@ final class DotRenderer
             '  edge [fontname="Helvetica", fontsize=10, fontcolor="#333333", arrowhead=empty];',
             ...self::nodeLines($drawn, array_keys($targets)),
         ];
+        $edgeLines = [];
         foreach ($edges as [$from, $to, $attrs]) {
-            $lines[] = sprintf('  %s -> %s [%s];', self::id($from), self::id($to), $attrs);
+            $edgeLines[] = sprintf('  %s -> %s [%s];', self::id($from), self::id($to), $attrs);
         }
+
+        // Declarations that differ only in their query name the same resource: one arrow each.
+        $lines = [...$lines, ...array_unique($edgeLines)];
 
         if ($entries !== []) {
             $lines[] = '  {rank=min; ' . implode('; ', array_map(self::id(...), $entries)) . ';}';
@@ -156,20 +167,42 @@ final class DotRenderer
     /**
      * @param list<Node> $nodes
      *
-     * @return array<string, true> URIs of the cached resources and of everything they embed
+     * @return array<string, true> URIs of the cached resources, everything they embed, what those depend on, and the
+     *                             resources whose writes refresh or purge any of them
      */
-    private static function cachedAndEmbedded(array $nodes): array
+    private static function cachedAndInvalidators(array $nodes): array
     {
         $byUri = [];
         foreach ($nodes as $node) {
             $byUri[$node['uri']] = $node;
         }
 
+        $shown = self::cachedAndEmbedded($byUri);
+
+        // A #[DependsOn] target is often cached nowhere: it is the name writes purge to reach what depends on it.
+        foreach (array_keys($shown) as $uri) {
+            foreach ($byUri[$uri]['methods'] ?? [] as $method) {
+                foreach ($method['dependsOn'] ?? [] as $target) {
+                    $shown[$target['uri']] = true;
+                }
+            }
+        }
+
+        return $shown + self::writersOf($nodes, $shown);
+    }
+
+    /**
+     * @param array<string, Node> $byUri
+     *
+     * @return array<string, true>
+     */
+    private static function cachedAndEmbedded(array $byUri): array
+    {
         $shown = [];
         $pending = [];
-        foreach (array_filter($nodes, Impact::isCached(...)) as $node) {
-            $shown[$node['uri']] = true;
-            $pending[] = $node['uri'];
+        foreach (array_keys(array_filter($byUri, Impact::isCached(...))) as $uri) {
+            $shown[$uri] = true;
+            $pending[] = $uri;
         }
 
         while ($pending !== []) {
@@ -188,33 +221,54 @@ final class DotRenderer
     }
 
     /**
+     * @param list<Node>          $nodes
+     * @param array<string, true> $targets
+     *
+     * @return array<string, true> the resources with a write method that refreshes or purges one of the targets
+     */
+    private static function writersOf(array $nodes, array $targets): array
+    {
+        $writers = [];
+        foreach ($nodes as $node) {
+            foreach ($node['methods'] ?? [] as $method) {
+                foreach ([...$method['refresh'] ?? [], ...$method['purge'] ?? []] as $target) {
+                    if (isset($targets[$target['uri']])) {
+                        $writers[$node['uri']] = true;
+                    }
+                }
+            }
+        }
+
+        return $writers;
+    }
+
+    /**
      * @param Method                   $method
-     * @param array<string, true>|null $shown  edges to other resources are left out
+     * @param array<string, true>|null $shown  arrows to a resource not shown are left out
      *
      * @return list<array{string, string, string}> from, to and the edge attributes
      */
     private static function edges(string $from, string $name, array $method, array|null $shown): array
     {
-        $edges = [];
+        $arrows = [];
         foreach ($method['embed'] ?? [] as $embed) {
-            $edges[] = [$from, $embed['uri'], sprintf('label="%s"', addcslashes($embed['rel'], '"\\'))];
+            $arrows[] = [$embed['uri'], sprintf('label="%s"', addcslashes($embed['rel'], '"\\'))];
         }
 
         foreach ($method['dependsOn'] ?? [] as $target) {
-            if ($shown === null || isset($shown[$target['uri']])) {
-                $edges[] = [$from, $target['uri'], 'label="dependsOn", style=dotted'];
+            $arrows[] = [$target['uri'], 'label="dependsOn", color="#9a9a9a", fontcolor="#777777", penwidth=1.6'];
+        }
+
+        foreach (['refresh' => $method['refresh'] ?? [], 'purge' => $method['purge'] ?? []] as $kind => $targets) {
+            foreach ($targets as $target) {
+                $arrows[] = [$target['uri'], sprintf('label="%s %s", color="#3b73b9", fontcolor="#2f5f9e"', $name, $kind)];
             }
         }
 
-        foreach ($method['refresh'] ?? [] as $target) {
-            if ($shown === null || isset($shown[$target['uri']])) {
-                $edges[] = [$from, $target['uri'], sprintf('label="%s refresh", style=bold', $name)];
-            }
-        }
-
-        foreach ($method['purge'] ?? [] as $target) {
-            if ($shown === null || isset($shown[$target['uri']])) {
-                $edges[] = [$from, $target['uri'], sprintf('label="%s purge", style=dashed', $name)];
+        $edges = [];
+        foreach ($arrows as [$to, $attrs]) {
+            if ($shown === null || isset($shown[$to])) {
+                $edges[] = [$from, $to, $attrs];
             }
         }
 

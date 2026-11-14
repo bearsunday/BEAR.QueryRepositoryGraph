@@ -1,11 +1,12 @@
 {
     "name": "bear/query-repository-graph",
-    "description": "Prints the cache graph that BEAR.QueryRepository attributes declare, without running the application",
+    "description": "Static analysis of the cache graph that BEAR.QueryRepository attributes declare",
     "keywords": [
         "cache",
         "graph",
         "BEAR.Sunday",
-        "development"
+        "development",
+        "static analysis"
     ],
     "homepage": "https://github.com/bearsunday/BEAR.QueryRepositoryGraph",
     "license": "MIT",
@@ -35,7 +36,8 @@
     "autoload-dev": {
         "psr-4": {
             "BEAR\\QueryRepositoryGraph\\": "tests/",
-            "FakeVendor\\HelloWorld\\": "tests/Fake/fake-app/src"
+            "FakeVendor\\HelloWorld\\": "tests/Fake/fake-app/src",
+            "QrGraphDemo\\": "demo/src"
         }
     },
     "bin": [

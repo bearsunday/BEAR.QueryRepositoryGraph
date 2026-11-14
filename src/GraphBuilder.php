@@ -21,10 +21,7 @@ use RuntimeException;
 
 use function array_filter;
 use function array_values;
-use function file_get_contents;
 use function getcwd;
-use function preg_match;
-use function preg_quote;
 use function sprintf;
 use function str_replace;
 use function str_starts_with;
@@ -39,8 +36,8 @@ use function usort;
  * The record's shape is the `resource` definition in `docs/schemas/graph/dump.json`.
  *
  * @psalm-type Target = array{uri: string, template?: string, implicit?: string}
- * @psalm-type Method = array{source: string, cacheableResponse?: true, embed?: list<array{rel: string, usage?: string, uri: string, template?: string}>, dependsOn?: list<array{uri: string, template?: string}>, refresh?: list<Target>, purge?: list<Target>}
- * @psalm-type Node = array{uri: string, source: string, cacheable?: array{expiry: string, expirySecond: int, expiryAt: string, update: bool, type: string}, donutCache?: true, cacheableResponse?: true, httpCache?: string, methods?: array<string, Method>, dynamic?: list<string>}
+ * @psalm-type Method = array{source: string, cacheableResponse?: true, embed?: list<array{rel: string, uri: string, template?: string}>, dependsOn?: list<array{uri: string, template?: string}>, refresh?: list<Target>, purge?: list<Target>}
+ * @psalm-type Node = array{uri: string, source: string, cacheable?: array{expiry: string, expirySecond: int, expiryAt: string, update: bool, type: string}, donutCache?: true, cacheableResponse?: true, httpCache?: string, methods?: array<string, Method>}
  * @SuppressWarnings("PHPMD.CouplingBetweenObjects")
  */
 final class GraphBuilder
@@ -99,14 +96,14 @@ final class GraphBuilder
     }
 
     /**
-     * A declared URI named by the node it reaches, another spelling kept in `template`
+     * A declared URI named by the node it reaches, or for a URI no scanned resource serves by its first spelling; another spelling kept in `template`
      *
      * @return array{uri: string, template?: string}
      */
     private function target(string $declared, string $base): array
     {
         $resolved = $this->uriConverter->resolve($declared, $base);
-        $uri = $this->nodeUris[$this->uriConverter->key($resolved['uri'])] ?? $resolved['uri'];
+        $uri = $this->nodeUris[$this->uriConverter->key($resolved['uri'])] ??= $resolved['uri'];
 
         return $uri === $resolved['uri'] ? $resolved : ['uri' => $uri, 'template' => $resolved['template'] ?? $resolved['uri']];
     }
@@ -123,14 +120,12 @@ final class GraphBuilder
         $classResponse = isset($node['cacheableResponse']);
 
         $methods = [];
-        $donut = $classResponse || isset($node['donutCache']);
-        $classSource = (string) file_get_contents((string) $ref->getFileName());
         foreach ($ref->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
             if (! str_starts_with($method->getName(), 'on') || $method->getDeclaringClass()->getName() === ResourceObject::class) {
                 continue;
             }
 
-            $declared = $this->method($method, $uri, $cacheable, $classResponse, $donut, $classSource);
+            $declared = $this->method($method, $uri, $cacheable, $classResponse);
             if ($declared !== null) {
                 $methods[$method->getName()] = $declared;
             }
@@ -138,11 +133,6 @@ final class GraphBuilder
 
         if ($methods !== []) {
             $node['methods'] = $methods;
-        }
-
-        $dynamic = $this->dynamic((string) $ref->getFileName());
-        if ($dynamic !== []) {
-            $node['dynamic'] = $dynamic;
         }
 
         return $node;
@@ -184,17 +174,12 @@ final class GraphBuilder
     }
 
     /** @return Method|null null when the method declares nothing the cache acts on */
-    private function method(ReflectionMethod $method, string $uri, bool $cacheable, bool $classResponse, bool $donut, string $classSource): array|null
+    private function method(ReflectionMethod $method, string $uri, bool $cacheable, bool $classResponse): array|null
     {
         $embed = [];
         foreach ($method->getAttributes(Embed::class) as $attribute) {
             $instance = $attribute->newInstance();
-            $declaredEmbed = ['rel' => $instance->rel];
-            if ($donut) {
-                $declaredEmbed['usage'] = $this->referenced($classSource, $instance->rel) ? 'referenced' : 'unreferenced';
-            }
-
-            $embed[] = $declaredEmbed + $this->target($instance->src, $uri);
+            $embed[] = ['rel' => $instance->rel] + $this->target($instance->src, $uri);
         }
 
         // The command interceptors refresh the resource's own onGet before any #[Refresh]/#[Purge].
@@ -248,25 +233,6 @@ final class GraphBuilder
         return array_values($targets);
     }
 
-    /**
-     * Whether the class reads this embed relation
-     *
-     * A donut page reads a relation through `$this['rel']` (or `$this->body['rel']`),
-     * often from a helper called by onGet; an unread one is a hole, rendered per request
-     * and left out of the stored template's tags. The scan is a heuristic: a relation can
-     * be read indirectly, as Series does when it replaces `body['tags']` with the child's
-     * body array, and a read relation still contributes tags only when the child ran with
-     * them.
-     */
-    private function referenced(string $classSource, string $rel): bool
-    {
-        $quoted = preg_quote($rel, '/');
-        $read = '/\$this\s*\[\s*[\'"]' . $quoted . '[\'"]\s*\]/';
-        $body = '/->body\s*\[\s*[\'"]' . $quoted . '[\'"]\s*\]/';
-
-        return preg_match($read, $classSource) === 1 || preg_match($body, $classSource) === 1;
-    }
-
     /** @return string|null the attribute that makes the write refresh its own resource */
     private function implicitRefresh(ReflectionMethod $method, bool $cacheable, bool $classResponse): string|null
     {
@@ -292,28 +258,6 @@ final class GraphBuilder
         }
 
         return null;
-    }
-
-    /**
-     * Source-text hints that the declarations may not tell the whole story
-     *
-     * A hint is a reason to read the code; its absence proves nothing.
-     *
-     * @return list<string>
-     */
-    private function dynamic(string $file): array
-    {
-        $code = (string) file_get_contents($file);
-        $hints = [];
-        if (preg_match('/SURROGATE_KEY|surrogate-key/i', $code)) {
-            $hints[] = 'surrogate-key';
-        }
-
-        if (preg_match('/\b(?:ResourceInject|ResourceInterface)\b/', $code)) {
-            $hints[] = 'resource-request';
-        }
-
-        return $hints;
     }
 
     private function source(string $file, int $line): string

@@ -14,7 +14,7 @@ use function str_starts_with;
  * The shape is `docs/schemas/graph/impact.json`.
  *
  * @psalm-import-type Node from GraphBuilder
- * @psalm-type ImpactLine = array{uri: string, via: string, by: string|null, depth: int, cached: bool, source: string|null, role?: string}
+ * @psalm-type ImpactLine = array{uri: string, via: string, by: string|null, depth: int, cached: bool, source: string|null}
  */
 final class Impact
 {
@@ -23,7 +23,7 @@ final class Impact
     /** @var array<string, Node> keyed by UriConverter::key(), the value carries the canonical URI */
     private array $nodes = [];
 
-    /** @var array<string, list<array{uri: string, role: string|null}>> child key => embedders */
+    /** @var array<string, list<string>> child key => resources that embed it */
     private array $embeddedBy = [];
 
     /** @var array<string, list<string>> target key => resources whose onGet() declares #[DependsOn] on it */
@@ -37,10 +37,7 @@ final class Impact
             $this->nodes[$this->converter->key($node['uri'])] = $node;
             foreach ($node['methods'] ?? [] as $method) {
                 foreach ($method['embed'] ?? [] as $embed) {
-                    $this->embeddedBy[$this->converter->key($embed['uri'])][] = [
-                        'uri' => $node['uri'],
-                        'role' => $this->role($node, $embed),
-                    ];
+                    $this->embeddedBy[$this->converter->key($embed['uri'])][] = $node['uri'];
                 }
 
                 foreach ($method['dependsOn'] ?? [] as $target) {
@@ -48,6 +45,14 @@ final class Impact
                 }
             }
         }
+    }
+
+    /** The URI an impact of `$uri` starts from: the scanned resource's spelling, or `$uri` without its query */
+    public function start(string $uri): string
+    {
+        $uri = $this->converter->resolve($uri, $uri)['uri'];
+
+        return $this->nodes[$this->converter->key($uri)]['uri'] ?? $uri;
     }
 
     /**
@@ -58,10 +63,9 @@ final class Impact
      */
     public function __invoke(string $uri, string|null $method = null): array
     {
-        $uri = $this->converter->resolve($uri, $uri)['uri'];
-        $key = $this->converter->key($uri);
-        $start = $this->nodes[$key]['uri'] ?? $uri;
-        /** @var list<array{uri: string, via: string, by: string|null, depth: int, role?: string}> $queue */
+        $start = $this->start($uri);
+        $key = $this->converter->key($start);
+        /** @var list<array{uri: string, via: string, by: string|null, depth: int}> $queue */
         $queue = $method === null ? [['uri' => $start, 'via' => 'target', 'by' => null, 'depth' => 0]] : $this->writeTargets($key, $start, $method);
 
         $lines = [];
@@ -84,23 +88,9 @@ final class Impact
                 'cached' => $node !== null && self::isCached($node),
                 'source' => $node['source'] ?? null,
             ];
-            if (isset($next['role'])) {
-                $line['role'] = $next['role'];
-            }
-
             $lines[] = $line;
             foreach ($this->embeddedBy[$key] ?? [] as $embedder) {
-                $parent = [
-                    'uri' => $embedder['uri'],
-                    'via' => 'embed',
-                    'by' => $uri,
-                    'depth' => $next['depth'] + 1,
-                ];
-                if ($embedder['role'] !== null) {
-                    $parent['role'] = $embedder['role'];
-                }
-
-                $queue[] = $parent;
+                $queue[] = ['uri' => $embedder, 'via' => 'embed', 'by' => $uri, 'depth' => $next['depth'] + 1];
             }
 
             // A declaration carries the exact tag of the URI it names, so it reaches its resource only when that URI itself is purged.
@@ -130,26 +120,6 @@ final class Impact
         }
 
         return $targets;
-    }
-
-    /**
-     * Whether the embedding page stores this child as a material or renders it as a hole
-     *
-     * @param Node                                                               $node
-     * @param array{rel: string, uri: string, template?: string, usage?: string} $embed
-     */
-    private function role(array $node, array $embed): string|null
-    {
-        if (! isset($node['cacheableResponse']) && ! isset($node['donutCache'])) {
-            return null;
-        }
-
-        $usage = $embed['usage'] ?? null;
-        if ($usage === null) {
-            return null;
-        }
-
-        return $usage === 'referenced' ? 'material' : 'hole';
     }
 
     /**

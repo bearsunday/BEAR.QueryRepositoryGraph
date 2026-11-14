@@ -1,0 +1,22 @@
+name: Snapshot
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  demo:
+    name: Demo snapshot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          coverage: none
+
+      - run: composer install --no-interaction --no-progress --prefer-dist
+
+      - run: php bin/qr-graph snapshot --dir=demo/src/Resource | diff -u demo/qr-graph.snapshot.txt -

@@ -15,12 +15,12 @@
             "uniqueItems": true
         },
         "declared": {
-            "description": "How the page's onGet declares the child: `referenced`/`unreferenced` for a donut page (the `usage` of its embed), `embedded` for a page without donut caching, null when no `#[Embed]` of the page names the child.",
-            "enum": ["referenced", "unreferenced", "embedded", null]
+            "description": "How the page's onGet declares the child: `donut` when the page's class declares #[CacheableResponse] or #[DonutCache], `embedded` otherwise, null when no `#[Embed]` of the page names the child.",
+            "enum": ["donut", "embedded", null]
         },
         "verdict": {
-            "description": "`material`, `hole` and `dependency` are the expected shapes. `untagged-material`: the page reads the child but the child carried no ETag or Surrogate-Key, so a change to the child's data does not reach the page's template through this child; the page may still carry the tags itself, which only its own save_etag/save_donut tags tell. `tagged-hole`: the page does not read the child, yet it carried tags before the write. `unclassified`: the page was written (`put_donut`) but the declared child was no longer an embedded request at the top of its body (removed with `unset()`, replaced by its body array, or moved into a nested array), so it adds no tag to the page even when the page read it. `skipped`: a skipped child of a page the scan does not see as donut-cached. `undeclared`: no declaration to compare with. `mixed`: the sessions disagree.",
-            "enum": ["material", "hole", "dependency", "untagged-material", "tagged-hole", "unclassified", "skipped", "undeclared", "mixed"]
+            "description": "`material`, `hole` and `dependency` are the expected shapes. `untagged-material`: the page reads the child but the child carried no ETag or Surrogate-Key, so a change to the child's data does not reach the page's template through this child; the page may still carry the tags itself, which only its own save_etag/save_donut tags tell. `unclassified`: the page was written (`put_donut`) but the declared child was no longer an embedded request at the top of its body (removed with `unset()`, replaced by its body array, or moved into a nested array), so it adds no tag to the page even when the page read it. `skipped`: a child skipped without a logged reason, so a hole and an untagged child cannot be told apart. `undeclared`: no declaration to compare with. `mixed`: the sessions disagree.",
+            "enum": ["material", "hole", "dependency", "untagged-material", "unclassified", "skipped", "undeclared", "mixed"]
         }
     },
     "additionalProperties": false

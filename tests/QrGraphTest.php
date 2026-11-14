@@ -20,6 +20,7 @@ use function json_decode;
 use function json_encode;
 use function rewind;
 use function stream_get_contents;
+use function substr_count;
 use function trim;
 
 use const JSON_THROW_ON_ERROR;
@@ -44,7 +45,7 @@ class QrGraphTest extends TestCase
         self::assertSame(0, $code, $err);
         $lines = self::jsonl($out);
         $meta = $lines[0];
-        self::assertSame(4, self::at($meta, 'meta', 'version'));
+        self::assertSame(5, self::at($meta, 'meta', 'version'));
         self::assertSame(['self' => 'FakeVendor\HelloWorld'], self::at($meta, 'meta', 'namespaces'));
         self::assertSame(self::DIR, self::at($meta, 'meta', 'dir'));
         self::assertSame(['nodes' => 115, 'edges' => 123, 'skipped' => 2], self::at($meta, 'meta', 'counts'));
@@ -92,7 +93,7 @@ class QrGraphTest extends TestCase
             $this->assertSchema('dump.json', $line);
         }
 
-        [, $out] = self::qrGraph(['impact', 'page://self/dep/diamond-bottom', '--dir=' . self::DIR]);
+        [, $out] = self::qrGraph(['impact', 'page://self/dep/diamond-bottom', '--json', '--dir=' . self::DIR]);
         foreach (explode("\n", trim($out)) as $line) {
             $this->assertSchema('impact.json', $line);
         }
@@ -135,13 +136,11 @@ class QrGraphTest extends TestCase
         );
     }
 
-    public function testDonutPageAndDynamicSurrogateKey(): void
+    public function testDonutPageRefreshesItselfImplicitly(): void
     {
         $node = self::$nodes['page://self/html/blog-posting'];
         $this->assertTrue($node['cacheableResponse']);
-        $this->assertSame(['surrogate-key'], $node['dynamic']);
         $this->assertSame([['uri' => 'page://self/html/blog-posting', 'implicit' => 'CacheableResponse']], self::at($node, 'methods', 'onDelete', 'refresh'));
-        $this->assertArrayNotHasKey('dynamic', self::$nodes['page://self/dep/level-one']);
     }
 
     public function testHttpCacheIsTheDeclaredCacheControl(): void
@@ -151,7 +150,7 @@ class QrGraphTest extends TestCase
 
     public function testImpactReachesEachEmbedderOnceByItsShortestPath(): void
     {
-        [$code, $out] = self::qrGraph(['impact', 'page://self/dep/diamond-bottom?id=1', '--dir=' . self::DIR]);
+        [$code, $out] = self::qrGraph(['impact', 'page://self/dep/diamond-bottom?id=1', '--json', '--dir=' . self::DIR]);
         $this->assertSame(0, $code);
         $lines = self::jsonl($out);
         $this->assertSame(
@@ -173,7 +172,7 @@ class QrGraphTest extends TestCase
 
     public function testImpactOfAWriteMethodStartsFromWhatItInvalidates(): void
     {
-        [, $out] = self::qrGraph(['impact', 'app://self/user', '--method=onPut', '--dir=' . self::DIR]);
+        [, $out] = self::qrGraph(['impact', 'app://self/user', '--method=onPut', '--json', '--dir=' . self::DIR]);
         $lines = self::jsonl($out);
         $this->assertSame(
             [
@@ -194,15 +193,19 @@ class QrGraphTest extends TestCase
         $this->assertSame(0, $code);
         $this->assertStringStartsWith('digraph qr {', $out);
         $this->assertStringContainsString('"page://self/dep/level-one" -> "page://self/dep/level-two" [label="level-two"];', $out);
-        $this->assertStringContainsString('"app://self/user" -> "app://self/user/friend" [label="onPut purge", style=dashed];', $out);
+        $this->assertStringContainsString('"app://self/user" -> "app://self/user/friend" [label="onPut purge"', $out);
         $this->assertMatchesRegularExpression('#"page://self/dep/level-one" \[shape=box, [^\n]*>dep/level-one</TD>[^\n]*>page \(cacheable, ttl: never\)<#', $out);
         $this->assertMatchesRegularExpression('#"app://self/view" \[[^\n]*>app \(cacheable view, ttl: never\)<#', $out, 'a non-default #[Cacheable] type is named');
         $this->assertMatchesRegularExpression('#"app://self/counter" \[shape=plaintext, [^\n]*>counter</TD>[^\n]*>app<#', $out);
         $this->assertMatchesRegularExpression('#\{rank=min;[^\n]* "page://self/dep/level-one";#', $out, 'a page nothing embeds starts the leftmost column');
         $this->assertDoesNotMatchRegularExpression('#\{rank=min;[^\n]*"page://self/dep/level-two"#', $out, 'an embedded page stays where the layout puts it');
+
+        [, $out] = self::qrGraph(['dot', '--dir=tests/Fixture/CachedView/Resource']);
+        $this->assertStringNotContainsString('app://self/plain', $out, 'a resource no arrow touches is left out');
+        $this->assertStringContainsString('"app://self/settled" [', $out, 'unless it is cached, changed by its TTL alone');
     }
 
-    public function testDotCachedKeepsCachedResourcesAndWhatTheyEmbed(): void
+    public function testDotCachedKeepsCachedResourcesAndWhatInvalidatesThem(): void
     {
         [$code, $out, $err] = self::qrGraph(['dot', '--cached', '--dir=' . self::DIR]);
         $this->assertSame(0, $code, $err);
@@ -213,6 +216,13 @@ class QrGraphTest extends TestCase
         [, $out] = self::qrGraph(['dot', '--cached', '--dir=tests/Fixture/DependsOnWarn/Resource']);
         $this->assertMatchesRegularExpression('#"app://self/method-cached" \[[^\n]*>app \(cacheable response\)<#', $out, 'a resource cached by #[CacheableResponse] on onGet() only is cached');
         $this->assertStringNotContainsString('method-cached-list', $out);
+
+        [, $out] = self::qrGraph(['dot', '--cached', '--dir=tests/Fixture/CachedView/Resource']);
+        $this->assertStringContainsString('"app://self/items" -> "app://self/item" [label="dependsOn"', $out, 'a #[DependsOn] target is drawn though nothing caches it');
+        $this->assertStringContainsString('"app://self/editor" -> "app://self/item" [label="onPut purge"', $out, 'a write to it is drawn though the writer is not cached');
+        $this->assertStringContainsString('"app://self/items" -> "app://self/remote-item" [label="dependsOn"', $out, 'two spellings of a URI no scanned resource serves are one node');
+        $this->assertStringContainsString('"app://self/editor" -> "app://self/remote-item" [label="onPut purge"', $out);
+        $this->assertStringNotContainsString('app://self/other', $out, 'a write that reaches nothing drawn is left out');
 
         [$code] = self::qrGraph(['dump', '--cached', '--dir=' . self::DIR]);
         $this->assertSame(2, $code);
@@ -232,13 +242,32 @@ class QrGraphTest extends TestCase
         $this->assertStringNotContainsString('app://self/entry onPatch', $out, 'a write that only refreshes its own resource has no block');
     }
 
+    public function testImpactPrintsItsSnapshotBlock(): void
+    {
+        $dir = '--dir=tests/Fixture/DependsOn/Resource';
+        [, $snapshot] = self::qrGraph(['snapshot', $dir]);
+        [$code, $out, $err] = self::qrGraph(['impact', 'app://self/author', $dir]);
+        $this->assertSame(0, $code, $err);
+        $this->assertSame("app://self/author\n  app://self/archive (dependsOn)\n  app://self/entries (dependsOn)\n    page://self/index (embed, cacheable, ttl: never)\n", $out);
+        $this->assertStringContainsString($out, $snapshot);
+
+        [, $out] = self::qrGraph(['impact', 'app://self/writer', '--method=onPost', $dir]);
+        $this->assertStringStartsWith("app://self/writer onPost\n  app://self/article (purge, cacheable, ttl: never)\n", $out);
+        $this->assertStringContainsString($out, $snapshot);
+
+        [, $out] = self::qrGraph(['impact', 'app://self/Digest', $dir]);
+        $this->assertSame("app://self/digest\n", $out, 'a resource that reaches nothing is its name alone, as the graph spells it');
+
+        [$code] = self::qrGraph(['dump', '--json', $dir]);
+        $this->assertSame(2, $code);
+    }
+
     public function testTokensFindOneLineDeclarationsAndBracedNamespaces(): void
     {
         [$code, $out, $err] = self::qrGraph(['dump', '--dir=tests/Fixture/Resource']);
         $this->assertSame(0, $code, $err);
         $lines = self::jsonl($out);
         $meta = $lines[0];
-        $this->assertSame(4, self::at($meta, 'meta', 'version'));
         $this->assertSame(['self' => 'BEAR\QueryRepositoryGraph\Fixture'], self::at($meta, 'meta', 'namespaces'));
         $this->assertSame('tests/Fixture/Resource', self::at($meta, 'meta', 'dir'));
         $this->assertSame(['nodes' => 2, 'edges' => 0, 'skipped' => 0], self::at($meta, 'meta', 'counts'));
@@ -285,14 +314,22 @@ class QrGraphTest extends TestCase
         $this->assertSame('', $out);
         $this->assertStringContainsString('No resource app://self/typo', $this->lastError($err));
 
-        [$code, $out] = self::qrGraph(['impact', 'app://self/typo', '--allow-unknown', '--dir=' . self::DIR]);
+        [$code, $out] = self::qrGraph(['impact', 'app://self/typo', '--allow-unknown', '--json', '--dir=' . self::DIR]);
         $this->assertSame(0, $code);
         $this->assertSame(['app://self/typo'], array_column(self::jsonl($out), 'uri'));
+
+        [$code, $out] = self::qrGraph(['impact', 'app://self/typo?id=1', '--allow-unknown', '--dir=' . self::DIR]);
+        $this->assertSame(0, $code);
+        $this->assertSame("app://self/typo\n", $out);
+
+        [$code, $out, $err] = self::qrGraph(['impact', 'app://self/typo', '--allow-unknown', '--method=onPut', '--dir=' . self::DIR]);
+        $this->assertSame(0, $code, $err);
+        $this->assertSame("app://self/typo onPut\n", $out, 'an unknown resource has no write to reach anything from');
     }
 
     public function testUriMatchingFollowsTheAdapterEquivalence(): void
     {
-        [$code, $out, $err] = self::qrGraph(['impact', 'app://self/galleryArticle', '--dir=tests/Fixture/Camel/Resource']);
+        [$code, $out, $err] = self::qrGraph(['impact', 'app://self/galleryArticle', '--json', '--dir=tests/Fixture/Camel/Resource']);
         $this->assertSame(0, $code, $err);
         $lines = self::jsonl($out);
         $this->assertSame(['app://self/gallery-article', 'page://self/camel-parent'], array_column($lines, 'uri'));
@@ -314,34 +351,6 @@ class QrGraphTest extends TestCase
         [, $out] = self::qrGraph(['dot', '--dir=tests/Fixture/Camel/Resource']);
         $this->assertStringContainsString('"page://self/camel-parent" -> "app://self/gallery-article" [label="article"];', $out);
         $this->assertStringNotContainsString('galleryArticle', $out);
-    }
-
-    public function testDonutEmbedUsageAndImpactRole(): void
-    {
-        [$code, $out, $err] = self::qrGraph(['dump', '--dir=tests/Fixture/Usage/Resource']);
-        $this->assertSame(0, $code, $err);
-        $lines = self::jsonl($out);
-        $nodes = [];
-        foreach (array_slice($lines, 1) as $line) {
-            /** @var string $uri */
-            $uri = $line['uri'];
-            $nodes[$uri] = $line;
-        }
-
-        $embeds = self::at($nodes['page://self/donut-page'], 'methods', 'onGet', 'embed');
-        $this->assertIsArray($embeds);
-        $this->assertSame(['read' => 'referenced', 'ignored' => 'unreferenced'], array_column($embeds, 'usage', 'rel'));
-
-        [$code, $out] = self::qrGraph(['impact', 'app://self/ignored-child', '--dir=tests/Fixture/Usage/Resource']);
-        $this->assertSame(0, $code);
-        $lines = self::jsonl($out);
-        $this->assertSame(['app://self/ignored-child', 'page://self/donut-page'], array_column($lines, 'uri'));
-        $this->assertSame('hole', $lines[1]['role']);
-
-        [$code, $out] = self::qrGraph(['impact', 'app://self/read-child', '--dir=tests/Fixture/Usage/Resource']);
-        $this->assertSame(0, $code);
-        $lines = self::jsonl($out);
-        $this->assertSame('material', $lines[1]['role']);
     }
 
     public function testDependsOnIsAnEdgeImpactFollowsOnlyFromAUriItselfPurged(): void
@@ -374,7 +383,7 @@ class QrGraphTest extends TestCase
         ], self::at($nodes['app://self/archive'], 'methods', 'onGet', 'dependsOn'));
         $this->assertNull(self::at($nodes['app://self/entries'], 'methods', 'onPost'), 'only onGet() declarations are read');
 
-        [$code, $out] = self::qrGraph(['impact', 'app://self/article', '--method=onPut', $dir]);
+        [$code, $out] = self::qrGraph(['impact', 'app://self/article', '--method=onPut', '--json', $dir]);
         $this->assertSame(0, $code);
         foreach (explode("\n", trim($out)) as $line) {
             $this->assertSchema('impact.json', $line);
@@ -390,7 +399,7 @@ class QrGraphTest extends TestCase
         ], array_map(static fn (array $line): array => [$line['uri'], $line['via'], $line['by'], $line['depth']], self::jsonl($out)));
 
         // A #[Purge] on another resource: `by` names the purged URI from the second hop on.
-        [, $out] = self::qrGraph(['impact', 'app://self/writer', '--method=onPost', $dir]);
+        [, $out] = self::qrGraph(['impact', 'app://self/writer', '--method=onPost', '--json', $dir]);
         $this->assertSame([
             ['app://self/article', 'purge', 'app://self/writer', 1],
             ['app://self/archive', 'dependsOn', 'app://self/article', 2],
@@ -399,11 +408,12 @@ class QrGraphTest extends TestCase
             ['page://self/index', 'embed', 'app://self/entries', 3],
         ], array_map(static fn (array $line): array => [$line['uri'], $line['via'], $line['by'], $line['depth']], self::jsonl($out)));
 
-        [, $out] = self::qrGraph(['impact', 'app://self/middle', $dir]);
+        [, $out] = self::qrGraph(['impact', 'app://self/middle', '--json', $dir]);
         $this->assertSame(['app://self/middle', 'app://self/outer'], array_column(self::jsonl($out), 'uri'), 'a URI asked about is purged itself');
 
         [, $out] = self::qrGraph(['dot', $dir]);
-        $this->assertStringContainsString('"app://self/entries" -> "app://self/article" [label="dependsOn", style=dotted];', $out);
+        $this->assertStringContainsString('"app://self/entries" -> "app://self/article" [label="dependsOn"', $out);
+        $this->assertSame(1, substr_count($out, '"app://self/archive" -> "app://self/author" [label="dependsOn"'), 'two declarations on one URI, differing in their query, are one arrow');
     }
 
     public function testDependsOnDeclarationsNoWriteInvalidatesAreWarnedOnStderr(): void
@@ -462,7 +472,7 @@ class QrGraphTest extends TestCase
         $this->assertStringContainsString('No such directory: no/such/dir', $err);
     }
 
-    public function testObserveJudgesEachLoggedChildAgainstItsDeclaredUsage(): void
+    public function testObserveJudgesEachLoggedChildAgainstItsDeclaration(): void
     {
         $this->assertSame([
             ['page://self/donut-page', 'app://self/ignored-child', 'hole'],
@@ -471,27 +481,27 @@ class QrGraphTest extends TestCase
         ], $this->verdicts(self::SESSIONS . '/expected.json'));
     }
 
-    public function testObserveFlagsAReadChildThatCarriedNoTag(): void
+    public function testObserveFlagsAChildThatCarriedNoTag(): void
     {
         $this->assertSame([
-            ['page://self/donut-page', 'app://self/ignored-child', 'tagged-hole'],
+            ['page://self/donut-page', 'app://self/ignored-child', 'material'],
             ['page://self/donut-page', 'app://self/read-child', 'untagged-material'],
         ], $this->verdicts(self::SESSIONS . '/contrary.json'));
     }
 
-    public function testObserveTrustsTheRunTimeReasonOverTheSourceGuess(): void
+    public function testObserveTakesAHoleFromTheRunTimeReason(): void
     {
         $this->assertSame([
-            ['page://self/donut-page', 'app://self/ignored-child', 'tagged-hole'],
+            ['page://self/donut-page', 'app://self/ignored-child', 'material'],
             ['page://self/donut-page', 'app://self/read-child', 'hole'],
-        ], $this->verdicts(self::SESSIONS . '/runtime.json'), 'the scan guesses read-child is referenced, but it had not run');
+        ], $this->verdicts(self::SESSIONS . '/runtime.json'));
     }
 
-    public function testObserveFallsBackToTheSourceGuessWithoutAReason(): void
+    public function testObserveCannotTellASkipLoggedWithoutAReason(): void
     {
         $this->assertSame([
-            ['page://self/donut-page', 'app://self/ignored-child', 'tagged-hole'],
-            ['page://self/donut-page', 'app://self/read-child', 'untagged-material'],
+            ['page://self/donut-page', 'app://self/ignored-child', 'material'],
+            ['page://self/donut-page', 'app://self/read-child', 'skipped'],
         ], $this->verdicts(self::SESSIONS . '/reasonless.json'));
     }
 

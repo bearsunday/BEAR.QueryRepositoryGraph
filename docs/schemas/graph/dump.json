@@ -16,7 +16,7 @@
                     "type": "object",
                     "required": ["version", "namespaces", "dir"],
                     "properties": {
-                        "version": {"const": 4},
+                        "version": {"const": 5},
                         "namespaces": {
                             "description": "URI host => PHP namespace. `page://self/html/blog-posting` is `{namespaces.self}\\Resource\\Page\\Html\\BlogPosting`.",
                             "type": "object",
@@ -80,11 +80,6 @@
                     "description": "Only methods that declare something the cache acts on, keyed by name, in declaration order.",
                     "type": "object",
                     "additionalProperties": {"$ref": "#/$defs/method"}
-                },
-                "dynamic": {
-                    "description": "Source-text hints that the declarations may not tell the whole story: `surrogate-key` (the class source mentions a Surrogate-Key, which code can set), `resource-request` (it mentions ResourceInject/ResourceInterface, so it can request resources outside #[Embed]). A hint is a reason to read the source; its absence proves nothing.",
-                    "type": "array",
-                    "items": {"enum": ["surrogate-key", "resource-request"]}
                 }
             },
             "additionalProperties": false
@@ -103,10 +98,6 @@
                         "required": ["rel", "uri"],
                         "properties": {
                             "rel": {"type": "string"},
-                            "usage": {
-                                "description": "On a donut-cached page, whether the declaring method reads this relation (`referenced`) or leaves it to render per request (`unreferenced`). A source-text heuristic: indirect reads are not detected.",
-                                "enum": ["referenced", "unreferenced"]
-                            },
                             "uri": {"$ref": "#/$defs/uri"},
                             "template": {"$ref": "#/$defs/template"}
                         },

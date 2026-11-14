@@ -28,10 +28,7 @@ final class SnapshotRenderer
     public function __invoke(array $nodes): string
     {
         $impact = new Impact($nodes);
-        $caches = [];
-        foreach ($nodes as $node) {
-            $caches[$node['uri']] = Impact::caches($node);
-        }
+        $caches = self::caches($nodes);
 
         $blocks = [];
         foreach ($nodes as $node) {
@@ -55,6 +52,34 @@ final class SnapshotRenderer
     }
 
     /**
+     * What invalidating `$uri`, or calling its write method, reaches: the snapshot's block for it, printed even when it reaches nothing
+     *
+     * @param list<Node> $nodes
+     */
+    public function impact(array $nodes, string $uri, string|null $method): string
+    {
+        $impact = new Impact($nodes);
+        $root = $impact->start($uri);
+
+        return ($method === null ? $root : "{$root} {$method}") . "\n" . self::tree($impact($uri, $method), $root, 0, self::caches($nodes));
+    }
+
+    /**
+     * @param list<Node> $nodes
+     *
+     * @return array<string, list<string>>
+     */
+    private static function caches(array $nodes): array
+    {
+        $caches = [];
+        foreach ($nodes as $node) {
+            $caches[$node['uri']] = Impact::caches($node);
+        }
+
+        return $caches;
+    }
+
+    /**
      * The lines one step deeper whose `by` is the parent: a write's own resource can be both its root and one of its lines
      *
      * @param array<ImpactLine>           $lines
@@ -67,11 +92,6 @@ final class SnapshotRenderer
         $text = '';
         foreach ($children as $line) {
             $notes = [$line['via'], ...$caches[$line['uri']] ?? []];
-
-            if (isset($line['role'])) {
-                $notes[] = $line['role'];
-            }
-
             $text .= sprintf("%s%s (%s)\n", str_repeat('  ', $depth + 1), $line['uri'], implode(', ', $notes));
             $text .= self::tree($lines, $line['uri'], $depth + 1, $caches);
         }

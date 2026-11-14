@@ -13,8 +13,6 @@ class DonutPage extends ResourceObject
     #[Embed(rel: 'ignored', src: 'app://self/ignored-child')]
     public function onGet(): static
     {
-        $this->body['read'] = $this['read']->body;
-
         return $this;
     }
 }
