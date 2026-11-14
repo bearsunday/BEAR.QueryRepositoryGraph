@@ -193,8 +193,29 @@ class QrGraphTest extends TestCase
         [$code, $out] = self::qrGraph(['dot', '--dir=' . self::DIR]);
         $this->assertSame(0, $code);
         $this->assertStringStartsWith('digraph qr {', $out);
-        $this->assertStringContainsString('"page://self/dep/level-one" -> "page://self/dep/level-two" [label="embed level-two"];', $out);
+        $this->assertStringContainsString('"page://self/dep/level-one" -> "page://self/dep/level-two" [label="level-two"];', $out);
         $this->assertStringContainsString('"app://self/user" -> "app://self/user/friend" [label="onPut purge", style=dashed];', $out);
+        $this->assertMatchesRegularExpression('#"page://self/dep/level-one" \[shape=box, [^\n]*>dep/level-one</TD>[^\n]*>page \(cacheable, ttl: never\)<#', $out);
+        $this->assertMatchesRegularExpression('#"app://self/view" \[[^\n]*>app \(cacheable view, ttl: never\)<#', $out, 'a non-default #[Cacheable] type is named');
+        $this->assertMatchesRegularExpression('#"app://self/counter" \[shape=plaintext, [^\n]*>counter</TD>[^\n]*>app<#', $out);
+        $this->assertMatchesRegularExpression('#\{rank=min;[^\n]* "page://self/dep/level-one";#', $out, 'a page nothing embeds starts the leftmost column');
+        $this->assertDoesNotMatchRegularExpression('#\{rank=min;[^\n]*"page://self/dep/level-two"#', $out, 'an embedded page stays where the layout puts it');
+    }
+
+    public function testDotCachedKeepsCachedResourcesAndWhatTheyEmbed(): void
+    {
+        [$code, $out, $err] = self::qrGraph(['dot', '--cached', '--dir=' . self::DIR]);
+        $this->assertSame(0, $code, $err);
+        $this->assertStringContainsString('"page://self/html/counter-cache" -> "app://self/counter" [label="counter"];', $out);
+        $this->assertStringContainsString('"app://self/counter" [shape=plaintext', $out);
+        $this->assertStringNotContainsString('app://self/user/friend', $out);
+
+        [, $out] = self::qrGraph(['dot', '--cached', '--dir=tests/Fixture/DependsOnWarn/Resource']);
+        $this->assertMatchesRegularExpression('#"app://self/method-cached" \[[^\n]*>app \(cacheable response\)<#', $out, 'a resource cached by #[CacheableResponse] on onGet() only is cached');
+        $this->assertStringNotContainsString('method-cached-list', $out);
+
+        [$code] = self::qrGraph(['dump', '--cached', '--dir=' . self::DIR]);
+        $this->assertSame(2, $code);
     }
 
     public function testSnapshotNestsEveryImpactUnderWhatReachesIt(): void
@@ -291,7 +312,7 @@ class QrGraphTest extends TestCase
         );
 
         [, $out] = self::qrGraph(['dot', '--dir=tests/Fixture/Camel/Resource']);
-        $this->assertStringContainsString('"page://self/camel-parent" -> "app://self/gallery-article" [label="embed article"];', $out);
+        $this->assertStringContainsString('"page://self/camel-parent" -> "app://self/gallery-article" [label="article"];', $out);
         $this->assertStringNotContainsString('galleryArticle', $out);
     }
 

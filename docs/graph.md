@@ -17,7 +17,7 @@ is declared but never observed, or observed but never declared.
 ```bash
 vendor/bin/qr-graph dump [--dir=src/Resource]
 vendor/bin/qr-graph impact <uri> [--method=onPut] [--allow-unknown] [--dir=src/Resource]
-vendor/bin/qr-graph dot [--dir=src/Resource]
+vendor/bin/qr-graph dot [--cached] [--dir=src/Resource]
 vendor/bin/qr-graph snapshot [--dir=src/Resource]
 vendor/bin/qr-graph observe <session.json|dir>... [--dir=src/Resource] [--fail-on=<verdict>[,<verdict>...]]
 ```
@@ -90,9 +90,17 @@ when the page reads that child, `hole` when it is left to render per request.
 vendor/bin/qr-graph dot | dot -Tsvg > graph.svg
 ```
 
-Arrows point as declared (a page to what it embeds, a resource to what it depends on, a write to what it
-refreshes or purges); add `edge [dir=back]` for the direction invalidation travels. Cached resources are drawn double-bordered,
-resources with `dynamic` hints dashed.
+Arrows point as declared (a page to what it embeds, labelled with the relation; a resource to what it depends on,
+dotted; a write to what it refreshes, bold, or purges, dashed); add `edge [dir=back]` for the direction
+invalidation travels. A page is a grey box, any other resource plain text. Under the path, the scheme (with the
+host when it is not `self`) and the cache attributes as declared: `page (cacheable, ttl: medium)`,
+`app (cacheable view, ttl: never)` for `type: 'view'`, `page (cacheable response)`, `page (donut cache)`. Only
+`#[Cacheable]` expires by time, so only it shows a TTL.
+Pages no drawn arrow points to (other than their own arrows to themselves), where a request starts, line up in the leftmost
+column; with `--cached`, an arrow from a resource left out does not count.
+
+`--cached` draws only the cached resources (what `impact` reports as `cached: true`) and what they embed,
+directly or not; a `dependsOn`, refresh or purge arrow is kept when both of its ends are drawn.
 
 ### `snapshot` — impacts to review as a diff
 
