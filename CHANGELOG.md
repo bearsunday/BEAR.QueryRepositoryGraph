@@ -1,0 +1,20 @@
+# Changelog
+
+All notable changes to this project are documented in this file.
+
+## [0.1.0] - 2026-11-15
+
+First release. `vendor/bin/qr-graph` reads the BEAR.QueryRepository attributes of an application, without running it, and prints the cache graph they declare.
+Requires PHP 8.2, bear/query-repository 1.20.2 and bear/resource 1.34.2 or later.
+
+### Added
+
+- `impact <uri> [--method=…]`: what invalidating a resource, or calling one of its write methods, reaches, as a tree; `--json` prints one JSONL line per reached resource.
+- `snapshot`: every impact as one text file to keep in the repository and check in CI with `diff`, so a change to what a write invalidates shows up in review.
+- `dot [--cached]`: a Graphviz picture of embeds, `#[DependsOn]` (grey) and writes (blue); `--cached` keeps the cached part and the writes that reach it.
+- `html [--cached]`: the same picture as one page; click a resource to light what invalidates it and what it invalidates. Needs Graphviz `dot`.
+- `dump`: one JSONL line per resource with its declarations, for tools and AI agents ([schema](https://github.com/bearsunday/BEAR.QueryRepositoryGraph/blob/1.x/docs/schemas/graph/dump.json)).
+- `observe <session…>`: the semantic log of BEAR.QueryRepository 1.19+ against the declarations; `--fail-on=untagged-material` fails CI on a read child that carries no tag.
+- `#[DependsOn]` declarations that leave a resource stale after a write (unknown resource, never invalidated, tag mismatch, bound parameter), or that purge more than needed (a default body), are reported on stderr.
+
+[0.1.0]: https://github.com/bearsunday/BEAR.QueryRepositoryGraph/releases/tag/0.1.0
