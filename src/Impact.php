@@ -122,11 +122,11 @@ final class Impact
         $declared = $this->nodes[$key]['methods'][$method] ?? [];
         $targets = [];
         foreach ($declared['refresh'] ?? [] as $target) {
-            $targets[] = ['uri' => $this->canonical($target['uri']), 'via' => 'refresh', 'by' => $start, 'depth' => 1];
+            $targets[] = ['uri' => $target['uri'], 'via' => 'refresh', 'by' => $start, 'depth' => 1];
         }
 
         foreach ($declared['purge'] ?? [] as $target) {
-            $targets[] = ['uri' => $this->canonical($target['uri']), 'via' => 'purge', 'by' => $start, 'depth' => 1];
+            $targets[] = ['uri' => $target['uri'], 'via' => 'purge', 'by' => $start, 'depth' => 1];
         }
 
         return $targets;
@@ -150,12 +150,6 @@ final class Impact
         }
 
         return $usage === 'referenced' ? 'material' : 'hole';
-    }
-
-    /** The node URI a declaration points at, or the declaration itself when no node serves it. */
-    private function canonical(string $uri): string
-    {
-        return $this->nodes[$this->converter->key($uri)]['uri'] ?? $uri;
     }
 
     /**
