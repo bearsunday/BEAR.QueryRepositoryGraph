@@ -96,14 +96,14 @@ final class GraphBuilder
     }
 
     /**
-     * A declared URI named by the node it reaches, another spelling kept in `template`
+     * A declared URI named by the node it reaches, or for a URI no scanned resource serves by its first spelling; another spelling kept in `template`
      *
      * @return array{uri: string, template?: string}
      */
     private function target(string $declared, string $base): array
     {
         $resolved = $this->uriConverter->resolve($declared, $base);
-        $uri = $this->nodeUris[$this->uriConverter->key($resolved['uri'])] ?? $resolved['uri'];
+        $uri = $this->nodeUris[$this->uriConverter->key($resolved['uri'])] ??= $resolved['uri'];
 
         return $uri === $resolved['uri'] ? $resolved : ['uri' => $uri, 'template' => $resolved['template'] ?? $resolved['uri']];
     }

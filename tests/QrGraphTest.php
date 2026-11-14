@@ -220,6 +220,8 @@ class QrGraphTest extends TestCase
         [, $out] = self::qrGraph(['dot', '--cached', '--dir=tests/Fixture/CachedView/Resource']);
         $this->assertStringContainsString('"app://self/items" -> "app://self/item" [label="dependsOn"', $out, 'a #[DependsOn] target is drawn though nothing caches it');
         $this->assertStringContainsString('"app://self/editor" -> "app://self/item" [label="onPut purge"', $out, 'a write to it is drawn though the writer is not cached');
+        $this->assertStringContainsString('"app://self/items" -> "app://self/remote-item" [label="dependsOn"', $out, 'two spellings of a URI no scanned resource serves are one node');
+        $this->assertStringContainsString('"app://self/editor" -> "app://self/remote-item" [label="onPut purge"', $out);
         $this->assertStringNotContainsString('app://self/other', $out, 'a write that reaches nothing drawn is left out');
 
         [$code] = self::qrGraph(['dump', '--cached', '--dir=' . self::DIR]);

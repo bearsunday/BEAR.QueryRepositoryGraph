@@ -8,6 +8,7 @@ use BEAR\Resource\ResourceObject;
 class Items extends ResourceObject
 {
     #[DependsOn(uri: 'app://self/item{?id}')]
+    #[DependsOn(uri: 'app://self/remoteItem')]
     public function onGet(string $id = ''): static
     {
         return $this;

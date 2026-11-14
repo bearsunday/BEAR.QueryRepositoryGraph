@@ -46,7 +46,8 @@ v4 `dependsOn`, v5 dropped the source-text guesses, `dynamic` and the embed `usa
 
 - `uri` is `scheme://host/path` without query, exact-matchable everywhere it appears; `template` keeps the
   declaration as written when it differs, including another spelling of a resource's URI (`galleryArticle` is
-  listed as `gallery-article`). The PHP class is not repeated: it follows from `uri` and `meta.namespaces`.
+  listed as `gallery-article`; a URI no scanned resource serves is listed by the first spelling the scan meets).
+  The PHP class is not repeated: it follows from `uri` and `meta.namespaces`.
 - `source` is `file:line`, to open the declaration.
 - `dependsOn` on `onGet` lists its `#[DependsOn]` declarations, including those on an `onGet()` it overrides.
   A declaration on a row class is not in the graph: see [what the graph does not know](#what-the-graph-does-not-know).

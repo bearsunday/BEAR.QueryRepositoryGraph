@@ -8,6 +8,7 @@ use BEAR\Resource\ResourceObject;
 class Editor extends ResourceObject
 {
     #[Purge(uri: 'app://self/item{?id}')]
+    #[Purge(uri: 'app://self/remote-item')]
     public function onPut(string $id): static
     {
         return $this;
