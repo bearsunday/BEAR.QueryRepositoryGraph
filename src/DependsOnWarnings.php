@@ -159,18 +159,11 @@ final class DependsOnWarnings
 
         $candidates = $purged[$targetKey] ?? [];
         if ($candidates === []) {
-            $cached = isset($byKey[$targetKey]) && Impact::isCached($byKey[$targetKey]);
-
             return [
                 ...$warnings,
                 ['warning' => 'depends-on-never-invalidated'] + $where +
                 [
-                    'message' => sprintf(
-                        $cached
-                        ? 'No write refreshes or purges %s: it is cached, but none of its write methods refreshes it (an onPost() does only when its arguments carry the required onGet() ones); add one that does, or name it in a #[Purge]/#[Refresh].'
-                        : 'No write refreshes or purges %s: make it #[Cacheable], or name it in a #[Purge]/#[Refresh].',
-                        $target['uri'],
-                    ),
+                    'message' => sprintf('No write refreshes or purges %s: %s', $target['uri'], self::refreshAdvice($byKey[$targetKey] ?? null)),
                 ],
             ];
         }
@@ -183,6 +176,24 @@ final class DependsOnWarnings
         }
 
         return $warnings;
+    }
+
+    /**
+     * What makes a write refresh the resource, by the cache it declares
+     *
+     * @param Node|null $node
+     */
+    private static function refreshAdvice(array|null $node): string
+    {
+        if ($node === null || ! Impact::isCached($node)) {
+            return 'make it #[Cacheable], or name it in a #[Purge]/#[Refresh].';
+        }
+
+        if (isset($node['cacheable']) || isset($node['cacheableResponse'])) {
+            return 'it is cached, but none of its write methods refreshes it (an onPost() does only when its arguments, the keys of a POST query that uses their names, carry the required onGet() ones); add one that does, or name it in a #[Purge]/#[Refresh].';
+        }
+
+        return 'it is cached by #[DonutCache] or by #[CacheableResponse] on onGet(), so a write refreshes it only when the write method carries #[RefreshCache] or #[CacheableResponse]; add one, or name it in a #[Purge]/#[Refresh].';
     }
 
     /** @param Purged $tag */

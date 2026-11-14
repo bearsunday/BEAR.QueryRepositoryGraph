@@ -380,7 +380,7 @@ class QrGraphTest extends TestCase
         $this->assertSame('The tag is app://self/origin?[id], but writes purge app://self/origin?[articleId], app://self/origin?[].', $messages['app://self/origin-by-id']);
         $this->assertStringContainsString('make it #[Cacheable]', $messages['app://self/unpurged']);
         $this->assertStringContainsString('it is cached, but none of its write methods refreshes it', $messages['app://self/post-only-list']);
-        $this->assertStringContainsString('it is cached', $messages['app://self/method-cached-list'], '#[CacheableResponse] on onGet() caches it too');
+        $this->assertStringContainsString('only when the write method carries #[RefreshCache] or #[CacheableResponse]', $messages['app://self/method-cached-list'], '#[CacheableResponse] on onGet() caches it, and binds no write');
     }
 
     public function testUsageErrors(): void

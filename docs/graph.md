@@ -147,7 +147,9 @@ These leave the resource stale after a write to what it depends on:
 - `depends-on-unknown-resource` — no scanned resource serves the URI.
 - `depends-on-never-invalidated` — no write refreshes or purges the URI. A write method refreshes its own resource
   implicitly, but an `onPost()` does so only when its arguments carry every required `onGet()` one, under the same
-  name or its snake_case form: otherwise the refresh is skipped for lack of them.
+  name or its snake_case form: otherwise the refresh is skipped for lack of them. This assumes the POST query uses
+  the `onPost()` argument names. A resource cached by `#[DonutCache]`, or by `#[CacheableResponse]` on `onGet()`
+  only, is refreshed only by a write method that carries `#[RefreshCache]` or `#[CacheableResponse]`.
 - `depends-on-tag-mismatch` — the tag the declaration expands to (its path as written, and its query keys) is none
   of the tags a write purges. A write refreshes its own resource under the required `onGet()` parameters, as named
   or all in snake_case, at the resource's own path; a `#[Refresh]`/`#[Purge]` purges the URI it names.
