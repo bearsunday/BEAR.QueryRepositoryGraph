@@ -31,10 +31,11 @@ use const JSON_UNESCAPED_UNICODE;
 /**
  * `qr-graph` - the declared cache graph of a BEAR.Sunday application
  *
- * Output is JSONL on stdout; diagnostics (skipped files, warnings, errors) are JSONL on stderr.
+ * `dump`, `observe` and `impact --json` print JSONL on stdout, `impact`, `dot` and `snapshot` text; diagnostics
+ * (skipped files, warnings, errors) are JSONL on stderr.
  *
  * @psalm-import-type Node from GraphBuilder
- * @psalm-type Options = array{dir: string, method: string|null, allowUnknown: bool, failOn: list<string>, cached: bool}
+ * @psalm-type Options = array{dir: string, method: string|null, allowUnknown: bool, failOn: list<string>, cached: bool, json: bool}
  */
 final class Cli
 {
@@ -42,7 +43,7 @@ final class Cli
     public const USAGE = <<<'USAGE'
 Usage:
   qr-graph dump   [--dir=src/Resource]                      one JSONL line per resource
-  qr-graph impact <uri> [--method=onPut] [--allow-unknown] [--dir=src/Resource]  what invalidating <uri> (or calling its write method) reaches
+  qr-graph impact <uri> [--method=onPut] [--allow-unknown] [--json] [--dir=src/Resource]  what invalidating <uri> (or calling its write method) reaches, as a tree; --json prints one JSONL line per reached resource
   qr-graph dot    [--cached] [--dir=src/Resource]           Graphviz view; --cached keeps only cached resources and what they embed
   qr-graph snapshot [--dir=src/Resource]                    every impact as an indented tree, to keep and review as a diff
   qr-graph observe <session.json|dir>... [--dir=src/Resource] [--fail-on=<verdict>[,<verdict>...]]  each embedded child the log saw, joined with its declaration; --fail-on is repeatable or comma-separated and exits 3 when a printed line carries a listed verdict (e.g. --fail-on=untagged-material)
@@ -85,7 +86,7 @@ USAGE;
      */
     private static function parse(string $command, array $argv): array|string
     {
-        $options = ['dir' => 'src/Resource', 'method' => null, 'allowUnknown' => false, 'failOn' => [], 'cached' => false];
+        $options = ['dir' => 'src/Resource', 'method' => null, 'allowUnknown' => false, 'failOn' => [], 'cached' => false, 'json' => false];
         $args = [];
         foreach ($argv as $arg) {
             if (str_starts_with($arg, '--dir=')) {
@@ -113,6 +114,11 @@ USAGE;
 
             if ($arg === '--cached') {
                 $options['cached'] = true;
+                continue;
+            }
+
+            if ($arg === '--json') {
+                $options['json'] = true;
                 continue;
             }
 
@@ -150,7 +156,7 @@ USAGE;
                 'observe' => $args !== [],
                 default => $args === [],
             }
-            && ($command === 'impact' || ($options['method'] === null && ! $options['allowUnknown']))
+            && ($command === 'impact' || ($options['method'] === null && ! $options['allowUnknown'] && ! $options['json']))
             && ($command === 'observe' || $options['failOn'] === [])
             && ($command === 'dot' || ! $options['cached']);
 
@@ -184,6 +190,11 @@ USAGE;
 
         if ($command === 'impact') {
             self::assertTarget($graph['nodes'], $args[0], $options['method'], $options['allowUnknown']);
+            if (! $options['json']) {
+                fwrite($stdout, (new SnapshotRenderer())->impact($graph['nodes'], $args[0], $options['method']));
+
+                return 0;
+            }
         }
 
         $lines = match ($command) {

@@ -28,10 +28,7 @@ final class SnapshotRenderer
     public function __invoke(array $nodes): string
     {
         $impact = new Impact($nodes);
-        $caches = [];
-        foreach ($nodes as $node) {
-            $caches[$node['uri']] = Impact::caches($node);
-        }
+        $caches = self::caches($nodes);
 
         $blocks = [];
         foreach ($nodes as $node) {
@@ -52,6 +49,35 @@ final class SnapshotRenderer
         }
 
         return implode("\n", $blocks);
+    }
+
+    /**
+     * What invalidating `$uri`, or calling its write method, reaches: the snapshot's block for it, printed even when it reaches nothing
+     *
+     * @param list<Node> $nodes
+     */
+    public function impact(array $nodes, string $uri, string|null $method): string
+    {
+        $lines = (new Impact($nodes))($uri, $method);
+        // The start as the graph names it: the line at depth 0, or what a write's targets are reached by.
+        $root = $lines[0]['by'] ?? $lines[0]['uri'];
+
+        return ($method === null ? $root : "{$root} {$method}") . "\n" . self::tree($lines, $root, 0, self::caches($nodes));
+    }
+
+    /**
+     * @param list<Node> $nodes
+     *
+     * @return array<string, list<string>>
+     */
+    private static function caches(array $nodes): array
+    {
+        $caches = [];
+        foreach ($nodes as $node) {
+            $caches[$node['uri']] = Impact::caches($node);
+        }
+
+        return $caches;
     }
 
     /**

@@ -92,7 +92,7 @@ class QrGraphTest extends TestCase
             $this->assertSchema('dump.json', $line);
         }
 
-        [, $out] = self::qrGraph(['impact', 'page://self/dep/diamond-bottom', '--dir=' . self::DIR]);
+        [, $out] = self::qrGraph(['impact', 'page://self/dep/diamond-bottom', '--json', '--dir=' . self::DIR]);
         foreach (explode("\n", trim($out)) as $line) {
             $this->assertSchema('impact.json', $line);
         }
@@ -151,7 +151,7 @@ class QrGraphTest extends TestCase
 
     public function testImpactReachesEachEmbedderOnceByItsShortestPath(): void
     {
-        [$code, $out] = self::qrGraph(['impact', 'page://self/dep/diamond-bottom?id=1', '--dir=' . self::DIR]);
+        [$code, $out] = self::qrGraph(['impact', 'page://self/dep/diamond-bottom?id=1', '--json', '--dir=' . self::DIR]);
         $this->assertSame(0, $code);
         $lines = self::jsonl($out);
         $this->assertSame(
@@ -173,7 +173,7 @@ class QrGraphTest extends TestCase
 
     public function testImpactOfAWriteMethodStartsFromWhatItInvalidates(): void
     {
-        [, $out] = self::qrGraph(['impact', 'app://self/user', '--method=onPut', '--dir=' . self::DIR]);
+        [, $out] = self::qrGraph(['impact', 'app://self/user', '--method=onPut', '--json', '--dir=' . self::DIR]);
         $lines = self::jsonl($out);
         $this->assertSame(
             [
@@ -232,6 +232,26 @@ class QrGraphTest extends TestCase
         $this->assertStringNotContainsString('app://self/entry onPatch', $out, 'a write that only refreshes its own resource has no block');
     }
 
+    public function testImpactPrintsItsSnapshotBlock(): void
+    {
+        $dir = '--dir=tests/Fixture/DependsOn/Resource';
+        [, $snapshot] = self::qrGraph(['snapshot', $dir]);
+        [$code, $out, $err] = self::qrGraph(['impact', 'app://self/author', $dir]);
+        $this->assertSame(0, $code, $err);
+        $this->assertSame("app://self/author\n  app://self/archive (dependsOn)\n  app://self/entries (dependsOn)\n    page://self/index (embed, cacheable, ttl: never)\n", $out);
+        $this->assertStringContainsString($out, $snapshot);
+
+        [, $out] = self::qrGraph(['impact', 'app://self/writer', '--method=onPost', $dir]);
+        $this->assertStringStartsWith("app://self/writer onPost\n  app://self/article (purge, cacheable, ttl: never)\n", $out);
+        $this->assertStringContainsString($out, $snapshot);
+
+        [, $out] = self::qrGraph(['impact', 'app://self/Digest', $dir]);
+        $this->assertSame("app://self/digest\n", $out, 'a resource that reaches nothing is its name alone, as the graph spells it');
+
+        [$code] = self::qrGraph(['dump', '--json', $dir]);
+        $this->assertSame(2, $code);
+    }
+
     public function testTokensFindOneLineDeclarationsAndBracedNamespaces(): void
     {
         [$code, $out, $err] = self::qrGraph(['dump', '--dir=tests/Fixture/Resource']);
@@ -285,14 +305,14 @@ class QrGraphTest extends TestCase
         $this->assertSame('', $out);
         $this->assertStringContainsString('No resource app://self/typo', $this->lastError($err));
 
-        [$code, $out] = self::qrGraph(['impact', 'app://self/typo', '--allow-unknown', '--dir=' . self::DIR]);
+        [$code, $out] = self::qrGraph(['impact', 'app://self/typo', '--allow-unknown', '--json', '--dir=' . self::DIR]);
         $this->assertSame(0, $code);
         $this->assertSame(['app://self/typo'], array_column(self::jsonl($out), 'uri'));
     }
 
     public function testUriMatchingFollowsTheAdapterEquivalence(): void
     {
-        [$code, $out, $err] = self::qrGraph(['impact', 'app://self/galleryArticle', '--dir=tests/Fixture/Camel/Resource']);
+        [$code, $out, $err] = self::qrGraph(['impact', 'app://self/galleryArticle', '--json', '--dir=tests/Fixture/Camel/Resource']);
         $this->assertSame(0, $code, $err);
         $lines = self::jsonl($out);
         $this->assertSame(['app://self/gallery-article', 'page://self/camel-parent'], array_column($lines, 'uri'));
@@ -332,13 +352,13 @@ class QrGraphTest extends TestCase
         $this->assertIsArray($embeds);
         $this->assertSame(['read' => 'referenced', 'ignored' => 'unreferenced'], array_column($embeds, 'usage', 'rel'));
 
-        [$code, $out] = self::qrGraph(['impact', 'app://self/ignored-child', '--dir=tests/Fixture/Usage/Resource']);
+        [$code, $out] = self::qrGraph(['impact', 'app://self/ignored-child', '--json', '--dir=tests/Fixture/Usage/Resource']);
         $this->assertSame(0, $code);
         $lines = self::jsonl($out);
         $this->assertSame(['app://self/ignored-child', 'page://self/donut-page'], array_column($lines, 'uri'));
         $this->assertSame('hole', $lines[1]['role']);
 
-        [$code, $out] = self::qrGraph(['impact', 'app://self/read-child', '--dir=tests/Fixture/Usage/Resource']);
+        [$code, $out] = self::qrGraph(['impact', 'app://self/read-child', '--json', '--dir=tests/Fixture/Usage/Resource']);
         $this->assertSame(0, $code);
         $lines = self::jsonl($out);
         $this->assertSame('material', $lines[1]['role']);
@@ -374,7 +394,7 @@ class QrGraphTest extends TestCase
         ], self::at($nodes['app://self/archive'], 'methods', 'onGet', 'dependsOn'));
         $this->assertNull(self::at($nodes['app://self/entries'], 'methods', 'onPost'), 'only onGet() declarations are read');
 
-        [$code, $out] = self::qrGraph(['impact', 'app://self/article', '--method=onPut', $dir]);
+        [$code, $out] = self::qrGraph(['impact', 'app://self/article', '--method=onPut', '--json', $dir]);
         $this->assertSame(0, $code);
         foreach (explode("\n", trim($out)) as $line) {
             $this->assertSchema('impact.json', $line);
@@ -390,7 +410,7 @@ class QrGraphTest extends TestCase
         ], array_map(static fn (array $line): array => [$line['uri'], $line['via'], $line['by'], $line['depth']], self::jsonl($out)));
 
         // A #[Purge] on another resource: `by` names the purged URI from the second hop on.
-        [, $out] = self::qrGraph(['impact', 'app://self/writer', '--method=onPost', $dir]);
+        [, $out] = self::qrGraph(['impact', 'app://self/writer', '--method=onPost', '--json', $dir]);
         $this->assertSame([
             ['app://self/article', 'purge', 'app://self/writer', 1],
             ['app://self/archive', 'dependsOn', 'app://self/article', 2],
@@ -399,7 +419,7 @@ class QrGraphTest extends TestCase
             ['page://self/index', 'embed', 'app://self/entries', 3],
         ], array_map(static fn (array $line): array => [$line['uri'], $line['via'], $line['by'], $line['depth']], self::jsonl($out)));
 
-        [, $out] = self::qrGraph(['impact', 'app://self/middle', $dir]);
+        [, $out] = self::qrGraph(['impact', 'app://self/middle', '--json', $dir]);
         $this->assertSame(['app://self/middle', 'app://self/outer'], array_column(self::jsonl($out), 'uri'), 'a URI asked about is purged itself');
 
         [, $out] = self::qrGraph(['dot', $dir]);

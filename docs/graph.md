@@ -16,14 +16,15 @@ is declared but never observed, or observed but never declared.
 
 ```bash
 vendor/bin/qr-graph dump [--dir=src/Resource]
-vendor/bin/qr-graph impact <uri> [--method=onPut] [--allow-unknown] [--dir=src/Resource]
+vendor/bin/qr-graph impact <uri> [--method=onPut] [--allow-unknown] [--json] [--dir=src/Resource]
 vendor/bin/qr-graph dot [--cached] [--dir=src/Resource]
 vendor/bin/qr-graph snapshot [--dir=src/Resource]
 vendor/bin/qr-graph observe <session.json|dir>... [--dir=src/Resource] [--fail-on=<verdict>[,<verdict>...]]
 ```
 
 Run it from the application root: classes are loaded through the application's autoloader, and a file
-the autoloader does not resolve is reported on stderr as skipped, never included. Output is JSONL on stdout.
+the autoloader does not resolve is reported on stderr as skipped, never included. `dump`, `impact --json` and
+`observe` print JSONL on stdout; `impact`, `dot` and `snapshot` print text.
 Skipped files, warnings and tool errors are JSONL on stderr; usage errors are plain text, as are PHP's own notices.
 Exit code: 0 ok, 1 error, 2 usage, 3 `observe --fail-on` matched a printed line. An unknown option or an extra
 argument is a usage error (2); `--method` naming a method that refreshes and purges nothing is an error (1).
@@ -65,12 +66,15 @@ Local questions are a `grep` away: `grep '"uri":"app://self/user/profile"'` find
 ### `impact` — what an invalidation reaches
 
 Multi-hop questions ("if this changes, what goes stale?") are answered by `impact`, not by repeated `grep`.
-It walks the embed and `dependsOn` edges breadth-first, one line per reached URI by its shortest path
-([schema](schemas/graph/impact.json)). With `--method`, it starts from what that write method refreshes and purges.
+It walks the embed and `dependsOn` edges breadth-first, one line per reached URI by its shortest path.
+With `--method`, it starts from what that write method refreshes and purges.
 A `dependsOn` edge is followed only from a URI that is purged itself (the one asked about, or a `refresh`/`purge`
 target): a declaration carries the exact tag of the URI it names, not the tags that URI carries. `impact` does
 not compare tags: an edge whose declaration does not match what the write purges is reported on stderr as
 `depends-on-tag-mismatch` or `depends-on-never-invalidated`, and still listed here.
+
+It prints the tree `snapshot` prints for the same start, also when nothing is reached (the start alone).
+`--json` prints the lines as JSONL instead ([schema](schemas/graph/impact.json)), with each line's `source`:
 
 ```json
 {"uri":"page://self/dep/diamond-top","via":"embed","by":"page://self/dep/diamond-left","depth":2,"cached":true,"source":"src/Resource/Page/Dep/DiamondTop.php:10"}
@@ -115,6 +119,10 @@ Every `impact` as an indented tree: a block per resource whose invalidation reac
 (`cacheable, ttl: medium`, `cacheable response`); children are sorted by URI and no line
 carries a `source`, so moving code does not change the text. Like `by`, the tree shows each reached URI once,
 by one shortest path. The text is for diffs, not parsing: regenerate it after upgrading `qr-graph`.
+
+To design the cache before the code, write the resource classes with their attributes and empty methods, agree on
+`dot` and `snapshot`, commit the snapshot, then write the methods: the snapshot stays the same, except on a donut
+page, whose embeds are a `material` only once the method reads them (see `usage` above).
 
 ### `observe` — the log against the declarations
 
