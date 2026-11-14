@@ -159,10 +159,48 @@ final class Impact
      */
     public static function isCached(array $node): bool
     {
-        if (isset($node['cacheable']) || isset($node['donutCache']) || isset($node['cacheableResponse'])) {
-            return true;
+        return self::caches($node) !== [];
+    }
+
+    /**
+     * The cache attributes the resource declares, as named in the code; only #[Cacheable] expires by time, so only it carries a TTL
+     *
+     * @param Node $node
+     *
+     * @return list<string> `cacheable, ttl: medium`, `cacheable view, ttl: medium`, `cacheable response`, `donut cache`
+     */
+    public static function caches(array $node): array
+    {
+        $caches = [];
+        $cacheable = $node['cacheable'] ?? null;
+        if ($cacheable !== null) {
+            $caches[] = ($cacheable['type'] === 'view' ? 'cacheable view' : 'cacheable') . ', ttl: ' . self::ttl($cacheable);
         }
 
+        if (isset($node['cacheableResponse']) || self::onGetCacheableResponse($node)) {
+            $caches[] = 'cacheable response';
+        }
+
+        if (isset($node['donutCache'])) {
+            $caches[] = 'donut cache';
+        }
+
+        return $caches;
+    }
+
+    /** @param array{expiry: string, expirySecond: int, expiryAt: string, update: bool, type: string} $cacheable */
+    private static function ttl(array $cacheable): string
+    {
+        if ($cacheable['expirySecond'] > 0) {
+            return $cacheable['expirySecond'] . 's';
+        }
+
+        return $cacheable['expiryAt'] !== '' ? 'until ' . $cacheable['expiryAt'] : $cacheable['expiry'];
+    }
+
+    /** @param Node $node */
+    private static function onGetCacheableResponse(array $node): bool
+    {
         foreach ($node['methods'] ?? [] as $name => $method) {
             if (str_starts_with($name, 'onGet') && isset($method['cacheableResponse'])) {
                 return true;
