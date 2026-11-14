@@ -66,7 +66,8 @@ target): a declaration carries the exact tag of the URI it names, not the tags t
 not compare tags: an edge whose declaration does not match what the write purges is reported on stderr as
 `depends-on-tag-mismatch` or `depends-on-never-invalidated`, and still listed here.
 
-It prints the tree `snapshot` prints for the same start, also when nothing is reached (the start alone).
+It prints the tree `snapshot` prints for the same start, also when nothing is reached (the start alone) and for a
+write that only refreshes its own resource implicitly, which `snapshot` leaves out.
 `--json` prints the lines as JSONL instead ([schema](schemas/graph/impact.json)), with each line's `source`:
 
 ```json

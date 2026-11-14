@@ -58,11 +58,10 @@ final class SnapshotRenderer
      */
     public function impact(array $nodes, string $uri, string|null $method): string
     {
-        $lines = (new Impact($nodes))($uri, $method);
-        // The start as the graph names it: the line at depth 0, or what a write's targets are reached by.
-        $root = $lines[0]['by'] ?? $lines[0]['uri'];
+        $impact = new Impact($nodes);
+        $root = $impact->start($uri);
 
-        return ($method === null ? $root : "{$root} {$method}") . "\n" . self::tree($lines, $root, 0, self::caches($nodes));
+        return ($method === null ? $root : "{$root} {$method}") . "\n" . self::tree($impact($uri, $method), $root, 0, self::caches($nodes));
     }
 
     /**

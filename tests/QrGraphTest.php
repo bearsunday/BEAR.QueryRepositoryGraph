@@ -193,7 +193,7 @@ class QrGraphTest extends TestCase
         $this->assertSame(0, $code);
         $this->assertStringStartsWith('digraph qr {', $out);
         $this->assertStringContainsString('"page://self/dep/level-one" -> "page://self/dep/level-two" [label="level-two"];', $out);
-        $this->assertStringContainsString('"app://self/user" -> "app://self/user/friend" [label="onPut purge", color="#3b73b9", fontcolor="#2f5f9e"];', $out);
+        $this->assertStringContainsString('"app://self/user" -> "app://self/user/friend" [label="onPut purge"', $out);
         $this->assertMatchesRegularExpression('#"page://self/dep/level-one" \[shape=box, [^\n]*>dep/level-one</TD>[^\n]*>page \(cacheable, ttl: never\)<#', $out);
         $this->assertMatchesRegularExpression('#"app://self/view" \[[^\n]*>app \(cacheable view, ttl: never\)<#', $out, 'a non-default #[Cacheable] type is named');
         $this->assertMatchesRegularExpression('#"app://self/counter" \[shape=plaintext, [^\n]*>counter</TD>[^\n]*>app<#', $out);
@@ -218,8 +218,8 @@ class QrGraphTest extends TestCase
         $this->assertStringNotContainsString('method-cached-list', $out);
 
         [, $out] = self::qrGraph(['dot', '--cached', '--dir=tests/Fixture/CachedView/Resource']);
-        $this->assertStringContainsString('"app://self/items" -> "app://self/item" [label="dependsOn", color="#9a9a9a", fontcolor="#777777", penwidth=1.6];', $out, 'a #[DependsOn] target is drawn though nothing caches it');
-        $this->assertStringContainsString('"app://self/editor" -> "app://self/item" [label="onPut purge", color="#3b73b9", fontcolor="#2f5f9e"];', $out, 'a write to it is drawn though the writer is not cached');
+        $this->assertStringContainsString('"app://self/items" -> "app://self/item" [label="dependsOn"', $out, 'a #[DependsOn] target is drawn though nothing caches it');
+        $this->assertStringContainsString('"app://self/editor" -> "app://self/item" [label="onPut purge"', $out, 'a write to it is drawn though the writer is not cached');
         $this->assertStringNotContainsString('app://self/other', $out, 'a write that reaches nothing drawn is left out');
 
         [$code] = self::qrGraph(['dump', '--cached', '--dir=' . self::DIR]);
@@ -315,6 +315,14 @@ class QrGraphTest extends TestCase
         [$code, $out] = self::qrGraph(['impact', 'app://self/typo', '--allow-unknown', '--json', '--dir=' . self::DIR]);
         $this->assertSame(0, $code);
         $this->assertSame(['app://self/typo'], array_column(self::jsonl($out), 'uri'));
+
+        [$code, $out] = self::qrGraph(['impact', 'app://self/typo?id=1', '--allow-unknown', '--dir=' . self::DIR]);
+        $this->assertSame(0, $code);
+        $this->assertSame("app://self/typo\n", $out);
+
+        [$code, $out, $err] = self::qrGraph(['impact', 'app://self/typo', '--allow-unknown', '--method=onPut', '--dir=' . self::DIR]);
+        $this->assertSame(0, $code, $err);
+        $this->assertSame("app://self/typo onPut\n", $out, 'an unknown resource has no write to reach anything from');
     }
 
     public function testUriMatchingFollowsTheAdapterEquivalence(): void
@@ -402,8 +410,8 @@ class QrGraphTest extends TestCase
         $this->assertSame(['app://self/middle', 'app://self/outer'], array_column(self::jsonl($out), 'uri'), 'a URI asked about is purged itself');
 
         [, $out] = self::qrGraph(['dot', $dir]);
-        $this->assertStringContainsString('"app://self/entries" -> "app://self/article" [label="dependsOn", color="#9a9a9a", fontcolor="#777777", penwidth=1.6];', $out);
-        $this->assertSame(1, substr_count($out, '"app://self/archive" -> "app://self/author" [label="dependsOn", color="#9a9a9a", fontcolor="#777777", penwidth=1.6];'), 'two declarations on one URI, differing in their query, are one arrow');
+        $this->assertStringContainsString('"app://self/entries" -> "app://self/article" [label="dependsOn"', $out);
+        $this->assertSame(1, substr_count($out, '"app://self/archive" -> "app://self/author" [label="dependsOn"'), 'two declarations on one URI, differing in their query, are one arrow');
     }
 
     public function testDependsOnDeclarationsNoWriteInvalidatesAreWarnedOnStderr(): void

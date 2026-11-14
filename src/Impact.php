@@ -47,6 +47,14 @@ final class Impact
         }
     }
 
+    /** The URI an impact of `$uri` starts from: the scanned resource's spelling, or `$uri` without its query */
+    public function start(string $uri): string
+    {
+        $uri = $this->converter->resolve($uri, $uri)['uri'];
+
+        return $this->nodes[$this->converter->key($uri)]['uri'] ?? $uri;
+    }
+
     /**
      * @param string      $uri    an instance (`app://self/user?id=1`) or a node URI
      * @param string|null $method a write method of `$uri`: start from what it refreshes and purges
@@ -55,9 +63,8 @@ final class Impact
      */
     public function __invoke(string $uri, string|null $method = null): array
     {
-        $uri = $this->converter->resolve($uri, $uri)['uri'];
-        $key = $this->converter->key($uri);
-        $start = $this->nodes[$key]['uri'] ?? $uri;
+        $start = $this->start($uri);
+        $key = $this->converter->key($start);
         /** @var list<array{uri: string, via: string, by: string|null, depth: int}> $queue */
         $queue = $method === null ? [['uri' => $start, 'via' => 'target', 'by' => null, 'depth' => 0]] : $this->writeTargets($key, $start, $method);
 
