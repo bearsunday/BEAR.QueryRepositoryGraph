@@ -315,7 +315,7 @@ class QrGraphTest extends TestCase
 
     public function testHtmlFailsWhenDotCannotDraw(): void
     {
-        foreach ([['/no/such/dot'], [PHP_BINARY, '-r', 'stream_get_contents(STDIN); fwrite(STDERR, "syntax error"); exit(1);']] as $dot) {
+        foreach ([['/no/such/dot'], [PHP_BINARY, '-r', 'stream_get_contents(STDIN); fwrite(STDERR, "syntax error"); exit(1);'], [PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo "no picture";']] as $dot) {
             try {
                 (new HtmlRenderer($dot))([], 'digraph qr {}');
                 $this->fail('no exception');

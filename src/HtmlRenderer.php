@@ -214,10 +214,7 @@ final class HtmlRenderer
     {
         $command = implode(' ', $this->dot);
         // stderr goes to a file: a pipe left unread while stdout is read could fill and stall the command.
-        $stderr = tmpfile();
-        if ($stderr === false) {
-            throw new RuntimeException('Cannot create a temporary file for ' . $command);
-        }
+        $stderr = tmpfile() ?: throw new RuntimeException('Cannot create a temporary file for ' . $command);
 
         // A missing binary, or a command that exits before reading its input, is a warning; the exceptions below report it.
         set_error_handler(static fn (): bool => true);
