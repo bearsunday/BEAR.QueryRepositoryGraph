@@ -203,7 +203,7 @@ class QrGraphTest extends TestCase
         $this->assertDoesNotMatchRegularExpression('#\{rank=min;[^\n]*"page://self/dep/level-two"#', $out, 'an embedded page stays where the layout puts it');
     }
 
-    public function testDotCachedKeepsCachedResourcesAndWhatTheyEmbed(): void
+    public function testDotCachedKeepsCachedResourcesAndWhatInvalidatesThem(): void
     {
         [$code, $out, $err] = self::qrGraph(['dot', '--cached', '--dir=' . self::DIR]);
         $this->assertSame(0, $code, $err);
@@ -214,6 +214,11 @@ class QrGraphTest extends TestCase
         [, $out] = self::qrGraph(['dot', '--cached', '--dir=tests/Fixture/DependsOnWarn/Resource']);
         $this->assertMatchesRegularExpression('#"app://self/method-cached" \[[^\n]*>app \(cacheable response\)<#', $out, 'a resource cached by #[CacheableResponse] on onGet() only is cached');
         $this->assertStringNotContainsString('method-cached-list', $out);
+
+        [, $out] = self::qrGraph(['dot', '--cached', '--dir=tests/Fixture/CachedView/Resource']);
+        $this->assertStringContainsString('"app://self/items" -> "app://self/item" [label="dependsOn", style=dotted];', $out, 'a #[DependsOn] target is drawn though nothing caches it');
+        $this->assertStringContainsString('"app://self/editor" -> "app://self/item" [label="onPut purge", style=dashed];', $out, 'a write to it is drawn though the writer is not cached');
+        $this->assertStringNotContainsString('app://self/other', $out, 'a write that reaches nothing drawn is left out');
 
         [$code] = self::qrGraph(['dump', '--cached', '--dir=' . self::DIR]);
         $this->assertSame(2, $code);

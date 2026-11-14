@@ -18,7 +18,7 @@ Run it from the application root.
 
 ```bash
 vendor/bin/qr-graph dot | dot -Tsvg > graph.svg                   # the picture
-vendor/bin/qr-graph dot --cached | dot -Tsvg > cached.svg         # only cached resources and what they embed
+vendor/bin/qr-graph dot --cached | dot -Tsvg > cached.svg         # the cached part and the writes that reach it
 vendor/bin/qr-graph impact app://self/article                     # what invalidating a resource reaches
 vendor/bin/qr-graph impact app://self/admin/article --method=onPut  # what a write reaches
 vendor/bin/qr-graph snapshot > qr-graph.snapshot.txt              # every impact, kept in the repository

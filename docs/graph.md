@@ -104,8 +104,9 @@ host when it is not `self`) and the cache attributes as declared: `page (cacheab
 Pages no drawn arrow points to (other than their own arrows to themselves), where a request starts, line up in the leftmost
 column; with `--cached`, an arrow from a resource left out does not count.
 
-`--cached` draws only the cached resources (what `impact` reports as `cached: true`) and what they embed,
-directly or not; a `dependsOn`, refresh or purge arrow is kept when both of its ends are drawn.
+`--cached` draws the cached resources (what `impact` reports as `cached: true`) and what they embed, directly or
+not; then what those name in `#[DependsOn]`, often a resource nothing caches whose URI writes purge, and the
+resources whose writes refresh or purge any of these. Other arrows are kept when both of their ends are drawn.
 
 ### `snapshot` — impacts to review as a diff
 

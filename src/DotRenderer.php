@@ -36,13 +36,13 @@ final class DotRenderer
     }
 
     /**
-     * Only the cached resources and what they embed, directly or not
+     * The cached resources, what they embed, directly or not, what those depend on, and the writes that invalidate them
      *
      * @param list<Node> $nodes
      */
     public function cached(array $nodes): string
     {
-        return self::render($nodes, self::cachedAndEmbedded($nodes));
+        return self::render($nodes, self::cachedAndInvalidators($nodes));
     }
 
     /**
@@ -161,9 +161,10 @@ final class DotRenderer
     /**
      * @param list<Node> $nodes
      *
-     * @return array<string, true> URIs of the cached resources and of everything they embed
+     * @return array<string, true> URIs of the cached resources, everything they embed, what those depend on, and the
+     *                             resources whose writes refresh or purge any of them
      */
-    private static function cachedAndEmbedded(array $nodes): array
+    private static function cachedAndInvalidators(array $nodes): array
     {
         $byUri = [];
         foreach ($nodes as $node) {
@@ -189,12 +190,32 @@ final class DotRenderer
             }
         }
 
-        return $shown;
+        // A #[DependsOn] target is often cached nowhere: it is the name writes purge to reach what depends on it.
+        foreach (array_keys($shown) as $uri) {
+            foreach ($byUri[$uri]['methods'] ?? [] as $method) {
+                foreach ($method['dependsOn'] ?? [] as $target) {
+                    $shown[$target['uri']] = true;
+                }
+            }
+        }
+
+        $writers = [];
+        foreach ($nodes as $node) {
+            foreach ($node['methods'] ?? [] as $method) {
+                foreach ([...$method['refresh'] ?? [], ...$method['purge'] ?? []] as $target) {
+                    if (isset($shown[$target['uri']])) {
+                        $writers[$node['uri']] = true;
+                    }
+                }
+            }
+        }
+
+        return $shown + $writers;
     }
 
     /**
      * @param Method                   $method
-     * @param array<string, true>|null $shown  edges to other resources are left out
+     * @param array<string, true>|null $shown  arrows to a resource not shown are left out
      *
      * @return list<array{string, string, string}> from, to and the edge attributes
      */
@@ -202,7 +223,9 @@ final class DotRenderer
     {
         $edges = [];
         foreach ($method['embed'] ?? [] as $embed) {
-            $edges[] = [$from, $embed['uri'], sprintf('label="%s"', addcslashes($embed['rel'], '"\\'))];
+            if ($shown === null || isset($shown[$embed['uri']])) {
+                $edges[] = [$from, $embed['uri'], sprintf('label="%s"', addcslashes($embed['rel'], '"\\'))];
+            }
         }
 
         foreach ($method['dependsOn'] ?? [] as $target) {

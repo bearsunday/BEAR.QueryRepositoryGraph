@@ -44,7 +44,7 @@ final class Cli
 Usage:
   qr-graph dump   [--dir=src/Resource]                      one JSONL line per resource
   qr-graph impact <uri> [--method=onPut] [--allow-unknown] [--json] [--dir=src/Resource]  what invalidating <uri> (or calling its write method) reaches, as a tree; --json prints one JSONL line per reached resource
-  qr-graph dot    [--cached] [--dir=src/Resource]           Graphviz view; --cached keeps only cached resources and what they embed
+  qr-graph dot    [--cached] [--dir=src/Resource]           Graphviz view; --cached keeps the cached resources, what they embed and depend on, and the writes that invalidate them
   qr-graph snapshot [--dir=src/Resource]                    every impact as an indented tree, to keep and review as a diff
   qr-graph observe <session.json|dir>... [--dir=src/Resource] [--fail-on=<verdict>[,<verdict>...]]  each embedded child the log saw, joined with its declaration; --fail-on is repeatable or comma-separated and exits 3 when a printed line carries a listed verdict (e.g. --fail-on=untagged-material)
 
