@@ -104,9 +104,9 @@
 <!-- app://self/articles&#45;&gt;app://self/article -->
 <g id="edge9" class="edge">
 <title>app://self/articles&#45;&gt;app://self/article</title>
-<path fill="none" stroke="black" stroke-dasharray="1,5" d="M761.19,-387.9C797.42,-395.49 842.49,-404.93 880.3,-412.85"/>
-<polygon fill="none" stroke="black" points="879.29,-416.22 889.79,-414.84 880.72,-409.37 879.29,-416.22"/>
-<text xml:space="preserve" text-anchor="middle" x="826.22" y="-408.2" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#333333">dependsOn</text>
+<path fill="none" stroke="#9a9a9a" stroke-width="1.6" d="M761.19,-387.9C797.11,-395.43 841.71,-404.77 879.33,-412.65"/>
+<polygon fill="none" stroke="#9a9a9a" stroke-width="1.6" points="878.4,-416.03 888.9,-414.66 879.83,-409.18 878.4,-416.03"/>
+<text xml:space="preserve" text-anchor="middle" x="826.22" y="-408.2" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#777777">dependsOn</text>
 </g>
 <!-- app://self/categories -->
 <g id="node5" class="node">
@@ -149,9 +149,9 @@
 <!-- app://self/ranking&#45;&gt;app://self/article -->
 <g id="edge12" class="edge">
 <title>app://self/ranking&#45;&gt;app://self/article</title>
-<path fill="none" stroke="black" stroke-dasharray="1,5" d="M743.38,-647.71C776.05,-631.17 818.89,-606.44 850.97,-577.03 888.45,-542.66 920.84,-493.16 939.77,-461.04"/>
-<polygon fill="none" stroke="black" points="942.69,-462.98 944.68,-452.57 936.64,-459.47 942.69,-462.98"/>
-<text xml:space="preserve" text-anchor="middle" x="826.22" y="-614.97" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#333333">dependsOn</text>
+<path fill="none" stroke="#9a9a9a" stroke-width="1.6" d="M743.38,-647.71C776.05,-631.17 818.89,-606.44 850.97,-577.03 888.12,-542.95 920.28,-494.01 939.28,-461.88"/>
+<polygon fill="none" stroke="#9a9a9a" stroke-width="1.6" points="942.23,-463.76 944.22,-453.36 936.17,-460.25 942.23,-463.76"/>
+<text xml:space="preserve" text-anchor="middle" x="826.22" y="-614.97" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#777777">dependsOn</text>
 </g>
 <!-- app://self/related -->
 <g id="node10" class="node">
@@ -162,9 +162,9 @@
 <!-- app://self/related&#45;&gt;app://self/article -->
 <g id="edge13" class="edge">
 <title>app://self/related&#45;&gt;app://self/article</title>
-<path fill="none" stroke="black" stroke-dasharray="1,5" d="M553.09,-159.21C631.46,-211.5 827.67,-342.4 914.74,-400.49"/>
-<polygon fill="none" stroke="black" points="912.79,-403.39 923.05,-406.03 916.67,-397.57 912.79,-403.39"/>
-<text xml:space="preserve" text-anchor="middle" x="693.92" y="-297.28" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#333333">dependsOn</text>
+<path fill="none" stroke="#9a9a9a" stroke-width="1.6" d="M553.09,-159.21C631.3,-211.39 826.88,-341.87 914.21,-400.14"/>
+<polygon fill="none" stroke="#9a9a9a" stroke-width="1.6" points="912.03,-402.89 922.29,-405.53 915.92,-397.07 912.03,-402.89"/>
+<text xml:space="preserve" text-anchor="middle" x="693.92" y="-297.28" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#777777">dependsOn</text>
 </g>
 <!-- app://self/tag -->
 <g id="node11" class="node">
@@ -182,9 +182,9 @@
 <!-- app://self/tags&#45;&gt;app://self/article -->
 <g id="edge15" class="edge">
 <title>app://self/tags&#45;&gt;app://self/article</title>
-<path fill="none" stroke="black" stroke-dasharray="1,5" d="M761.35,-571.77C790.27,-564.52 823.71,-553.46 850.97,-537.03 884.18,-517.01 914.42,-484.31 934.13,-460.13"/>
-<polygon fill="none" stroke="black" points="936.71,-462.5 940.21,-452.5 931.24,-458.14 936.71,-462.5"/>
-<text xml:space="preserve" text-anchor="middle" x="826.22" y="-561.15" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#333333">dependsOn</text>
+<path fill="none" stroke="#9a9a9a" stroke-width="1.6" d="M761.35,-571.77C790.27,-564.52 823.71,-553.46 850.97,-537.03 883.88,-517.19 913.89,-484.89 933.61,-460.77"/>
+<polygon fill="none" stroke="#9a9a9a" stroke-width="1.6" points="936.14,-463.21 939.64,-453.21 930.67,-458.84 936.14,-463.21"/>
+<text xml:space="preserve" text-anchor="middle" x="826.22" y="-561.15" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#777777">dependsOn</text>
 </g>
 <!-- page://self/article -->
 <g id="node13" class="node">

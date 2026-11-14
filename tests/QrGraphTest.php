@@ -216,7 +216,7 @@ class QrGraphTest extends TestCase
         $this->assertStringNotContainsString('method-cached-list', $out);
 
         [, $out] = self::qrGraph(['dot', '--cached', '--dir=tests/Fixture/CachedView/Resource']);
-        $this->assertStringContainsString('"app://self/items" -> "app://self/item" [label="dependsOn", style=dotted];', $out, 'a #[DependsOn] target is drawn though nothing caches it');
+        $this->assertStringContainsString('"app://self/items" -> "app://self/item" [label="dependsOn", color="#9a9a9a", fontcolor="#777777", penwidth=1.6];', $out, 'a #[DependsOn] target is drawn though nothing caches it');
         $this->assertStringContainsString('"app://self/editor" -> "app://self/item" [label="onPut purge", style=dashed];', $out, 'a write to it is drawn though the writer is not cached');
         $this->assertStringNotContainsString('app://self/other', $out, 'a write that reaches nothing drawn is left out');
 
@@ -429,8 +429,8 @@ class QrGraphTest extends TestCase
         $this->assertSame(['app://self/middle', 'app://self/outer'], array_column(self::jsonl($out), 'uri'), 'a URI asked about is purged itself');
 
         [, $out] = self::qrGraph(['dot', $dir]);
-        $this->assertStringContainsString('"app://self/entries" -> "app://self/article" [label="dependsOn", style=dotted];', $out);
-        $this->assertSame(1, substr_count($out, '"app://self/archive" -> "app://self/author" [label="dependsOn", style=dotted];'), 'two declarations on one URI, differing in their query, are one arrow');
+        $this->assertStringContainsString('"app://self/entries" -> "app://self/article" [label="dependsOn", color="#9a9a9a", fontcolor="#777777", penwidth=1.6];', $out);
+        $this->assertSame(1, substr_count($out, '"app://self/archive" -> "app://self/author" [label="dependsOn", color="#9a9a9a", fontcolor="#777777", penwidth=1.6];'), 'two declarations on one URI, differing in their query, are one arrow');
     }
 
     public function testDependsOnDeclarationsNoWriteInvalidatesAreWarnedOnStderr(): void

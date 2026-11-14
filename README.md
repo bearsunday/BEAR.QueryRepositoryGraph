@@ -38,13 +38,13 @@ JSONL, described by the [JSON Schemas](docs/schemas/graph). Each command and its
 | grey rounded box | a `page` resource; pages nothing points to, where a request starts, line up on the left |
 | plain text | any other resource (`app`); a host other than `self` is shown, as in `app://blog` |
 | second row | the scheme and the cache as declared: `cacheable, ttl: short`, `cacheable view, ttl: …`, `cacheable response`, `donut cache`; nothing when the resource is not cached |
-| solid arrow | embeds, labelled with the relation (`index` embeds `ranking` as `ranking`) |
-| dotted arrow | `#[DependsOn]` |
+| black arrow | embeds, labelled with the relation (`index` embeds `ranking` as `ranking`) |
+| grey arrow | `#[DependsOn]` |
 | bold arrow | a write that refreshes (`onPut refresh`) |
 | dashed arrow | a write that purges (`onPost purge`) |
 
 Arrows point the way they are declared. Invalidation travels against them: refreshing `article` reaches `ranking`
-through its dotted arrow, and `index` through the solid one.
+through its grey arrow, and `index` through the black one.
 
 ## What a change reaches
 

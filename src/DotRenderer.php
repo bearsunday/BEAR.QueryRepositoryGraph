@@ -230,7 +230,7 @@ final class DotRenderer
 
         foreach ($method['dependsOn'] ?? [] as $target) {
             if ($shown === null || isset($shown[$target['uri']])) {
-                $edges[] = [$from, $target['uri'], 'label="dependsOn", style=dotted'];
+                $edges[] = [$from, $target['uri'], 'label="dependsOn", color="#9a9a9a", fontcolor="#777777", penwidth=1.6'];
             }
         }
 
