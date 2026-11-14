@@ -81,7 +81,7 @@ final class Impact
                 'via' => $next['via'],
                 'by' => $next['by'],
                 'depth' => $next['depth'],
-                'cached' => $node !== null && $this->isCached($node),
+                'cached' => $node !== null && self::isCached($node),
                 'source' => $node['source'] ?? null,
             ];
             if (isset($next['role'])) {
@@ -158,8 +158,12 @@ final class Impact
         return $this->nodes[$this->converter->key($uri)]['uri'] ?? $uri;
     }
 
-    /** @param Node $node */
-    private function isCached(array $node): bool
+    /**
+     * Whether the resource declares a cache at all, on the class or on onGet()
+     *
+     * @param Node $node
+     */
+    public static function isCached(array $node): bool
     {
         if (isset($node['cacheable']) || isset($node['donutCache']) || isset($node['cacheableResponse'])) {
             return true;

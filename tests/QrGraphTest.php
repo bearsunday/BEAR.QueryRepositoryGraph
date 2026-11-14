@@ -366,6 +366,7 @@ class QrGraphTest extends TestCase
             ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/alias', 'dependsOn' => 'app://self/camelPair{?leftId,rightId}'],
             ['warning' => 'depends-on-bound-parameter', 'resource' => 'app://self/bound', 'dependsOn' => 'app://self/article{?id}'],
             ['warning' => 'depends-on-default-body', 'resource' => 'app://self/default-body'],
+            ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/method-cached-list', 'dependsOn' => 'app://self/method-cached{?id}'],
             ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/mismatch', 'dependsOn' => 'app://self/article{?articleId}'],
             ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/mixed-keys', 'dependsOn' => 'app://self/camel-pair{?leftId,right_id}'],
             ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/origin-by-id', 'dependsOn' => 'app://self/origin{?id}'],
@@ -379,6 +380,7 @@ class QrGraphTest extends TestCase
         $this->assertSame('The tag is app://self/origin?[id], but writes purge app://self/origin?[articleId], app://self/origin?[].', $messages['app://self/origin-by-id']);
         $this->assertStringContainsString('make it #[Cacheable]', $messages['app://self/unpurged']);
         $this->assertStringContainsString('it is cached, but none of its write methods refreshes it', $messages['app://self/post-only-list']);
+        $this->assertStringContainsString('it is cached', $messages['app://self/method-cached-list'], '#[CacheableResponse] on onGet() caches it too');
     }
 
     public function testUsageErrors(): void

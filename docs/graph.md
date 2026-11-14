@@ -65,7 +65,9 @@ Multi-hop questions ("if this changes, what goes stale?") are answered by `impac
 It walks the embed and `dependsOn` edges breadth-first, one line per reached URI by its shortest path
 ([schema](schemas/graph/impact.json)). With `--method`, it starts from what that write method refreshes and purges.
 A `dependsOn` edge is followed only from a URI that is purged itself (the one asked about, or a `refresh`/`purge`
-target): a declaration carries the exact tag of the URI it names, not the tags that URI carries.
+target): a declaration carries the exact tag of the URI it names, not the tags that URI carries. `impact` does
+not compare tags: an edge whose declaration does not match what the write purges is reported on stderr as
+`depends-on-tag-mismatch` or `depends-on-never-invalidated`, and still listed here.
 
 ```json
 {"uri":"page://self/dep/diamond-top","via":"embed","by":"page://self/dep/diamond-left","depth":2,"cached":true,"source":"src/Resource/Page/Dep/DiamondTop.php:10"}

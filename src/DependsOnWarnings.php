@@ -159,7 +159,7 @@ final class DependsOnWarnings
 
         $candidates = $purged[$targetKey] ?? [];
         if ($candidates === []) {
-            $cached = isset($byKey[$targetKey]['cacheable']) || isset($byKey[$targetKey]['cacheableResponse']) || isset($byKey[$targetKey]['donutCache']);
+            $cached = isset($byKey[$targetKey]) && Impact::isCached($byKey[$targetKey]);
 
             return [
                 ...$warnings,
