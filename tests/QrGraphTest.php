@@ -195,7 +195,7 @@ class QrGraphTest extends TestCase
         $this->assertSame(0, $code);
         $this->assertStringStartsWith('digraph qr {', $out);
         $this->assertStringContainsString('"page://self/dep/level-one" -> "page://self/dep/level-two" [label="level-two"];', $out);
-        $this->assertStringContainsString('"app://self/user" -> "app://self/user/friend" [label="onPut purge", color="#d9534f", fontcolor="#c9302c"];', $out);
+        $this->assertStringContainsString('"app://self/user" -> "app://self/user/friend" [label="onPut purge", color="#3b73b9", fontcolor="#2f5f9e"];', $out);
         $this->assertMatchesRegularExpression('#"page://self/dep/level-one" \[shape=box, [^\n]*>dep/level-one</TD>[^\n]*>page \(cacheable, ttl: never\)<#', $out);
         $this->assertMatchesRegularExpression('#"app://self/view" \[[^\n]*>app \(cacheable view, ttl: never\)<#', $out, 'a non-default #[Cacheable] type is named');
         $this->assertMatchesRegularExpression('#"app://self/counter" \[shape=plaintext, [^\n]*>counter</TD>[^\n]*>app<#', $out);
@@ -217,7 +217,7 @@ class QrGraphTest extends TestCase
 
         [, $out] = self::qrGraph(['dot', '--cached', '--dir=tests/Fixture/CachedView/Resource']);
         $this->assertStringContainsString('"app://self/items" -> "app://self/item" [label="dependsOn", color="#9a9a9a", fontcolor="#777777", penwidth=1.6];', $out, 'a #[DependsOn] target is drawn though nothing caches it');
-        $this->assertStringContainsString('"app://self/editor" -> "app://self/item" [label="onPut purge", color="#d9534f", fontcolor="#c9302c"];', $out, 'a write to it is drawn though the writer is not cached');
+        $this->assertStringContainsString('"app://self/editor" -> "app://self/item" [label="onPut purge", color="#3b73b9", fontcolor="#2f5f9e"];', $out, 'a write to it is drawn though the writer is not cached');
         $this->assertStringNotContainsString('app://self/other', $out, 'a write that reaches nothing drawn is left out');
 
         [$code] = self::qrGraph(['dump', '--cached', '--dir=' . self::DIR]);

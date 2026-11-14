@@ -24,16 +24,16 @@
 <!-- app://self/admin/article&#45;&gt;app://self/article -->
 <g id="edge3" class="edge">
 <title>app://self/admin/article&#45;&gt;app://self/article</title>
-<path fill="none" stroke="#d9534f" d="M392.46,-508.44C483.38,-513.62 686.98,-518.74 850.97,-476.03 869.28,-471.26 888.44,-463.69 905.38,-456.02"/>
-<polygon fill="none" stroke="#d9534f" points="906.66,-459.28 914.24,-451.89 903.7,-452.94 906.66,-459.28"/>
-<text xml:space="preserve" text-anchor="middle" x="693.92" y="-510.1" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#c9302c">onPut refresh</text>
+<path fill="none" stroke="#3b73b9" d="M392.46,-508.44C483.38,-513.62 686.98,-518.74 850.97,-476.03 869.28,-471.26 888.44,-463.69 905.38,-456.02"/>
+<polygon fill="none" stroke="#3b73b9" points="906.66,-459.28 914.24,-451.89 903.7,-452.94 906.66,-459.28"/>
+<text xml:space="preserve" text-anchor="middle" x="693.92" y="-510.1" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#2f5f9e">onPut refresh</text>
 </g>
 <!-- app://self/admin/article&#45;&gt;app://self/article -->
 <g id="edge5" class="edge">
 <title>app://self/admin/article&#45;&gt;app://self/article</title>
-<path fill="none" stroke="#d9534f" d="M392.32,-499.13C497.68,-486.06 751.53,-454.57 880.1,-438.63"/>
-<polygon fill="none" stroke="#d9534f" points="880.4,-442.12 889.89,-437.41 879.54,-435.17 880.4,-442.12"/>
-<text xml:space="preserve" text-anchor="middle" x="693.92" y="-471.31" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#c9302c">onDelete purge</text>
+<path fill="none" stroke="#3b73b9" d="M392.32,-499.13C497.68,-486.06 751.53,-454.57 880.1,-438.63"/>
+<polygon fill="none" stroke="#3b73b9" points="880.4,-442.12 889.89,-437.41 879.54,-435.17 880.4,-442.12"/>
+<text xml:space="preserve" text-anchor="middle" x="693.92" y="-471.31" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#2f5f9e">onDelete purge</text>
 </g>
 <!-- app://self/articles -->
 <g id="node3" class="node">
@@ -44,16 +44,16 @@
 <!-- app://self/admin/article&#45;&gt;app://self/articles -->
 <g id="edge1" class="edge">
 <title>app://self/admin/article&#45;&gt;app://self/articles</title>
-<path fill="none" stroke="#d9534f" d="M384.51,-482.71C393.69,-476.82 403.15,-470.11 411.29,-463.03 432.05,-444.97 427.41,-429.44 451.29,-415.78 465.52,-407.63 550.16,-394.17 615.3,-384.74"/>
-<polygon fill="none" stroke="#d9534f" points="615.49,-388.24 624.89,-383.36 614.49,-381.32 615.49,-388.24"/>
-<text xml:space="preserve" text-anchor="middle" x="518.83" y="-417.53" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#c9302c">onPost purge</text>
+<path fill="none" stroke="#3b73b9" d="M384.51,-482.71C393.69,-476.82 403.15,-470.11 411.29,-463.03 432.05,-444.97 427.41,-429.44 451.29,-415.78 465.52,-407.63 550.16,-394.17 615.3,-384.74"/>
+<polygon fill="none" stroke="#3b73b9" points="615.49,-388.24 624.89,-383.36 614.49,-381.32 615.49,-388.24"/>
+<text xml:space="preserve" text-anchor="middle" x="518.83" y="-417.53" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#2f5f9e">onPost purge</text>
 </g>
 <!-- app://self/admin/article&#45;&gt;app://self/articles -->
 <g id="edge6" class="edge">
 <title>app://self/admin/article&#45;&gt;app://self/articles</title>
-<path fill="none" stroke="#d9534f" d="M388.19,-482.7C407.18,-473.64 429.95,-463.7 451.29,-456.78 509.59,-437.85 528.59,-449.44 586.38,-429.03 606.66,-421.86 627.92,-411.53 646.07,-401.74"/>
-<polygon fill="none" stroke="#d9534f" points="647.68,-404.85 654.76,-396.96 644.31,-398.72 647.68,-404.85"/>
-<text xml:space="preserve" text-anchor="middle" x="518.83" y="-458.53" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#c9302c">onDelete purge</text>
+<path fill="none" stroke="#3b73b9" d="M388.19,-482.7C407.18,-473.64 429.95,-463.7 451.29,-456.78 509.59,-437.85 528.59,-449.44 586.38,-429.03 606.66,-421.86 627.92,-411.53 646.07,-401.74"/>
+<polygon fill="none" stroke="#3b73b9" points="647.68,-404.85 654.76,-396.96 644.31,-398.72 647.68,-404.85"/>
+<text xml:space="preserve" text-anchor="middle" x="518.83" y="-458.53" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#2f5f9e">onDelete purge</text>
 </g>
 <!-- app://self/ranking -->
 <g id="node9" class="node">
@@ -64,9 +64,9 @@
 <!-- app://self/admin/article&#45;&gt;app://self/ranking -->
 <g id="edge4" class="edge">
 <title>app://self/admin/article&#45;&gt;app://self/ranking</title>
-<path fill="none" stroke="#d9534f" d="M382.5,-527.32C392.03,-533.21 402.14,-539.69 411.29,-546.03 429.78,-558.83 431.7,-565.98 451.29,-577.03 503.89,-606.68 567.83,-630.82 616.72,-647.07"/>
-<polygon fill="none" stroke="#d9534f" points="615.51,-650.36 626.1,-650.15 617.69,-643.71 615.51,-650.36"/>
-<text xml:space="preserve" text-anchor="middle" x="518.83" y="-638.17" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#c9302c">onPut purge</text>
+<path fill="none" stroke="#3b73b9" d="M382.5,-527.32C392.03,-533.21 402.14,-539.69 411.29,-546.03 429.78,-558.83 431.7,-565.98 451.29,-577.03 503.89,-606.68 567.83,-630.82 616.72,-647.07"/>
+<polygon fill="none" stroke="#3b73b9" points="615.51,-650.36 626.1,-650.15 617.69,-643.71 615.51,-650.36"/>
+<text xml:space="preserve" text-anchor="middle" x="518.83" y="-638.17" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#2f5f9e">onPut purge</text>
 </g>
 <!-- app://self/tags -->
 <g id="node12" class="node">
@@ -77,16 +77,16 @@
 <!-- app://self/admin/article&#45;&gt;app://self/tags -->
 <g id="edge2" class="edge">
 <title>app://self/admin/article&#45;&gt;app://self/tags</title>
-<path fill="none" stroke="#d9534f" d="M392.37,-517.59C410.74,-522.3 431.95,-527.59 451.29,-532.03 511.03,-545.72 526.47,-546.81 586.38,-559.78 595.81,-561.82 605.7,-564 615.49,-566.2"/>
-<polygon fill="none" stroke="#d9534f" points="614.47,-569.56 625,-568.34 616.01,-562.73 614.47,-569.56"/>
-<text xml:space="preserve" text-anchor="middle" x="518.83" y="-561.53" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#c9302c">onPost purge</text>
+<path fill="none" stroke="#3b73b9" d="M392.37,-517.59C410.74,-522.3 431.95,-527.59 451.29,-532.03 511.03,-545.72 526.47,-546.81 586.38,-559.78 595.81,-561.82 605.7,-564 615.49,-566.2"/>
+<polygon fill="none" stroke="#3b73b9" points="614.47,-569.56 625,-568.34 616.01,-562.73 614.47,-569.56"/>
+<text xml:space="preserve" text-anchor="middle" x="518.83" y="-561.53" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#2f5f9e">onPost purge</text>
 </g>
 <!-- app://self/article&#45;&gt;app://self/article -->
 <g id="edge8" class="edge">
 <title>app://self/article&#45;&gt;app://self/article</title>
-<path fill="none" stroke="#d9534f" d="M937.24,-450.94C932.51,-464.03 939.6,-476.36 958.51,-476.36 971.67,-476.36 979.1,-470.4 980.82,-462.37"/>
-<polygon fill="none" stroke="#d9534f" points="984.31,-462.09 979.93,-452.44 977.34,-462.72 984.31,-462.09"/>
-<text xml:space="preserve" text-anchor="middle" x="958.51" y="-478.11" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#c9302c">onPut refresh</text>
+<path fill="none" stroke="#3b73b9" d="M937.24,-450.94C932.51,-464.03 939.6,-476.36 958.51,-476.36 971.67,-476.36 979.1,-470.4 980.82,-462.37"/>
+<polygon fill="none" stroke="#3b73b9" points="984.31,-462.09 979.93,-452.44 977.34,-462.72 984.31,-462.09"/>
+<text xml:space="preserve" text-anchor="middle" x="958.51" y="-478.11" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#2f5f9e">onPut refresh</text>
 </g>
 <!-- app://self/author -->
 <g id="node4" class="node">
@@ -136,9 +136,9 @@
 <!-- app://self/comments&#45;&gt;app://self/comments -->
 <g id="edge11" class="edge">
 <title>app://self/comments&#45;&gt;app://self/comments</title>
-<path fill="none" stroke="#d9534f" d="M320.09,-62.94C314.84,-76.03 322.72,-88.36 343.74,-88.36 358.36,-88.36 366.63,-82.4 368.54,-74.37"/>
-<polygon fill="none" stroke="#d9534f" points="372.03,-74.04 367.55,-64.44 365.06,-74.74 372.03,-74.04"/>
-<text xml:space="preserve" text-anchor="middle" x="343.74" y="-90.11" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#c9302c">onPost refresh</text>
+<path fill="none" stroke="#3b73b9" d="M320.09,-62.94C314.84,-76.03 322.72,-88.36 343.74,-88.36 358.36,-88.36 366.63,-82.4 368.54,-74.37"/>
+<polygon fill="none" stroke="#3b73b9" points="372.03,-74.04 367.55,-64.44 365.06,-74.74 372.03,-74.04"/>
+<text xml:space="preserve" text-anchor="middle" x="343.74" y="-90.11" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#2f5f9e">onPost refresh</text>
 </g>
 <!-- app://self/login -->
 <g id="node8" class="node">
