@@ -51,10 +51,11 @@ v4 `dependsOn`.
   or one marked `#[RefreshCache]`, refreshes its own resource.
 - `dynamic` lists source-text hints that the declarations may not be the whole story (the class source
   mentions a `surrogate-key`, or `ResourceInject`/`ResourceInterface` for a `resource-request` outside `#[Embed]`). A hint is a reason to read the source; its absence proves nothing.
-- `usage` on an embed of a donut-cached page (`#[CacheableResponse]`/`#[DonutCache]`) says whether the method
+- `usage` on an embed of a donut-cached page (`#[CacheableResponse]`/`#[DonutCache]` on the class) says whether the method
   reads the relation: `referenced` children become materials (their tags are stored with the page), and
   `unreferenced` ones are holes, rendered per request. This is a source-text heuristic; an indirect read
-  (one that replaces the relation's body with an array) is not detected.
+  (one that replaces the relation's body with an array) is not detected. A page with `#[CacheableResponse]` on
+  `onGet()` only is donut-cached at run time too, but its embeds carry no `usage`, and `impact` no `role`.
 
 Local questions are a `grep` away: `grep '"uri":"app://self/user/profile"'` finds the resource, and
 `grep 'app://self/user/profile"'` also finds every line that embeds, refreshes or purges it.
