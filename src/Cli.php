@@ -176,33 +176,15 @@ USAGE;
         $graph = self::graph($options['dir'], $cwd, $stderr);
         $skipped = $graph['skipped'];
 
-        if ($command === 'dot') {
-            $renderer = new DotRenderer();
-            fwrite($stdout, $options['cached'] ? $renderer->cached($graph['nodes']) : $renderer($graph['nodes']));
-
-            return 0;
-        }
-
-        if ($command === 'html') {
-            $dot = new DotRenderer();
-            fwrite($stdout, (new HtmlRenderer())($graph['nodes'], $options['cached'] ? $dot->cached($graph['nodes']) : $dot($graph['nodes'])));
-
-            return 0;
-        }
-
-        if ($command === 'snapshot') {
-            fwrite($stdout, (new SnapshotRenderer())($graph['nodes']));
-
-            return 0;
-        }
-
         if ($command === 'impact') {
             self::assertTarget($graph['nodes'], $args[0], $options['method'], $options['allowUnknown']);
-            if (! $options['json']) {
-                fwrite($stdout, (new SnapshotRenderer())->impact($graph['nodes'], $args[0], $options['method']));
+        }
 
-                return 0;
-            }
+        $text = self::text($command, $options, $args, $graph['nodes']);
+        if ($text !== null) {
+            fwrite($stdout, $text);
+
+            return 0;
         }
 
         $lines = match ($command) {
@@ -227,6 +209,26 @@ USAGE;
         }
 
         return $command === 'observe' && self::carries($lines, $options['failOn']) ? 3 : 0;
+    }
+
+    /**
+     * @param Options      $options
+     * @param list<string> $args
+     * @param list<Node>   $nodes
+     *
+     * @return string|null what the command prints as text; null for a command that prints JSONL
+     */
+    private static function text(string $command, array $options, array $args, array $nodes): string|null
+    {
+        $dot = new DotRenderer();
+
+        return match (true) {
+            $command === 'dot' => $options['cached'] ? $dot->cached($nodes) : $dot($nodes),
+            $command === 'html' => (new HtmlRenderer())($nodes, $options['cached'] ? $dot->cached($nodes) : $dot($nodes)),
+            $command === 'snapshot' => (new SnapshotRenderer())($nodes),
+            $command === 'impact' && ! $options['json'] => (new SnapshotRenderer())->impact($nodes, $args[0], $options['method']),
+            default => null,
+        };
     }
 
     /**

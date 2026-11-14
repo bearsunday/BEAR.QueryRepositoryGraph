@@ -15,6 +15,8 @@ use function json_encode;
 use function ksort;
 use function proc_close;
 use function proc_open;
+use function restore_error_handler;
+use function set_error_handler;
 use function sprintf;
 use function stream_get_contents;
 use function strpos;
@@ -164,7 +166,14 @@ final class HtmlRenderer
     private function svg(string $source): string
     {
         $command = implode(' ', $this->dot);
-        $process = @proc_open($this->dot, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        // A missing binary is a warning from proc_open; the exception below reports it instead.
+        set_error_handler(static fn (): bool => true);
+        try {
+            $process = proc_open($this->dot, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        } finally {
+            restore_error_handler();
+        }
+
         if ($process === false) {
             throw new RuntimeException("Cannot run {$command}: install Graphviz to render html");
         }

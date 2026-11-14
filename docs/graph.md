@@ -112,8 +112,9 @@ vendor/bin/qr-graph html > graph.html
 
 One self-contained page, readable from `file://`: the `dot` picture (`--cached` as for `dot`) rendered by Graphviz,
 whose `dot` must be on the `PATH` (without it, an error, 1). Click a resource: what invalidates it glows green, what
-it invalidates glows orange, each with the arrows on the way and counted in the legend; the rest dims.
-Clicking it again or the background clears.
+it invalidates glows orange, and a write that invalidates it (a resource reaching it only through its own refresh or
+purge) glows blue with its arrows; each side is counted in the legend and the rest dims. Clicking it again or the
+background clears.
 The page embeds, as JSON, what `impact` computes from each resource and from each of its write methods that refresh
 or purge, at the level of resources: one shortest path per reached resource, as `impact` shows it.
 
