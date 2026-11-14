@@ -191,7 +191,7 @@ final class HtmlRenderer
 <meta charset="utf-8">
 <title>qr-graph</title>
 <style>
-  :root { --goes-stale: #ff8c1a; --makes-stale: #2eb85c; --write: #3b73b9; --selected: #1f6feb; }
+  :root { --goes-stale: #ff8c1a; --makes-stale: #2eb85c; --write: #3b73b9; --selected: #8e44ad; }
   body { margin: 0; font: 13px/1.4 Helvetica, Arial, sans-serif; color: #222; background: #fff; }
   header { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; gap: 6px 20px; align-items: center;
     padding: 8px 16px; background: rgba(255, 255, 255, .94); border-bottom: 1px solid #e4e4e4; }
@@ -199,6 +199,7 @@ final class HtmlRenderer
   .swatch { width: 11px; height: 11px; border-radius: 2px; }
   .swatch.reached-by { background: var(--makes-stale); box-shadow: 0 0 6px 1px var(--makes-stale); }
   .swatch.reaches { background: var(--goes-stale); box-shadow: 0 0 6px 1px var(--goes-stale); }
+  .swatch.writer { background: var(--write); box-shadow: 0 0 6px 1px var(--write); }
   .swatch.selected { background: var(--selected); box-shadow: 0 0 6px 1px var(--selected); }
   .count { font-weight: bold; }
   #status { color: #666; }
@@ -210,6 +211,7 @@ final class HtmlRenderer
   .node.reached-by { filter: drop-shadow(0 0 2px var(--makes-stale)) drop-shadow(0 0 6px var(--makes-stale)); }
   .node.reaches { filter: drop-shadow(0 0 2px var(--goes-stale)) drop-shadow(0 0 6px var(--goes-stale)); }
   .node.reaches.reached-by { filter: drop-shadow(0 0 2px var(--goes-stale)) drop-shadow(0 0 6px var(--makes-stale)); }
+  .node.reached-by.writer { filter: drop-shadow(0 0 2px var(--write)) drop-shadow(0 0 6px var(--write)); }
   .node.selected { filter: drop-shadow(0 0 2px var(--selected)) drop-shadow(0 0 8px var(--selected)); }
   .node.selected text:first-of-type { font-weight: bold; }
   .edge.reached-by path, .edge.reached-by polygon { stroke: var(--makes-stale); stroke-width: 2; }
@@ -224,6 +226,7 @@ final class HtmlRenderer
 </head>
 <body>
 <header>
+  <span class="key"><span class="swatch writer"></span>writes that invalidate this <span class="count" id="count-writer"></span></span>
   <span class="key"><span class="swatch reached-by"></span>invalidates this <span class="count" id="count-reached-by"></span></span>
   <span class="key"><span class="swatch selected"></span>clicked</span>
   <span class="key"><span class="swatch reaches"></span>invalidated by this <span class="count" id="count-reaches"></span></span>
@@ -238,7 +241,11 @@ final class HtmlRenderer
   const graph = JSON.parse(document.getElementById('qr-graph-data').textContent);
   const svg = document.querySelector('main svg');
   const status = document.getElementById('status');
-  const counts = { reaches: document.getElementById('count-reaches'), reachedBy: document.getElementById('count-reached-by') };
+  const counts = {
+    reaches: document.getElementById('count-reaches'),
+    reachedBy: document.getElementById('count-reached-by'),
+    writer: document.getElementById('count-writer'),
+  };
   const hint = status.textContent;
   const title = (g) => g.querySelector('title')?.textContent ?? '';
   const nodes = new Map();
@@ -252,18 +259,22 @@ final class HtmlRenderer
       .forEach(([name, value]) => hit.setAttribute(name, value));
     g.insertBefore(hit, g.querySelector('title').nextSibling);
   });
+  // A write arrow is labelled `<method> refresh` or `<method> purge`; an embed is labelled with its relation.
+  const isWrite = (g) => /^on\w+ (refresh|purge)$/.test(g.querySelector('text')?.textContent ?? '');
   svg.querySelectorAll('g.edge').forEach((g) => {
     edges.set(title(g), [...(edges.get(title(g)) ?? []), g]);
+    if (isWrite(g)) {
+      g.classList.add('write');
+    }
   });
 
-  const classes = ['selected', 'reaches', 'reached-by'];
+  const classes = ['selected', 'reaches', 'reached-by', 'writer'];
   let selected = null;
   const clear = () => {
     classes.forEach((name) => svg.querySelectorAll('.' + name).forEach((el) => el.classList.remove(name)));
     svg.classList.remove('lit');
     status.textContent = hint;
-    counts.reaches.textContent = '';
-    counts.reachedBy.textContent = '';
+    Object.values(counts).forEach((count) => { count.textContent = ''; });
     selected = null;
   };
   // An impact step runs from `by` to `uri`; the arrow drawn for it points either way.
@@ -283,10 +294,17 @@ final class HtmlRenderer
     svg.classList.add('lit');
     light(sets.reaches, 'reaches');
     light(sets.reachedBy, 'reached-by');
+    // A resource that reaches this one only through its own writes is a writer, not something this one shows.
+    const writers = sets.reachedBy.nodes.filter((node) => {
+      const steps = sets.reachedBy.edges.filter(([by]) => by === node);
+      return steps.length > 0 && steps.every(([by, to]) => (edges.get(by + '->' + to) ?? []).some(isWrite));
+    });
+    writers.forEach((node) => nodes.get(node)?.classList.add('writer'));
     nodes.get(uri).classList.add('selected');
     status.textContent = uri;
     counts.reaches.textContent = `(${sets.reaches.nodes.length})`;
-    counts.reachedBy.textContent = `(${sets.reachedBy.nodes.length})`;
+    counts.reachedBy.textContent = `(${sets.reachedBy.nodes.length - writers.length})`;
+    counts.writer.textContent = `(${writers.length})`;
   };
 
   svg.addEventListener('click', (event) => {
