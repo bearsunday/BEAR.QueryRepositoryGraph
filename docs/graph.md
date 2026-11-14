@@ -112,7 +112,8 @@ vendor/bin/qr-graph html > graph.html
 
 One self-contained page, readable from `file://`: the `dot` picture (`--cached` as for `dot`) rendered by Graphviz,
 whose `dot` must be on the `PATH` (without it, an error, 1). Click a resource: what goes stale when it changes glows
-orange, what makes it stale glows green, each with the arrows on the way. Clicking it again or the background clears.
+orange, what makes it stale glows green, each with the arrows on the way and counted in the legend; the rest dims.
+Clicking it again or the background clears.
 The page embeds, as JSON, what `impact` computes from each resource and from each of its write methods that refresh
 or purge, at the level of resources: one shortest path per reached resource, as `impact` shows it.
 

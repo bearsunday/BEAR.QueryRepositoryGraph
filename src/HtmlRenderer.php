@@ -191,36 +191,38 @@ final class HtmlRenderer
 <meta charset="utf-8">
 <title>qr-graph</title>
 <style>
+  :root { --goes-stale: #ff8c1a; --makes-stale: #2eb85c; --selected: #1f6feb; }
   body { margin: 0; font: 13px/1.4 Helvetica, Arial, sans-serif; color: #222; background: #fff; }
   header { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; gap: 6px 20px; align-items: center;
     padding: 8px 16px; background: rgba(255, 255, 255, .94); border-bottom: 1px solid #e4e4e4; }
   .key { display: inline-flex; align-items: center; gap: 6px; }
-  .swatch { width: 10px; height: 10px; border-radius: 50%; }
-  .swatch.reaches { background: #ff8c1a; box-shadow: 0 0 6px 1px #ff8c1a; }
-  .swatch.reached-by { background: #2eb85c; box-shadow: 0 0 6px 1px #2eb85c; }
-  .swatch.selected { background: #1f6feb; box-shadow: 0 0 6px 1px #1f6feb; }
+  .swatch { width: 11px; height: 11px; border-radius: 2px; }
+  .swatch.reached-by { background: var(--makes-stale); box-shadow: 0 0 6px 1px var(--makes-stale); }
+  .swatch.reaches { background: var(--goes-stale); box-shadow: 0 0 6px 1px var(--goes-stale); }
+  .swatch.selected { background: var(--selected); box-shadow: 0 0 6px 1px var(--selected); }
+  .count { font-weight: bold; }
   #status { color: #666; }
   main { padding: 16px; overflow: auto; }
   svg .node { cursor: pointer; }
   svg .node, svg .edge { transition: opacity .15s; }
   svg.lit .node, svg.lit .edge { opacity: .22; }
   svg.lit .selected, svg.lit .reaches, svg.lit .reached-by { opacity: 1; }
-  .node.reaches { filter: drop-shadow(0 0 2px #ff8c1a) drop-shadow(0 0 6px #ff8c1a); }
-  .node.reached-by { filter: drop-shadow(0 0 2px #2eb85c) drop-shadow(0 0 6px #2eb85c); }
-  .node.reaches.reached-by { filter: drop-shadow(0 0 2px #ff8c1a) drop-shadow(0 0 6px #2eb85c); }
-  .node.selected { filter: drop-shadow(0 0 2px #1f6feb) drop-shadow(0 0 8px #1f6feb); }
+  .node.reached-by { filter: drop-shadow(0 0 2px var(--makes-stale)) drop-shadow(0 0 6px var(--makes-stale)); }
+  .node.reaches { filter: drop-shadow(0 0 2px var(--goes-stale)) drop-shadow(0 0 6px var(--goes-stale)); }
+  .node.reaches.reached-by { filter: drop-shadow(0 0 2px var(--goes-stale)) drop-shadow(0 0 6px var(--makes-stale)); }
+  .node.selected { filter: drop-shadow(0 0 2px var(--selected)) drop-shadow(0 0 8px var(--selected)); }
   .node.selected text:first-of-type { font-weight: bold; }
-  .edge.reaches path, .edge.reaches polygon { stroke: #ff8c1a; stroke-width: 2; }
-  .edge.reached-by path, .edge.reached-by polygon { stroke: #2eb85c; stroke-width: 2; }
-  .edge.reaches { filter: drop-shadow(0 0 3px #ff8c1a); }
-  .edge.reached-by { filter: drop-shadow(0 0 3px #2eb85c); }
+  .edge.reached-by path, .edge.reached-by polygon { stroke: var(--makes-stale); stroke-width: 2; }
+  .edge.reaches path, .edge.reaches polygon { stroke: var(--goes-stale); stroke-width: 2; }
+  .edge.reached-by { filter: drop-shadow(0 0 3px var(--makes-stale)); }
+  .edge.reaches { filter: drop-shadow(0 0 3px var(--goes-stale)); }
 </style>
 </head>
 <body>
 <header>
   <span class="key"><span class="swatch selected"></span>clicked</span>
-  <span class="key"><span class="swatch reaches"></span>goes stale when it changes</span>
-  <span class="key"><span class="swatch reached-by"></span>makes it stale</span>
+  <span class="key"><span class="swatch reached-by"></span>makes it stale <span class="count" id="count-reached-by"></span></span>
+  <span class="key"><span class="swatch reaches"></span>goes stale when it changes <span class="count" id="count-reaches"></span></span>
   <span id="status">Click a resource; click it again or the background to clear.</span>
 </header>
 <main>
@@ -232,6 +234,7 @@ final class HtmlRenderer
   const graph = JSON.parse(document.getElementById('qr-graph-data').textContent);
   const svg = document.querySelector('main svg');
   const status = document.getElementById('status');
+  const counts = { reaches: document.getElementById('count-reaches'), reachedBy: document.getElementById('count-reached-by') };
   const hint = status.textContent;
   const title = (g) => g.querySelector('title')?.textContent ?? '';
   const nodes = new Map();
@@ -255,6 +258,8 @@ final class HtmlRenderer
     classes.forEach((name) => svg.querySelectorAll('.' + name).forEach((el) => el.classList.remove(name)));
     svg.classList.remove('lit');
     status.textContent = hint;
+    counts.reaches.textContent = '';
+    counts.reachedBy.textContent = '';
     selected = null;
   };
   // An impact step runs from `by` to `uri`; the arrow drawn for it points either way.
@@ -275,7 +280,9 @@ final class HtmlRenderer
     light(sets.reaches, 'reaches');
     light(sets.reachedBy, 'reached-by');
     nodes.get(uri).classList.add('selected');
-    status.textContent = `${uri}: ${sets.reaches.nodes.length} go stale when it changes, ${sets.reachedBy.nodes.length} make it stale`;
+    status.textContent = uri;
+    counts.reaches.textContent = `(${sets.reaches.nodes.length})`;
+    counts.reachedBy.textContent = `(${sets.reachedBy.nodes.length})`;
   };
 
   svg.addEventListener('click', (event) => {
