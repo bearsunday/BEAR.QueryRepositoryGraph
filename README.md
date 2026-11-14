@@ -1,8 +1,8 @@
 # BEAR.QueryRepositoryGraph
 
-`qr-graph` prints the cache graph that [BEAR.QueryRepository](https://github.com/bearsunday/BEAR.QueryRepository)
-attributes declare, without running the application: what each resource embeds, what each write refreshes and
-purges, and what an invalidation reaches.
+Static analysis of the cache graph that [BEAR.QueryRepository](https://github.com/bearsunday/BEAR.QueryRepository)
+attributes declare: what each write invalidates. `qr-graph` reads the declarations without running the application:
+what each resource embeds, what each write refreshes and purges, and what an invalidation reaches.
 
 ![dot of the demo application](docs/images/dot.svg)
 

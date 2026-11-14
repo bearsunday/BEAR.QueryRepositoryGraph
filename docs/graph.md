@@ -2,8 +2,8 @@
 
 Cache behavior in BEAR.QueryRepository is declared: `#[Embed]` and `#[DependsOn]` say what a resource depends on,
 `#[Refresh]`/`#[Purge]` say what a write invalidates, and `#[Cacheable]`/`#[CacheableResponse]`/`#[DonutCache]`
-say what is cached at all. `qr-graph` reads those declarations, without running the application, and
-prints the graph they form.
+say what is cached at all. `qr-graph` analyses those declarations statically, without running the application,
+and prints the graph they form.
 
 The semantic log records what the cache *did*, as instance URIs (`depends_on`, `invalidate`, ...).
 This graph records what the code *declares*, as resource URIs. Comparing the two finds a dependency that
