@@ -186,16 +186,16 @@ final class DependsOnWarnings
      */
     private static function refreshAdvice(array|null $node): string
     {
-        if ($node === null || ! Impact::isCached($node)) {
-            return 'make it #[Cacheable], or name it in a #[Purge]/#[Refresh].';
-        }
-
         foreach ($node['methods'] ?? [] as $method) {
             foreach ($method['refresh'] ?? [] as $target) {
                 if (isset($target['implicit'])) {
                     return 'the writes that refresh it are onPost() whose arguments, the keys of a POST query that uses their names, do not carry the required onGet() ones; add them, or name it in a #[Purge]/#[Refresh].';
                 }
             }
+        }
+
+        if ($node === null || ! Impact::isCached($node)) {
+            return 'make it #[Cacheable], or name it in a #[Purge]/#[Refresh].';
         }
 
         if (isset($node['cacheable']) || isset($node['cacheableResponse'])) {

@@ -383,6 +383,7 @@ class QrGraphTest extends TestCase
             ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/mixed-keys', 'dependsOn' => 'app://self/camel-pair{?leftId,right_id}'],
             ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/no-write-list', 'dependsOn' => 'app://self/no-write{?id}'],
             ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/origin-by-id', 'dependsOn' => 'app://self/origin{?id}'],
+            ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/plain-refresh-list', 'dependsOn' => 'app://self/plain-refresh{?id}'],
             ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/post-camel-list', 'dependsOn' => 'app://self/post-camel?article_id={id}'],
             ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/post-only-list', 'dependsOn' => 'app://self/post-only{?id}'],
             ['warning' => 'depends-on-unknown-resource', 'resource' => 'app://self/typo', 'dependsOn' => 'app://self/artcle{?id}'],
@@ -395,6 +396,7 @@ class QrGraphTest extends TestCase
         $this->assertStringContainsString('the writes that refresh it are onPost() whose arguments', $messages['app://self/post-only-list']);
         $this->assertStringContainsString('the writes that refresh it are onPost() whose arguments', $messages['app://self/donut-refresh-post-list'], 'its onPost() already has #[RefreshCache]');
         $this->assertStringContainsString('it is cached, but has no write method', $messages['app://self/no-write-list']);
+        $this->assertStringContainsString('the writes that refresh it are onPost() whose arguments', $messages['app://self/plain-refresh-list'], 'uncached, refreshed only by a #[RefreshCache] onPost() that is skipped');
         $this->assertStringContainsString('only when the write method carries #[RefreshCache] or #[CacheableResponse]', $messages['app://self/method-cached-list'], '#[CacheableResponse] on onGet() caches it, and binds no write');
     }
 
