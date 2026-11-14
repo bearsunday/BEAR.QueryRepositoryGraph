@@ -46,6 +46,9 @@ JSONL, described by the [JSON Schemas](docs/schemas/graph). Each command and its
 Arrows point the way they are declared. Invalidation travels against them: refreshing `article` reaches `ranking`
 through its grey arrow, and `index` through the black one.
 
+`qr-graph html > graph.html` writes the same picture as one page. Click a resource: what invalidates it glows green,
+the writes that invalidate it blue, and what it invalidates orange, each side counted; the rest dims.
+
 ## What a change reaches
 
 ```
