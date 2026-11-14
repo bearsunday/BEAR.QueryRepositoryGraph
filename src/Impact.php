@@ -167,14 +167,14 @@ final class Impact
      *
      * @param Node $node
      *
-     * @return list<string> `cacheable, ttl: medium`, `cacheable response`, `donut cache`
+     * @return list<string> `cacheable, ttl: medium`, `cacheable view, ttl: medium`, `cacheable response`, `donut cache`
      */
     public static function caches(array $node): array
     {
         $caches = [];
         $cacheable = $node['cacheable'] ?? null;
         if ($cacheable !== null) {
-            $caches[] = 'cacheable, ttl: ' . self::ttl($cacheable);
+            $caches[] = ($cacheable['type'] === 'view' ? 'cacheable view' : 'cacheable') . ', ttl: ' . self::ttl($cacheable);
         }
 
         if (isset($node['cacheableResponse']) || self::onGetCacheableResponse($node)) {

@@ -93,7 +93,8 @@ Arrows point as declared (a page to what it embeds, labelled with the relation; 
 dotted; a write to what it refreshes, bold, or purges, dashed); add `edge [dir=back]` for the direction
 invalidation travels. A page is a grey box, any other resource plain text. Under the path, the scheme (with the
 host when it is not `self`) and the cache attributes as declared: `page (cacheable, ttl: medium)`,
-`page (cacheable response)`, `page (donut cache)`. Only `#[Cacheable]` expires by time, so only it shows a TTL.
+`app (cacheable view, ttl: never)` for `type: 'view'`, `page (cacheable response)`, `page (donut cache)`. Only
+`#[Cacheable]` expires by time, so only it shows a TTL.
 Pages no drawn arrow points to (other than their own arrows to themselves), where a request starts, line up in the leftmost
 column; with `--cached`, an arrow from a resource left out does not count.
 

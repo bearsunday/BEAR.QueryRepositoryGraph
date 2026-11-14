@@ -196,6 +196,7 @@ class QrGraphTest extends TestCase
         $this->assertStringContainsString('"page://self/dep/level-one" -> "page://self/dep/level-two" [label="level-two"];', $out);
         $this->assertStringContainsString('"app://self/user" -> "app://self/user/friend" [label="onPut purge", style=dashed];', $out);
         $this->assertMatchesRegularExpression('#"page://self/dep/level-one" \[shape=box, [^\n]*>dep/level-one</TD>[^\n]*>page \(cacheable, ttl: never\)<#', $out);
+        $this->assertMatchesRegularExpression('#"app://self/view" \[[^\n]*>app \(cacheable view, ttl: never\)<#', $out, 'a non-default #[Cacheable] type is named');
         $this->assertMatchesRegularExpression('#"app://self/counter" \[shape=plaintext, [^\n]*>counter</TD>[^\n]*>app<#', $out);
         $this->assertMatchesRegularExpression('#\{rank=min;[^\n]* "page://self/dep/level-one";#', $out, 'a page nothing embeds starts the leftmost column');
         $this->assertDoesNotMatchRegularExpression('#\{rank=min;[^\n]*"page://self/dep/level-two"#', $out, 'an embedded page stays where the layout puts it');
