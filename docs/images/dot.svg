@@ -24,9 +24,9 @@
 <!-- app://self/admin/article&#45;&gt;app://self/article -->
 <g id="edge3" class="edge">
 <title>app://self/admin/article&#45;&gt;app://self/article</title>
-<path fill="none" stroke="black" stroke-width="2" d="M392.46,-508.44C483.38,-513.62 686.98,-518.74 850.97,-476.03 869.28,-471.26 888.44,-463.69 905.38,-456.02"/>
-<polygon fill="none" stroke="black" stroke-width="2" points="905.29,-459.92 912.87,-452.53 902.33,-453.58 905.29,-459.92"/>
-<text xml:space="preserve" text-anchor="middle" x="693.92" y="-510.1" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#333333">onPut refresh</text>
+<path fill="none" stroke="#d9534f" d="M392.46,-508.44C483.38,-513.62 686.98,-518.74 850.97,-476.03 869.28,-471.26 888.44,-463.69 905.38,-456.02"/>
+<polygon fill="none" stroke="#d9534f" points="906.66,-459.28 914.24,-451.89 903.7,-452.94 906.66,-459.28"/>
+<text xml:space="preserve" text-anchor="middle" x="693.92" y="-510.1" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#c9302c">onPut refresh</text>
 </g>
 <!-- app://self/admin/article&#45;&gt;app://self/article -->
 <g id="edge5" class="edge">
@@ -84,9 +84,9 @@
 <!-- app://self/article&#45;&gt;app://self/article -->
 <g id="edge8" class="edge">
 <title>app://self/article&#45;&gt;app://self/article</title>
-<path fill="none" stroke="black" stroke-width="2" d="M937.24,-450.94C932.51,-464.03 939.6,-476.36 958.51,-476.36 971.67,-476.36 979.1,-470.4 980.82,-462.37"/>
-<polygon fill="none" stroke="black" stroke-width="2" points="984.45,-463.6 980.06,-453.95 977.48,-464.23 984.45,-463.6"/>
-<text xml:space="preserve" text-anchor="middle" x="958.51" y="-478.11" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#333333">onPut refresh</text>
+<path fill="none" stroke="#d9534f" d="M937.24,-450.94C932.51,-464.03 939.6,-476.36 958.51,-476.36 971.67,-476.36 979.1,-470.4 980.82,-462.37"/>
+<polygon fill="none" stroke="#d9534f" points="984.31,-462.09 979.93,-452.44 977.34,-462.72 984.31,-462.09"/>
+<text xml:space="preserve" text-anchor="middle" x="958.51" y="-478.11" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#c9302c">onPut refresh</text>
 </g>
 <!-- app://self/author -->
 <g id="node4" class="node">
@@ -136,9 +136,9 @@
 <!-- app://self/comments&#45;&gt;app://self/comments -->
 <g id="edge11" class="edge">
 <title>app://self/comments&#45;&gt;app://self/comments</title>
-<path fill="none" stroke="black" stroke-width="2" d="M320.09,-62.94C314.84,-76.03 322.72,-88.36 343.74,-88.36 358.36,-88.36 366.63,-82.4 368.54,-74.37"/>
-<polygon fill="none" stroke="black" stroke-width="2" points="372.18,-75.55 367.7,-65.95 365.21,-76.25 372.18,-75.55"/>
-<text xml:space="preserve" text-anchor="middle" x="343.74" y="-90.11" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#333333">onPost refresh</text>
+<path fill="none" stroke="#d9534f" d="M320.09,-62.94C314.84,-76.03 322.72,-88.36 343.74,-88.36 358.36,-88.36 366.63,-82.4 368.54,-74.37"/>
+<polygon fill="none" stroke="#d9534f" points="372.03,-74.04 367.55,-64.44 365.06,-74.74 372.03,-74.04"/>
+<text xml:space="preserve" text-anchor="middle" x="343.74" y="-90.11" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#c9302c">onPost refresh</text>
 </g>
 <!-- app://self/login -->
 <g id="node8" class="node">

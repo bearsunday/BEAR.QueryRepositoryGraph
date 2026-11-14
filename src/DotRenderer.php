@@ -236,7 +236,7 @@ final class DotRenderer
 
         foreach ($method['refresh'] ?? [] as $target) {
             if ($shown === null || isset($shown[$target['uri']])) {
-                $edges[] = [$from, $target['uri'], sprintf('label="%s refresh", style=bold', $name)];
+                $edges[] = [$from, $target['uri'], sprintf('label="%s refresh", color="#d9534f", fontcolor="#c9302c"', $name)];
             }
         }
 
