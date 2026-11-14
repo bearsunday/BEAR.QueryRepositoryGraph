@@ -191,7 +191,7 @@ final class HtmlRenderer
 <meta charset="utf-8">
 <title>qr-graph</title>
 <style>
-  :root { --goes-stale: #ff8c1a; --makes-stale: #2eb85c; --selected: #1f6feb; }
+  :root { --goes-stale: #ff8c1a; --makes-stale: #2eb85c; --write: #3b73b9; --selected: #1f6feb; }
   body { margin: 0; font: 13px/1.4 Helvetica, Arial, sans-serif; color: #222; background: #fff; }
   header { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; gap: 6px 20px; align-items: center;
     padding: 8px 16px; background: rgba(255, 255, 255, .94); border-bottom: 1px solid #e4e4e4; }
@@ -216,6 +216,10 @@ final class HtmlRenderer
   .edge.reaches path, .edge.reaches polygon { stroke: var(--goes-stale); stroke-width: 2; }
   .edge.reached-by { filter: drop-shadow(0 0 3px var(--makes-stale)); }
   .edge.reaches { filter: drop-shadow(0 0 3px var(--goes-stale)); }
+  /* A lit write keeps its blue, so a refresh or purge never reads as an embed. */
+  .edge.write.reached-by path, .edge.write.reached-by polygon,
+  .edge.write.reaches path, .edge.write.reaches polygon { stroke: var(--write); }
+  .edge.write.reached-by, .edge.write.reaches { filter: drop-shadow(0 0 3px var(--write)); }
 </style>
 </head>
 <body>
