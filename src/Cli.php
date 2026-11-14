@@ -31,7 +31,7 @@ use const JSON_UNESCAPED_UNICODE;
 /**
  * `qr-graph` - the declared cache graph of a BEAR.Sunday application
  *
- * `dump`, `observe` and `impact --json` print JSONL on stdout, `impact`, `dot` and `snapshot` text; diagnostics
+ * `dump`, `observe` and `impact --json` print JSONL on stdout, `impact`, `dot` and `snapshot` text, `html` a page; diagnostics
  * (skipped files, warnings, errors) are JSONL on stderr.
  *
  * @psalm-import-type Node from GraphBuilder
@@ -45,6 +45,7 @@ Usage:
   qr-graph dump   [--dir=src/Resource]                      one JSONL line per resource
   qr-graph impact <uri> [--method=onPut] [--allow-unknown] [--json] [--dir=src/Resource]  what invalidating <uri> (or calling its write method) reaches, as a tree; --json prints one JSONL line per reached resource
   qr-graph dot    [--cached] [--dir=src/Resource]           Graphviz view; --cached keeps the cached resources, what they embed and depend on, and the writes that invalidate them
+  qr-graph html   [--cached] [--dir=src/Resource]           the dot picture as one HTML page (needs Graphviz dot); click a resource to light what it makes stale and what makes it stale
   qr-graph snapshot [--dir=src/Resource]                    every impact as an indented tree, to keep and review as a diff
   qr-graph observe <session.json|dir>... [--dir=src/Resource] [--fail-on=<verdict>[,<verdict>...]]  each embedded child the log saw, joined with its declaration; --fail-on is repeatable or comma-separated and exits 3 when a printed line carries a listed verdict (e.g. --fail-on=untagged-material)
 
@@ -150,7 +151,7 @@ USAGE;
             return "No such directory: {$options['dir']}\n";
         }
 
-        $isValid = in_array($command, ['dump', 'dot', 'impact', 'observe', 'snapshot'], true)
+        $isValid = in_array($command, ['dump', 'dot', 'html', 'impact', 'observe', 'snapshot'], true)
             && match ($command) {
                 'impact' => count($args) === 1,
                 'observe' => $args !== [],
@@ -158,7 +159,7 @@ USAGE;
             }
             && ($command === 'impact' || ($options['method'] === null && ! $options['allowUnknown'] && ! $options['json']))
             && ($command === 'observe' || $options['failOn'] === [])
-            && ($command === 'dot' || ! $options['cached']);
+            && ($command === 'dot' || $command === 'html' || ! $options['cached']);
 
         return $isValid ? null : '';
     }
@@ -178,6 +179,13 @@ USAGE;
         if ($command === 'dot') {
             $renderer = new DotRenderer();
             fwrite($stdout, $options['cached'] ? $renderer->cached($graph['nodes']) : $renderer($graph['nodes']));
+
+            return 0;
+        }
+
+        if ($command === 'html') {
+            $dot = new DotRenderer();
+            fwrite($stdout, (new HtmlRenderer())($graph['nodes'], $options['cached'] ? $dot->cached($graph['nodes']) : $dot($graph['nodes'])));
 
             return 0;
         }
