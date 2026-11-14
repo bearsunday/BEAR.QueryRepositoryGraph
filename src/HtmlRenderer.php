@@ -6,6 +6,7 @@ namespace BEAR\QueryRepositoryGraph;
 
 use RuntimeException;
 
+use function array_diff_key;
 use function array_keys;
 use function array_values;
 use function fclose;
@@ -16,12 +17,15 @@ use function ksort;
 use function proc_close;
 use function proc_open;
 use function restore_error_handler;
+use function rewind;
 use function set_error_handler;
+use function sort;
 use function sprintf;
 use function stream_get_contents;
 use function strpos;
 use function strtr;
 use function substr;
+use function tmpfile;
 use function trim;
 
 use const JSON_HEX_AMP;
@@ -35,11 +39,15 @@ use const JSON_UNESCAPED_UNICODE;
  * and what reaches it
  *
  * @psalm-import-type Node from GraphBuilder
- * @psalm-type Lit = array{nodes: list<string>, edges: list<array{string, string}>}
- * @psalm-type Glow = array<string, array{reaches: Lit, reachedBy: Lit}>
+ * @psalm-import-type ImpactLine from Impact
+ * @psalm-type Lit = array{nodes: list<string>, edges: list<array{string, string}>, writes: list<array{string, string}>}
+ * @psalm-type Pending = array{nodes: array<string, true>, edges: array<string, array{string, string}>, writes: array<string, array{string, string}>}
+ * @psalm-type Glow = array<string, array{reaches: Lit, reachedBy: Lit, writers: list<string>}>
  */
 final class HtmlRenderer
 {
+    private const NONE = ['nodes' => [], 'edges' => [], 'writes' => []];
+
     /** @param non-empty-list<string> $dot the command that reads dot on stdin and writes SVG on stdout */
     public function __construct(private readonly array $dot = ['dot', '-Tsvg'])
     {
@@ -59,9 +67,10 @@ final class HtmlRenderer
     }
 
     /**
-     * For every drawable URI: what invalidating it, or calling one of its write methods, reaches (`reaches`), and the
-     * URIs whose `reaches` hold it (`reachedBy`). Edges are `[by, uri]` of the impact lines on the way, one shortest
-     * path per reached URI and start.
+     * For every drawable URI: what invalidating it, or calling one of its write methods, reaches (`reaches`), the URIs
+     * whose `reaches` hold it (`reachedBy`), and among those the ones that reach it only through a write method
+     * (`writers`). Edges are `[by, uri]` of the impact lines on the way, one shortest path per reached URI and start;
+     * `writes` are the edges that are a refresh or a purge.
      *
      * @param list<Node> $nodes
      *
@@ -70,52 +79,90 @@ final class HtmlRenderer
     private static function glow(array $nodes): array
     {
         $impact = new Impact($nodes);
-        $reaches = [];
-        $reachesEdges = [];
-        $reachedBy = [];
-        $reachedByEdges = [];
         $uris = self::uris($nodes);
+        $reaches = [];
+        $reachedBy = [];
+        // How each start reaches each URI: invalidated itself, or through one of its write methods.
+        $from = ['plain' => [], 'written' => []];
         foreach ($uris as $uri => $methods) {
-            $starts = [$impact($uri)];
+            $starts = [['plain', $impact($uri)]];
             foreach ($methods as $method) {
-                $starts[] = $impact($uri, $method);
+                $starts[] = ['written', $impact($uri, $method)];
             }
 
-            foreach ($starts as $lines) {
-                $byUri = [];
-                foreach ($lines as $line) {
-                    $byUri[$line['uri']] = $line;
-                }
-
-                foreach ($lines as $line) {
-                    $reached = $line['uri'];
-                    if ($reached === $uri || $line['by'] === null) {
-                        continue;
-                    }
-
-                    $reaches[$uri][$reached] = true;
-                    $reachesEdges[$uri][$line['by'] . ' ' . $reached] = [$line['by'], $reached];
-                    $reachedBy[$reached][$uri] = true;
-                    $step = $line;
-                    while ($step !== null && $step['by'] !== null && $step['uri'] !== $uri) {
-                        $reachedByEdges[$reached][$step['by'] . ' ' . $step['uri']] = [$step['by'], $step['uri']];
-                        $step = $byUri[$step['by']] ?? null;
-                    }
+            foreach ($starts as [$how, $lines]) {
+                foreach (self::paths($uri, $lines) as $reached => $path) {
+                    $reaches[$uri] = self::add($reaches[$uri] ?? self::NONE, $reached, [$path[0]]);
+                    $reachedBy[$reached] = self::add($reachedBy[$reached] ?? self::NONE, $uri, $path);
+                    $from[$how][$reached][$uri] = true;
                 }
             }
         }
 
         $glow = [];
         foreach ([...array_keys($uris), ...array_keys($reachedBy)] as $uri) {
+            $writers = array_keys(array_diff_key($from['written'][$uri] ?? [], $from['plain'][$uri] ?? []));
+            sort($writers);
             $glow[$uri] = [
-                'reaches' => self::lit($reaches[$uri] ?? [], $reachesEdges[$uri] ?? []),
-                'reachedBy' => self::lit($reachedBy[$uri] ?? [], $reachedByEdges[$uri] ?? []),
+                'reaches' => self::lit($reaches[$uri] ?? self::NONE),
+                'reachedBy' => self::lit($reachedBy[$uri] ?? self::NONE),
+                'writers' => $writers,
             ];
         }
 
         ksort($glow);
 
         return $glow;
+    }
+
+    /**
+     * @param list<ImpactLine> $lines
+     *
+     * @return array<string, non-empty-list<ImpactLine>> each URI the lines reach, with the lines from it back to `$start`
+     */
+    private static function paths(string $start, array $lines): array
+    {
+        $byUri = [];
+        foreach ($lines as $line) {
+            $byUri[$line['uri']] = $line;
+        }
+
+        $paths = [];
+        foreach ($lines as $line) {
+            if ($line['uri'] === $start || $line['by'] === null) {
+                continue;
+            }
+
+            $path = [$line];
+            for ($step = $byUri[$line['by']] ?? null; $step !== null && $step['by'] !== null && $step['uri'] !== $start; $step = $byUri[$step['by']] ?? null) {
+                $path[] = $step;
+            }
+
+            $paths[$line['uri']] = $path;
+        }
+
+        return $paths;
+    }
+
+    /**
+     * @param Pending          $lit
+     * @param list<ImpactLine> $steps lines with their `by`
+     *
+     * @return Pending
+     */
+    private static function add(array $lit, string $node, array $steps): array
+    {
+        $lit['nodes'][$node] = true;
+        foreach ($steps as $step) {
+            $edge = [(string) $step['by'], $step['uri']];
+            $key = $edge[0] . ' ' . $edge[1];
+            $lit['edges'][$key] = $edge;
+            if ($step['via'] === 'refresh' || $step['via'] === 'purge') {
+                $lit['writes'][$key] = $edge;
+            }
+        }
+
+        return $lit;
     }
 
     /**
@@ -149,45 +196,60 @@ final class HtmlRenderer
     }
 
     /**
-     * @param array<string, true>                  $nodes
-     * @param array<string, array{string, string}> $edges keyed to sort them
+     * @param Pending $pending
      *
      * @return Lit
      */
-    private static function lit(array $nodes, array $edges): array
+    private static function lit(array $pending): array
     {
-        ksort($nodes);
-        ksort($edges);
+        ksort($pending['nodes']);
+        ksort($pending['edges']);
+        ksort($pending['writes']);
 
-        return ['nodes' => array_keys($nodes), 'edges' => array_values($edges)];
+        return ['nodes' => array_keys($pending['nodes']), 'edges' => array_values($pending['edges']), 'writes' => array_values($pending['writes'])];
     }
 
     /** @throws RuntimeException */
     private function svg(string $source): string
     {
         $command = implode(' ', $this->dot);
-        // A missing binary is a warning from proc_open; the exception below reports it instead.
+        // stderr goes to a file: a pipe left unread while stdout is read could fill and stall the command.
+        $stderr = tmpfile();
+        if ($stderr === false) {
+            throw new RuntimeException('Cannot create a temporary file for ' . $command);
+        }
+
+        // A missing binary, or a command that exits before reading its input, is a warning; the exceptions below report it.
         set_error_handler(static fn (): bool => true);
         try {
-            $process = proc_open($this->dot, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+            $process = proc_open($this->dot, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => $stderr], $pipes);
+            if ($process !== false) {
+                fwrite($pipes[0], $source);
+                fclose($pipes[0]);
+            }
         } finally {
             restore_error_handler();
         }
 
         if ($process === false) {
+            fclose($stderr);
+
             throw new RuntimeException("Cannot run {$command}: install Graphviz to render html");
         }
 
-        fwrite($pipes[0], $source);
-        fclose($pipes[0]);
         $svg = (string) stream_get_contents($pipes[1]);
-        $error = (string) stream_get_contents($pipes[2]);
         fclose($pipes[1]);
-        fclose($pipes[2]);
         $code = proc_close($process);
+        rewind($stderr);
+        $error = trim((string) stream_get_contents($stderr));
+        fclose($stderr);
         $start = strpos($svg, '<svg');
-        if ($code !== 0 || $start === false) {
-            throw new RuntimeException(sprintf('%s failed with exit code %d: %s', $command, $code, trim($error)));
+        if ($code !== 0) {
+            throw new RuntimeException(sprintf('%s failed with exit code %d: %s', $command, $code, $error));
+        }
+
+        if ($start === false) {
+            throw new RuntimeException("{$command} printed no SVG");
         }
 
         return substr($svg, $start);
@@ -231,6 +293,7 @@ final class HtmlRenderer
   .edge.write.reached-by path, .edge.write.reached-by polygon,
   .edge.write.reaches path, .edge.write.reaches polygon { stroke: var(--write); }
   .edge.write.reached-by, .edge.write.reaches { filter: drop-shadow(0 0 3px var(--write)); }
+  svg .node:focus-visible { outline: 2px solid var(--selected); outline-offset: 2px; }
 </style>
 </head>
 <body>
@@ -239,7 +302,7 @@ final class HtmlRenderer
   <span class="key"><span class="swatch reached-by"></span>invalidates this <span class="count" id="count-reached-by"></span></span>
   <span class="key"><span class="swatch selected"></span>clicked</span>
   <span class="key"><span class="swatch reaches"></span>invalidated by this <span class="count" id="count-reaches"></span></span>
-  <span id="status">Click a resource; click it again or the background to clear.</span>
+  <span id="status">Click a resource, or focus it and press Enter; click it again, elsewhere, or press Escape to clear.</span>
 </header>
 <main>
 {{svg}}
@@ -267,17 +330,14 @@ final class HtmlRenderer
     Object.entries({ x: box.x, y: box.y, width: box.width, height: box.height, fill: 'transparent' })
       .forEach(([name, value]) => hit.setAttribute(name, value));
     g.insertBefore(hit, g.querySelector('title').nextSibling);
+    Object.entries({ tabindex: '0', role: 'button', 'aria-label': title(g) })
+      .forEach(([name, value]) => g.setAttribute(name, value));
   });
-  // A write arrow is labelled `<method> refresh` or `<method> purge`; an embed is labelled with its relation.
-  const isWrite = (g) => /^on\w+ (refresh|purge)$/.test(g.querySelector('text')?.textContent ?? '');
   svg.querySelectorAll('g.edge').forEach((g) => {
     edges.set(title(g), [...(edges.get(title(g)) ?? []), g]);
-    if (isWrite(g)) {
-      g.classList.add('write');
-    }
   });
 
-  const classes = ['selected', 'reaches', 'reached-by', 'writer'];
+  const classes = ['selected', 'reaches', 'reached-by', 'writer', 'write'];
   let selected = null;
   const clear = () => {
     classes.forEach((name) => svg.querySelectorAll('.' + name).forEach((el) => el.classList.remove(name)));
@@ -286,12 +346,15 @@ final class HtmlRenderer
     Object.values(counts).forEach((count) => { count.textContent = ''; });
     selected = null;
   };
-  // An impact step runs from `by` to `uri`; the arrow drawn for it points either way.
+  // An impact step runs from `by` to `uri`; the arrow drawn for it points either way, a write's from `by`.
   const light = (set, name) => {
     set.nodes.forEach((uri) => nodes.get(uri)?.classList.add(name));
     set.edges.forEach(([by, uri]) => [...(edges.get(by + '->' + uri) ?? []), ...(edges.get(uri + '->' + by) ?? [])]
       .forEach((g) => g.classList.add(name)));
+    set.writes.forEach(([by, uri]) => (edges.get(by + '->' + uri) ?? []).forEach((g) => g.classList.add('write')));
   };
+  // The legend counts what the picture draws: dot --cached leaves some resources out.
+  const drawn = (uris) => uris.filter((uri) => nodes.has(uri)).length;
   const select = (uri) => {
     const again = uri === selected;
     clear();
@@ -303,24 +366,28 @@ final class HtmlRenderer
     svg.classList.add('lit');
     light(sets.reaches, 'reaches');
     light(sets.reachedBy, 'reached-by');
-    // A resource that reaches this one only through its own writes is a writer, not something this one shows.
-    const writers = sets.reachedBy.nodes.filter((node) => {
-      const steps = sets.reachedBy.edges.filter(([by]) => by === node);
-      return steps.length > 0 && steps.every(([by, to]) => (edges.get(by + '->' + to) ?? []).some(isWrite));
-    });
-    writers.forEach((node) => nodes.get(node)?.classList.add('writer'));
+    sets.writers.forEach((writer) => nodes.get(writer)?.classList.add('writer'));
     nodes.get(uri).classList.add('selected');
     status.textContent = uri;
-    counts.reaches.textContent = `(${sets.reaches.nodes.length})`;
-    counts.reachedBy.textContent = `(${sets.reachedBy.nodes.length - writers.length})`;
-    counts.writer.textContent = `(${writers.length})`;
+    const writers = new Set(sets.writers);
+    counts.reaches.textContent = `(${drawn(sets.reaches.nodes)})`;
+    counts.reachedBy.textContent = `(${drawn(sets.reachedBy.nodes.filter((node) => !writers.has(node)))})`;
+    counts.writer.textContent = `(${drawn(sets.writers)})`;
   };
 
-  svg.addEventListener('click', (event) => {
-    const node = event.target.closest('g.node');
+  document.addEventListener('click', (event) => {
+    const node = event.target.closest?.('g.node');
     node ? select(title(node)) : clear();
   });
-  document.addEventListener('keydown', (event) => event.key === 'Escape' && clear());
+  document.addEventListener('keydown', (event) => {
+    const node = event.target.closest?.('g.node');
+    if (node && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault();
+      select(title(node));
+    } else if (event.key === 'Escape') {
+      clear();
+    }
+  });
 })();
 </script>
 </body>

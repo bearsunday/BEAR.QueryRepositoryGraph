@@ -290,6 +290,17 @@ class QrGraphTest extends TestCase
         );
     }
 
+    public function testHtmlTellsAWriteFromWhatAResourceShows(): void
+    {
+        $nodes = (new GraphBuilder(new UriConverter(), (string) getcwd()))->build((new ResourceScanner())->scan('tests/Fixture/Html/Resource'))['nodes'];
+        $html = (new HtmlRenderer([PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo "<svg></svg>";']))($nodes, (new DotRenderer())($nodes));
+        $glow = self::glow($html);
+
+        $this->assertSame(['app://self/admin', 'app://self/banner'], self::at($glow, 'page://self/front', 'reachedBy', 'nodes'));
+        $this->assertSame(['app://self/admin'], self::at($glow, 'page://self/front', 'writers'), 'banner also reaches front as an embed, so it is not a writer only');
+        $this->assertSame([['app://self/admin', 'app://self/banner'], ['app://self/banner', 'page://self/front']], self::at($glow, 'page://self/front', 'reachedBy', 'writes'), 'the purge and the refresh on the way are writes');
+    }
+
     public function testHtmlDrawsTheDotPicture(): void
     {
         if ((string) shell_exec('command -v dot') === '') {
