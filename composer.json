@@ -1,6 +1,6 @@
 {
     "name": "bear/query-repository-graph",
-    "description": "Static analysis of the cache graph that BEAR.QueryRepository attributes declare: what each write invalidates",
+    "description": "Static analysis of the cache graph that BEAR.QueryRepository attributes declare",
     "keywords": [
         "cache",
         "graph",
