@@ -232,15 +232,17 @@ final class DependsOnWarnings
     }
 
     /**
-     * Whether the write's arguments, and so its query, carry each required onGet() argument
+     * Whether a query keyed by the write's argument names carries each required onGet() argument
+     *
+     * BEAR.QueryRepository's MatchQuery looks each one up under its name, then under its snake_case form.
      *
      * @param list<string> $required
      */
     private function carries(ReflectionMethod $write, array $required): bool
     {
-        $arguments = $this->snake(array_map(static fn ($parameter): string => $parameter->name, $write->getParameters()));
-        foreach ($this->snake($required) as $name) {
-            if (! in_array($name, $arguments, true)) {
+        $query = array_map(static fn ($parameter): string => $parameter->name, $write->getParameters());
+        foreach ($required as $name) {
+            if (! in_array($name, $query, true) && ! in_array($this->snake([$name])[0], $query, true)) {
                 return false;
             }
         }
