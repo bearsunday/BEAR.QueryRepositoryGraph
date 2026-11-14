@@ -18,6 +18,7 @@ is declared but never observed, or observed but never declared.
 vendor/bin/qr-graph dump [--dir=src/Resource]
 vendor/bin/qr-graph impact <uri> [--method=onPut] [--allow-unknown] [--dir=src/Resource]
 vendor/bin/qr-graph dot [--dir=src/Resource]
+vendor/bin/qr-graph snapshot [--dir=src/Resource]
 vendor/bin/qr-graph observe <session.json|dir>... [--dir=src/Resource] [--fail-on=<verdict>[,<verdict>...]]
 ```
 
@@ -92,6 +93,19 @@ vendor/bin/qr-graph dot | dot -Tsvg > graph.svg
 Arrows point as declared (a page to what it embeds, a resource to what it depends on, a write to what it
 refreshes or purges); add `edge [dir=back]` for the direction invalidation travels. Cached resources are drawn double-bordered,
 resources with `dynamic` hints dashed.
+
+### `snapshot` — impacts to review as a diff
+
+```bash
+vendor/bin/qr-graph snapshot > qr-graph.snapshot.txt
+vendor/bin/qr-graph snapshot | diff -u qr-graph.snapshot.txt -   # in CI: what a change does to the cache
+```
+
+Every `impact` as an indented tree: a block per resource whose invalidation reaches another, then a block
+(`<uri> <method>`) per write method declaring `#[Refresh]` or `#[Purge]`. A line reads
+`<uri> (<via>[, cached][, <role>])` under the URI named by its `by`; children are sorted by URI and no line
+carries a `source`, so moving code does not change the text. Like `by`, the tree shows each reached URI once,
+by one shortest path. The text is for diffs, not parsing: regenerate it after upgrading `qr-graph`.
 
 ### `observe` — the log against the declarations
 

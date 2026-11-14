@@ -197,6 +197,20 @@ class QrGraphTest extends TestCase
         $this->assertStringContainsString('"app://self/user" -> "app://self/user/friend" [label="onPut purge", style=dashed];', $out);
     }
 
+    public function testSnapshotNestsEveryImpactUnderWhatReachesIt(): void
+    {
+        [$code, $out, $err] = self::qrGraph(['snapshot', '--dir=tests/Fixture/DependsOn/Resource']);
+        $this->assertSame(0, $code, $err);
+        $this->assertStringContainsString("app://self/author\n  app://self/archive (dependsOn)\n  app://self/entries (dependsOn)\n    page://self/index (embed, cached)\n\n", $out);
+        $this->assertStringContainsString("app://self/writer onPost\n  app://self/article (purge, cached)\n    app://self/archive (dependsOn)\n", $out);
+        $this->assertStringNotContainsString('.php:', $out);
+        $this->assertDoesNotMatchRegularExpression('#^app://self/digest$#m', $out, 'a resource whose invalidation reaches nothing has no block');
+
+        [, $out] = self::qrGraph(['snapshot', '--dir=' . self::DIR]);
+        $this->assertStringContainsString("app://self/user onPut\n  app://self/user (refresh, cached)\n  app://self/user/friend (purge)\n", $out);
+        $this->assertStringNotContainsString('app://self/entry onPatch', $out, 'a write that only refreshes its own resource has no block');
+    }
+
     public function testTokensFindOneLineDeclarationsAndBracedNamespaces(): void
     {
         [$code, $out, $err] = self::qrGraph(['dump', '--dir=tests/Fixture/Resource']);
