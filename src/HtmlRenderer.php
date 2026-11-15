@@ -35,11 +35,12 @@ use const JSON_UNESCAPED_SLASHES;
 use const JSON_UNESCAPED_UNICODE;
 
 /**
- * The Graphviz picture as one self-contained HTML page: clicking a resource lights what `impact` reaches from it
- * and what reaches it
+ * The `dot --cached` picture as one self-contained HTML page: clicking a resource lights what `impact` reaches from
+ * it and what reaches it. Below it, the declarations that affect no cache, and what the picture leaves out.
  *
  * @psalm-import-type Node from GraphBuilder
  * @psalm-import-type ImpactLine from Impact
+ * @psalm-import-type Warning from DependsOnWarnings
  * @psalm-type Lit = array{nodes: list<string>, edges: list<array{string, string}>, writes: list<array{string, string}>}
  * @psalm-type Pending = array{nodes: array<string, true>, edges: array<string, array{string, string}>, writes: array<string, array{string, string}>}
  * @psalm-type Glow = array<string, array{reaches: Lit, reachedBy: Lit, writers: list<string>}>
@@ -54,16 +55,21 @@ final class HtmlRenderer
     }
 
     /**
-     * @param list<Node> $nodes  the whole graph: what is reached is computed on it, not only on what is drawn
-     * @param string     $source the dot to draw
+     * @param list<Node>    $nodes     the whole graph: what is reached is computed on it, not only on what is drawn
+     * @param list<Warning> $dependsOn listed with the other warnings
      *
      * @throws RuntimeException when the dot command cannot run or fails.
      */
-    public function __invoke(array $nodes, string $source): string
+    public function __invoke(array $nodes, array $dependsOn): string
     {
+        $dot = new DotRenderer();
         $json = json_encode(self::glow($nodes), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_THROW_ON_ERROR);
 
-        return strtr(self::PAGE, ['{{svg}}' => $this->svg($source), '{{json}}' => $json]);
+        return strtr(self::PAGE, [
+            '{{svg}}' => $this->svg($dot->cached($nodes)),
+            '{{warnings}}' => (new HtmlWarnings())($nodes, $dot->cachedUris($nodes), $dependsOn),
+            '{{json}}' => $json,
+        ]);
     }
 
     /**
@@ -272,6 +278,16 @@ final class HtmlRenderer
   .count { font-weight: bold; }
   #status { color: #666; }
   main { padding: 16px; overflow: auto; }
+  #warnings { padding: 4px 16px 24px; border-top: 1px solid #e4e4e4; }
+  #warnings h2 { font-size: 15px; margin: 8px 0; }
+  #warnings h3 { font-size: 13px; margin: 14px 0 2px; }
+  #warnings p { margin: 0 0 4px; color: #666; }
+  #warnings ul { margin: 0; padding-left: 18px; }
+  #warnings li { margin: 3px 0; }
+  #warnings a.uri { color: var(--selected); }
+  #warnings .source { color: #666; }
+  #warnings .message { color: #444; }
+  #warnings summary { margin-top: 14px; font-weight: bold; cursor: pointer; }
   svg .node { cursor: pointer; }
   svg .node, svg .edge { transition: opacity .15s; }
   svg.lit .node, svg.lit .edge { opacity: .22; }
@@ -304,6 +320,9 @@ final class HtmlRenderer
 <main>
 {{svg}}
 </main>
+<section id="warnings">
+{{warnings}}
+</section>
 <script type="application/json" id="qr-graph-data">{{json}}</script>
 <script>
 (() => {
@@ -350,7 +369,7 @@ final class HtmlRenderer
       .forEach((g) => g.classList.add(name)));
     set.writes.forEach(([by, uri]) => (edges.get(by + '->' + uri) ?? []).forEach((g) => g.classList.add('write')));
   };
-  // The legend counts what the picture draws: dot --cached leaves some resources out.
+  // The legend counts what the picture draws: it leaves some resources out.
   const drawn = (uris) => uris.filter((uri) => nodes.has(uri)).length;
   const select = (uri) => {
     const again = uri === selected;
@@ -373,6 +392,13 @@ final class HtmlRenderer
   };
 
   document.addEventListener('click', (event) => {
+    const item = event.target.closest?.('[data-uri]');
+    if (item) {
+      event.preventDefault();
+      select(item.dataset.uri);
+      nodes.get(selected)?.scrollIntoView({ block: 'center', inline: 'center' });
+      return;
+    }
     const node = event.target.closest?.('g.node');
     node ? select(title(node)) : clear();
   });

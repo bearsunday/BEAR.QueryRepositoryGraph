@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace BEAR\QueryRepositoryGraph;
 
+use DOMDocument;
+use DOMElement;
+use DOMXPath;
 use JsonSchema\Validator;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
@@ -17,6 +20,8 @@ use function dirname;
 use function explode;
 use function fopen;
 use function getcwd;
+use function htmlspecialchars;
+use function implode;
 use function is_array;
 use function json_decode;
 use function json_encode;
@@ -24,11 +29,13 @@ use function preg_match;
 use function rewind;
 use function shell_exec;
 use function sort;
+use function sprintf;
 use function stream_get_contents;
 use function substr_count;
 use function trim;
 
 use const JSON_THROW_ON_ERROR;
+use const LIBXML_NOERROR;
 use const PHP_BINARY;
 
 /**
@@ -38,6 +45,7 @@ class QrGraphTest extends TestCase
 {
     private const DIR = 'tests/Fake/fake-app/src/Resource';
     private const SESSIONS = 'tests/Fixture/Sessions';
+    private const WARNINGS = 'tests/Fixture/HtmlWarnings/Resource';
 
     /** @var array<string, array<string, mixed>> */
     private static array $nodes = [];
@@ -272,7 +280,7 @@ class QrGraphTest extends TestCase
     {
         $dir = 'tests/Fixture/DependsOn/Resource';
         $nodes = (new GraphBuilder(new UriConverter(), (string) getcwd()))->build((new ResourceScanner())->scan($dir))['nodes'];
-        $html = (new HtmlRenderer([PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo "<?xml version=\"1.0\"?>\n<svg></svg>\n";']))($nodes, (new DotRenderer())($nodes));
+        $html = (new HtmlRenderer([PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo "<?xml version=\"1.0\"?>\n<svg></svg>\n";']))($nodes, []);
         $this->assertStringContainsString("<main>\n<svg></svg>", $html, 'the SVG goes in without its XML prolog');
         $glow = self::glow($html);
 
@@ -293,7 +301,7 @@ class QrGraphTest extends TestCase
     public function testHtmlTellsAWriteFromWhatAResourceShows(): void
     {
         $nodes = (new GraphBuilder(new UriConverter(), (string) getcwd()))->build((new ResourceScanner())->scan('tests/Fixture/Html/Resource'))['nodes'];
-        $html = (new HtmlRenderer([PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo "<svg></svg>";']))($nodes, (new DotRenderer())($nodes));
+        $html = (new HtmlRenderer([PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo "<svg></svg>";']))($nodes, []);
         $glow = self::glow($html);
 
         $this->assertSame(['app://self/admin', 'app://self/banner'], self::at($glow, 'page://self/front', 'reachedBy', 'nodes'));
@@ -313,11 +321,67 @@ class QrGraphTest extends TestCase
         $this->assertSame(['app://self/writer'], self::at(self::glow($out), 'app://self/article', 'reachedBy', 'nodes'));
     }
 
+    public function testHtmlDrawsTheCachedPartAndListsWhatReachesNoCache(): void
+    {
+        $classes = (new ResourceScanner())->scan(self::WARNINGS);
+        $nodes = (new GraphBuilder(new UriConverter(), (string) getcwd()))->build($classes)['nodes'];
+        $echo = [PHP_BINARY, '-r', 'echo "<svg>", htmlspecialchars(stream_get_contents(STDIN)), "</svg>";'];
+        $html = (new HtmlRenderer($echo))($nodes, (new DependsOnWarnings())($classes, $nodes));
+
+        $this->assertSame(1, substr_count($html, '<svg'), 'one picture');
+        $this->assertStringContainsString('<svg>' . htmlspecialchars((new DotRenderer())->cached($nodes)) . '</svg>', $html, 'the cached part, as dot --cached draws it');
+
+        // Editor's onPut purges what the cached index shows through feed: only its onDelete is listed.
+        $this->assertSame(['app://self/editor onDelete', 'app://self/liker onPost'], self::listed($html, 'invalidates-no-cache'));
+        $this->assertStringContainsString('tests/Fixture/HtmlWarnings/Resource/App/Editor.php:17', $html);
+        $this->assertSame(['app://self/stats'], self::listed($html, 'depends-on-not-cached'), 'feed depends on post too, but is embedded in the cached index');
+        $this->assertStringContainsString('tests/Fixture/HtmlWarnings/Resource/App/Stats.php:12', $html);
+        $this->assertSame(['app://self/removed', 'app://ads/banner'], self::listed($html, 'no-such-resource'), 'this app before another');
+        $this->assertStringContainsString('tests/Fixture/HtmlWarnings/Resource/App/Liker.php:12', $html);
+        $this->assertSame(['app://self/stats depends-on-never-invalidated app://self/plain'], self::listed($html, 'depends-on'));
+
+        $this->assertSame(['app://self/archive-list', 'page://self/archive'], self::listed($html, 'embeds-uncached'), 'archive also embeds stats, which is listed above');
+        $this->assertSame(['app://self/counter', 'app://self/plain'], self::listed($html, 'no-declarations'));
+        $page = self::xpath($html);
+        $this->assertSame('2', self::text($page, '//*[@data-kind="embeds-uncached"]//*[@class="count"]'));
+        $this->assertSame('2', self::text($page, '//*[@data-kind="no-declarations"]//*[@class="count"]'));
+        $this->assertSame('Not drawn', self::text($page, '//details[not(@open)]/summary'), 'collapsed');
+
+        $this->assertSame(['app://self/editor', 'app://ads/banner'], self::selectable($html), 'only a URI the picture draws selects it');
+    }
+
+    public function testHtmlSaysSoWhenNothingIsWarned(): void
+    {
+        $classes = (new ResourceScanner())->scan('tests/Fixture/Html/Resource');
+        $nodes = (new GraphBuilder(new UriConverter(), (string) getcwd()))->build($classes)['nodes'];
+        $html = (new HtmlRenderer([PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo "<svg></svg>";']))($nodes, (new DependsOnWarnings())($classes, $nodes));
+
+        $this->assertStringContainsString('No warnings', $html);
+        $this->assertSame(0, substr_count($html, 'data-kind='));
+        $this->assertSame(0, substr_count($html, '<details'), 'everything is drawn');
+    }
+
+    public function testHtmlIsTheCachedPictureWithOrWithoutCached(): void
+    {
+        if ((string) shell_exec('command -v dot') === '') {
+            $this->markTestSkipped('Graphviz dot is not installed');
+        }
+
+        [$code, $out, $err] = self::qrGraph(['html', '--dir=' . self::WARNINGS]);
+        $this->assertSame(0, $code, $err);
+        [, $cached] = self::qrGraph(['html', '--cached', '--dir=' . self::WARNINGS]);
+        $this->assertSame($out, $cached);
+        $this->assertSame(1, substr_count($out, '<svg'));
+        $this->assertStringContainsString('<title>app://self/editor</title>', $out);
+        $this->assertStringNotContainsString('<title>app://self/liker</title>', $out);
+        $this->assertSame(['app://self/stats depends-on-never-invalidated app://self/plain'], self::listed($out, 'depends-on'));
+    }
+
     public function testHtmlFailsWhenDotCannotDraw(): void
     {
         foreach ([['/no/such/dot'], [PHP_BINARY, '-r', 'stream_get_contents(STDIN); fwrite(STDERR, "syntax error"); exit(1);'], [PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo "no picture";']] as $dot) {
             try {
-                (new HtmlRenderer($dot))([], 'digraph qr {}');
+                (new HtmlRenderer($dot))([], []);
                 $this->fail('no exception');
             } catch (RuntimeException $e) {
                 $this->assertStringContainsString($dot[0], $e->getMessage());
@@ -706,6 +770,66 @@ class QrGraphTest extends TestCase
         $glow = json_decode($match[1], true, 512, JSON_THROW_ON_ERROR);
 
         return $glow;
+    }
+
+    /**
+     * Each item a group of the page lists: its URI, then the code it names (a write method, a warning and its declaration)
+     *
+     * @return list<string>
+     */
+    private static function listed(string $html, string $kind): array
+    {
+        $xpath = self::xpath($html);
+        $listed = [];
+        foreach (self::elements($xpath, sprintf('//*[@data-kind="%s"]//li', $kind)) as $item) {
+            $words = [self::text($xpath, './/*[contains(@class, "uri")]', $item)];
+            foreach (self::elements($xpath, './/code', $item) as $code) {
+                $words[] = $code->textContent;
+            }
+
+            $listed[] = implode(' ', $words);
+        }
+
+        return $listed;
+    }
+
+    /** @return list<string> the URIs a click on a listed item selects in the picture */
+    private static function selectable(string $html): array
+    {
+        $uris = [];
+        foreach (self::elements(self::xpath($html), '//*[@data-uri]') as $element) {
+            $uris[] = $element->getAttribute('data-uri');
+        }
+
+        return $uris;
+    }
+
+    private static function text(DOMXPath $xpath, string $query, DOMElement|null $context = null): string
+    {
+        $elements = self::elements($xpath, $query, $context);
+
+        return trim($elements === [] ? '' : $elements[0]->textContent);
+    }
+
+    private static function xpath(string $html): DOMXPath
+    {
+        $document = new DOMDocument();
+        $document->loadHTML($html, LIBXML_NOERROR);
+
+        return new DOMXPath($document);
+    }
+
+    /** @return list<DOMElement> */
+    private static function elements(DOMXPath $xpath, string $query, DOMElement|null $context = null): array
+    {
+        $elements = [];
+        foreach ($xpath->query($query, $context) ?: [] as $node) {
+            if ($node instanceof DOMElement) {
+                $elements[] = $node;
+            }
+        }
+
+        return $elements;
     }
 
     private function assertSchema(string $schema, string $line): void

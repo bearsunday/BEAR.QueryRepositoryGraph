@@ -18,7 +18,7 @@ is declared but never observed, or observed but never declared.
 vendor/bin/qr-graph dump [--dir=src/Resource]
 vendor/bin/qr-graph impact <uri> [--method=onPut] [--allow-unknown] [--json] [--dir=src/Resource]
 vendor/bin/qr-graph dot [--cached] [--dir=src/Resource]
-vendor/bin/qr-graph html [--cached] [--dir=src/Resource]
+vendor/bin/qr-graph html [--dir=src/Resource]
 vendor/bin/qr-graph snapshot [--dir=src/Resource]
 vendor/bin/qr-graph observe <session.json|dir>... [--dir=src/Resource] [--fail-on=<verdict>[,<verdict>...]]
 ```
@@ -110,14 +110,28 @@ resources whose writes refresh or purge any of these. Other arrows are kept when
 vendor/bin/qr-graph html > graph.html
 ```
 
-One self-contained page, readable from `file://`: the `dot` picture (`--cached` as for `dot`) rendered by Graphviz,
-whose `dot` must be on the `PATH` (without it, an error, 1). Click a resource: what invalidates it glows green, what
-it invalidates glows orange, and a write that invalidates it (a resource reaching it only through its own refresh or
-purge) glows blue with its arrows; the rest dims. The legend counts each side among the resources drawn, so
-`--cached` counts fewer. A resource can also be focused and selected with Enter; clicking it again, clicking
+One self-contained page, readable from `file://`: the `dot --cached` picture rendered by Graphviz, whose `dot` must be
+on the `PATH` (without it, an error, 1). `--cached` is still accepted and changes nothing. Click a resource: what
+invalidates it glows green, what it invalidates glows orange, and a write that invalidates it (a resource reaching it
+only through its own refresh or purge) glows blue with its arrows; the rest dims. The legend counts each side among
+the resources drawn. A resource can also be focused and selected with Enter; clicking it again, clicking
 elsewhere or Escape clears. The page embeds, as JSON, what `impact` computes from each resource and from each of its
 write methods that refresh or purge, with which starts reach it only through a write: one shortest path per reached
 resource, as `impact` shows it; a resource's refresh of itself is not lit.
+
+Below the picture, Warnings lists the declarations that affect no cache, one group per kind, each item with the
+`file:line` that declares it; an empty group is left out:
+
+- Invalidates no cache — a write method declaring `#[Purge]` or `#[Refresh]` whose impact reaches no cached resource.
+- Depends on, but not cached — a resource declaring `#[DependsOn]` that is not cached, and whose impact reaches no
+  cached resource.
+- No such resource — a URI an `#[Embed]`, `#[DependsOn]`, `#[Refresh]` or `#[Purge]` names that no scanned resource
+  serves: this application's (`self`) first, then other applications', which the scan cannot see.
+- `#[DependsOn]` warnings — the [warnings](#warnings-on-dependson) every command writes on stderr.
+
+A collapsed Not drawn then counts the scanned resources the picture leaves out and no warning lists: those not
+cached that embed or are embedded only by resources not cached either, and those that declare nothing. Click a listed
+URI the picture draws to select it there.
 
 ### `snapshot` — impacts to review as a diff
 

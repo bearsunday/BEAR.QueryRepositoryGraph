@@ -35,6 +35,7 @@ use const JSON_UNESCAPED_UNICODE;
  * (skipped files, warnings, errors) are JSONL on stderr.
  *
  * @psalm-import-type Node from GraphBuilder
+ * @psalm-import-type Warning from DependsOnWarnings
  * @psalm-type Options = array{dir: string, method: string|null, allowUnknown: bool, failOn: list<string>, cached: bool, json: bool}
  */
 final class Cli
@@ -45,7 +46,7 @@ Usage:
   qr-graph dump   [--dir=src/Resource]                      one JSONL line per resource
   qr-graph impact <uri> [--method=onPut] [--allow-unknown] [--json] [--dir=src/Resource]  what invalidating <uri> (or calling its write method) reaches, as a tree; --json prints one JSONL line per reached resource
   qr-graph dot    [--cached] [--dir=src/Resource]           Graphviz view; --cached keeps the cached resources, what they embed and depend on, and the writes that invalidate them
-  qr-graph html   [--cached] [--dir=src/Resource]           the dot picture as one HTML page (needs Graphviz dot); click a resource to light what invalidates it and what it invalidates
+  qr-graph html   [--dir=src/Resource]                      the dot --cached picture as one HTML page (needs Graphviz dot), with the declarations that reach no cache listed below it; click a resource to light what invalidates it and what it invalidates; --cached is accepted and changes nothing
   qr-graph snapshot [--dir=src/Resource]                    every impact as an indented tree, to keep and review as a diff
   qr-graph observe <session.json|dir>... [--dir=src/Resource] [--fail-on=<verdict>[,<verdict>...]]  each embedded child the log saw, joined with its declaration; --fail-on is repeatable or comma-separated and exits 3 when a printed line carries a listed verdict (e.g. --fail-on=untagged-material)
 
@@ -180,7 +181,7 @@ USAGE;
             self::assertTarget($graph['nodes'], $args[0], $options['method'], $options['allowUnknown']);
         }
 
-        $text = self::text($command, $options, $args, $graph['nodes']);
+        $text = self::text($command, $options, $args, $graph['nodes'], $graph['warnings']);
         if ($text !== null) {
             fwrite($stdout, $text);
 
@@ -212,19 +213,20 @@ USAGE;
     }
 
     /**
-     * @param Options      $options
-     * @param list<string> $args
-     * @param list<Node>   $nodes
+     * @param Options       $options
+     * @param list<string>  $args
+     * @param list<Node>    $nodes
+     * @param list<Warning> $warnings
      *
      * @return string|null what the command prints as text; null for a command that prints JSONL
      */
-    private static function text(string $command, array $options, array $args, array $nodes): string|null
+    private static function text(string $command, array $options, array $args, array $nodes, array $warnings): string|null
     {
         $dot = new DotRenderer();
 
         return match (true) {
             $command === 'dot' => $options['cached'] ? $dot->cached($nodes) : $dot($nodes),
-            $command === 'html' => (new HtmlRenderer())($nodes, $options['cached'] ? $dot->cached($nodes) : $dot($nodes)),
+            $command === 'html' => (new HtmlRenderer())($nodes, $warnings),
             $command === 'snapshot' => (new SnapshotRenderer())($nodes),
             $command === 'impact' && ! $options['json'] => (new SnapshotRenderer())->impact($nodes, $args[0], $options['method']),
             default => null,
@@ -236,7 +238,7 @@ USAGE;
      *
      * @param resource $stderr
      *
-     * @return array{namespaces: array<string, string>, nodes: non-empty-list<Node>, skipped: int}
+     * @return array{namespaces: array<string, string>, nodes: non-empty-list<Node>, skipped: int, warnings: list<Warning>}
      *
      * @throws RuntimeException when no resource class is found.
      */
@@ -258,11 +260,12 @@ USAGE;
             ));
         }
 
-        foreach ((new DependsOnWarnings())($classes, $graph['nodes']) as $warning) {
+        $warnings = (new DependsOnWarnings())($classes, $graph['nodes']);
+        foreach ($warnings as $warning) {
             fwrite($stderr, json_encode($warning, self::JSON) . "\n");
         }
 
-        return $graph + ['skipped' => $skipped];
+        return $graph + ['skipped' => $skipped, 'warnings' => $warnings];
     }
 
     /**
