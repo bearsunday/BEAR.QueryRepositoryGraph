@@ -122,7 +122,9 @@ one shortest path per reached resource, as `impact` shows it; a resource's refre
 
 Below the picture, Warnings lists the declarations that affect no cache, one group per kind, each item with the
 `file:line` that declares it; an empty group is left out. A declared URI ending in `/` names that path's `index`, as
-BEAR.Resource resolves it (`page://self/` is `page://self/index`).
+BEAR.Resource resolves it (`page://self/` is `page://self/index`). The warnings come from the declarations alone, so a
+dependency made only through what the graph does not see (a `#[ResourceParam]` read, a row class's `#[DependsOn]`, a
+template's `resource()` call) can make a working declaration look idle; check it at runtime before removing it.
 
 - Invalidates no cache — each `#[Purge]` or `#[Refresh]` target in this application whose invalidation reaches no
   cached resource, with the write method that names it. A target in another application is listed only under

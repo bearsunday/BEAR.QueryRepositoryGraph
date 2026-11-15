@@ -72,7 +72,9 @@ final class HtmlWarnings
             }
         }
 
-        return "<h2>Warnings</h2>\n" . ($html === '' ? "<p>No warnings.</p>\n" : $html) . $this->notDrawn($warned);
+        $premise = "<p>Read from the declarations alone: a dependency made only through a #[ResourceParam] read, a row class's #[DependsOn] or a template's resource() call is not seen, so check such a case at runtime before removing anything.</p>\n";
+
+        return "<h2>Warnings</h2>\n" . ($html === '' ? "<p>No warnings.</p>\n" : $premise . $html) . $this->notDrawn($warned);
     }
 
     /**
