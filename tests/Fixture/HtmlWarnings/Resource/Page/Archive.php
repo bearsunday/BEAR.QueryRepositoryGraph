@@ -9,6 +9,7 @@ class Archive extends ResourceObject
 {
     #[Embed(rel: 'list', src: 'app://self/archive-list')]
     #[Embed(rel: 'stats', src: 'app://self/stats')]
+    #[Embed(rel: 'blog', src: 'app://self/blog/')]
     public function onGet(): static
     {
         return $this;

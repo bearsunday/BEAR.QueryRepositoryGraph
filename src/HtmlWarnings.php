@@ -7,12 +7,15 @@ namespace BEAR\QueryRepositoryGraph;
 use function array_column;
 use function array_keys;
 use function array_map;
+use function array_pop;
+use function array_values;
 use function count;
 use function explode;
 use function htmlspecialchars;
 use function implode;
 use function in_array;
 use function sprintf;
+use function str_ends_with;
 use function strval;
 use function usort;
 
@@ -20,106 +23,141 @@ use const ENT_HTML5;
 use const ENT_QUOTES;
 
 /**
- * The HTML page's list of the declarations that affect no cache, then, collapsed, the resources it leaves out
+ * The HTML page's list of the declarations that affect no cache, then, collapsed, the scanned resources it neither draws nor lists
  *
  * @internal
  * @psalm-import-type Node from GraphBuilder
- * @psalm-import-type Method from GraphBuilder
  * @psalm-import-type ImpactLine from Impact
  * @psalm-import-type Warning from DependsOnWarnings
+ * @psalm-type Item = array{string, list<string>}
  */
 final class HtmlWarnings
 {
+    private readonly Impact $impact;
+    private readonly UriConverter $converter;
+
+    /** @var array<string, Node> by UriConverter::key() */
+    private array $byKey = [];
+
     /**
      * @param list<Node>          $nodes
-     * @param array<string, true> $drawn     the URIs the picture draws: an item naming one selects it
-     * @param list<Warning>       $dependsOn
+     * @param array<string, true> $drawn the URIs the picture draws: an item naming one selects it
      */
-    public function __invoke(array $nodes, array $drawn, array $dependsOn): string
+    public function __construct(private readonly array $nodes, private readonly array $drawn)
     {
-        $impact = new Impact($nodes);
-        $groups = self::group(
-            'invalidates-no-cache',
-            'Invalidates no cache',
-            'The write declares #[Purge] or #[Refresh], but what it invalidates reaches no cached resource.',
-            self::idleWrites($nodes, $impact, $drawn),
-        ) . self::group(
-            'depends-on-not-cached',
-            'Depends on, but not cached',
-            'The resource declares #[DependsOn], but neither it nor anything its invalidation reaches is cached.',
-            self::uncachedDependents($nodes, $impact, $drawn),
-        ) . self::group(
-            'no-such-resource',
-            'No such resource',
-            'A declaration names a URI no scanned resource serves: in this application a typo or a removed resource, in another one possibly fine.',
-            self::unknown($nodes, $drawn),
-        ) . self::group(
-            'depends-on',
-            '#[DependsOn] warnings',
-            'Every command also writes these on stderr.',
-            array_map(static fn (array $warning): string => self::dependsOnItem($warning, $drawn), $dependsOn),
-        );
-
-        return "<h2>Warnings</h2>\n" . ($groups === '' ? "<p>No warnings.</p>\n" : $groups) . self::notDrawn($nodes, $drawn);
+        $this->impact = new Impact($nodes);
+        $this->converter = new UriConverter();
+        foreach ($nodes as $node) {
+            $this->byKey[$this->converter->key($node['uri'])] = $node;
+        }
     }
 
-    /**
-     * @param list<Node>          $nodes
-     * @param array<string, true> $drawn
-     *
-     * @return list<string>
-     */
-    private static function idleWrites(array $nodes, Impact $impact, array $drawn): array
+    /** @param list<Warning> $dependsOn */
+    public function __invoke(array $dependsOn): string
     {
-        $items = [];
-        foreach ($nodes as $node) {
-            foreach ($node['methods'] ?? [] as $name => $method) {
-                if (self::declaresWrite($method) && ! self::reachesCache($impact($node['uri'], $name))) {
-                    $items[] = self::uri($node['uri'], $drawn) . ' ' . self::code($name) . ' ' . self::source($method['source']);
+        $groups = [
+            ['invalidates-no-cache', 'Invalidates no cache', 'Invalidating what a #[Purge] or #[Refresh] names reaches no cached resource.', $this->idleTargets()],
+            ['depends-on-not-cached', 'Depends on, but not cached', 'The resource declares #[DependsOn], but it is not cached and no cached resource embeds it, so no cache stores the tags it declares.', $this->unstoredDependents()],
+            ['no-such-resource', 'No such resource', 'A declaration names a URI no scanned resource serves: in this application a typo or a removed resource, in another one possibly fine.', $this->unknown()],
+            ['depends-on', '#[DependsOn] warnings', 'Every command also writes these on stderr.', array_map($this->dependsOnItem(...), $dependsOn)],
+        ];
+        $html = '';
+        $warned = [];
+        foreach ($groups as [$kind, $title, $about, $items]) {
+            $html .= self::group($kind, $title, $about, array_column($items, 0));
+            foreach (array_column($items, 1) as $uris) {
+                foreach ($uris as $uri) {
+                    $warned[$uri] = true;
                 }
             }
         }
 
-        return $items;
+        return "<h2>Warnings</h2>\n" . ($html === '' ? "<p>No warnings.</p>\n" : $html) . $this->notDrawn($warned);
     }
 
     /**
-     * @param list<Node>          $nodes
-     * @param array<string, true> $drawn
+     * Each #[Refresh]/#[Purge] target in this application whose invalidation reaches no cached resource
      *
-     * @return list<string>
+     * @return list<Item>
      */
-    private static function uncachedDependents(array $nodes, Impact $impact, array $drawn): array
+    private function idleTargets(): array
     {
         $items = [];
-        foreach ($nodes as $node) {
+        foreach ($this->nodes as $node) {
+            foreach ($node['methods'] ?? [] as $name => $method) {
+                foreach (['refresh' => $method['refresh'] ?? [], 'purge' => $method['purge'] ?? []] as $via => $targets) {
+                    foreach ($targets as $target) {
+                        $uri = $this->node($target['uri'])['uri'] ?? $target['uri'];
+                        if (isset($target['implicit']) || ! self::isSelf($uri) || self::reachesCache(($this->impact)($uri))) {
+                            continue;
+                        }
+
+                        $html = $this->uri($uri) . " {$via} by " . $this->uri($node['uri']) . ' ' . self::code($name) . ' ' . self::source($method['source']);
+                        $items[$html] = [$html, [$uri, $node['uri']]];
+                    }
+                }
+            }
+        }
+
+        return array_values($items);
+    }
+
+    /** @return list<Item> */
+    private function unstoredDependents(): array
+    {
+        $stored = $this->stored();
+        $items = [];
+        foreach ($this->nodes as $node) {
             $onGet = $node['methods']['onGet'] ?? null;
-            if (isset($onGet['dependsOn']) && ! self::reachesCache($impact($node['uri']))) {
-                $items[] = self::uri($node['uri'], $drawn) . ' ' . self::source($onGet['source']);
+            if (isset($onGet['dependsOn']) && ! isset($stored[$node['uri']])) {
+                $items[] = [$this->uri($node['uri']) . ' ' . self::source($onGet['source']), [$node['uri']]];
             }
         }
 
         return $items;
+    }
+
+    /** @return array<string, true> the cached resources and what they embed, directly or not: the resources whose tags a cache stores */
+    private function stored(): array
+    {
+        $stored = [];
+        $pending = [];
+        foreach ($this->nodes as $node) {
+            if (Impact::isCached($node)) {
+                $stored[$node['uri']] = true;
+                $pending[] = $node;
+            }
+        }
+
+        while ($pending !== []) {
+            foreach (array_pop($pending)['methods'] ?? [] as $method) {
+                foreach ($method['embed'] ?? [] as $embed) {
+                    $child = $this->node($embed['uri']);
+                    if ($child !== null && ! isset($stored[$child['uri']])) {
+                        $stored[$child['uri']] = true;
+                        $pending[] = $child;
+                    }
+                }
+            }
+        }
+
+        return $stored;
     }
 
     /**
      * The URIs declarations name that no scanned resource serves, this application's first
      *
-     * @param list<Node>          $nodes
-     * @param array<string, true> $drawn
-     *
-     * @return list<string>
+     * @return list<Item>
      */
-    private static function unknown(array $nodes, array $drawn): array
+    private function unknown(): array
     {
-        $scanned = array_column($nodes, 'uri', 'uri');
         $named = [];
-        foreach ($nodes as $node) {
+        foreach ($this->nodes as $node) {
             foreach ($node['methods'] ?? [] as $method) {
                 $declared = ['embed' => $method['embed'] ?? [], 'dependsOn' => $method['dependsOn'] ?? [], 'refresh' => $method['refresh'] ?? [], 'purge' => $method['purge'] ?? []];
                 foreach ($declared as $via => $targets) {
                     foreach ($targets as $target) {
-                        if (! isset($scanned[$target['uri']])) {
+                        if ($this->node($target['uri']) === null) {
                             $named[$target['uri']][$via . $method['source']] = $via . ' ' . self::source($method['source']);
                         }
                     }
@@ -131,88 +169,70 @@ final class HtmlWarnings
         usort($uris, static fn (string $left, string $right): int => [! self::isSelf($left), $left] <=> [! self::isSelf($right), $right]);
         $items = [];
         foreach ($uris as $uri) {
-            $items[] = self::uri($uri, $drawn) . (self::isSelf($uri) ? '' : ' (another application)') . ' ' . implode(', ', $named[$uri]);
+            $items[] = [$this->uri($uri) . (self::isSelf($uri) ? '' : ' (another application)') . ' ' . implode(', ', $named[$uri]), [$uri]];
         }
 
         return $items;
     }
 
     /**
-     * @param Warning             $warning
-     * @param array<string, true> $drawn
+     * @param Warning $warning
+     *
+     * @return Item
      */
-    private static function dependsOnItem(array $warning, array $drawn): string
+    private function dependsOnItem(array $warning): array
     {
-        return self::uri($warning['resource'], $drawn) . ' ' . self::code($warning['warning'])
+        $html = $this->uri($warning['resource']) . ' ' . self::code($warning['warning'])
             . (isset($warning['dependsOn']) ? ' ' . self::code($warning['dependsOn']) : '')
             . ' ' . self::source($warning['source'])
             . '<div class="message">' . self::escape($warning['message']) . '</div>';
+
+        return [$html, [$warning['resource']]];
     }
 
-    /**
-     * The scanned resources the picture leaves out and no warning lists
-     *
-     * @param list<Node>          $nodes
-     * @param array<string, true> $drawn
-     */
-    private static function notDrawn(array $nodes, array $drawn): string
+    /** @param array<string, true> $warned the URIs the warnings list */
+    private function notDrawn(array $warned): string
     {
         $embedding = [];
-        foreach ($nodes as $node) {
+        foreach ($this->nodes as $node) {
             foreach ($node['methods'] ?? [] as $method) {
                 foreach ($method['embed'] ?? [] as $embed) {
                     $embedding[$node['uri']] = true;
-                    $embedding[$embed['uri']] = true;
+                    $embedding[$this->node($embed['uri'])['uri'] ?? $embed['uri']] = true;
                 }
             }
         }
 
-        $embeds = [];
-        $bare = [];
-        foreach ($nodes as $node) {
-            if (isset($drawn[$node['uri']])) {
+        $lists = ['embeds-uncached' => [], 'no-declarations' => [], 'writes-only' => []];
+        foreach ($this->nodes as $node) {
+            $uri = $node['uri'];
+            if (isset($this->drawn[$uri]) || isset($warned[$uri])) {
                 continue;
             }
 
-            $item = self::uri($node['uri'], $drawn) . ' ' . self::source($node['source']);
-            if (isset($embedding[$node['uri']]) && ! self::declaresMore($node)) {
-                $embeds[] = $item;
-                continue;
-            }
-
-            if (! isset($node['methods'])) {
-                $bare[] = $item;
-            }
+            $kind = match (true) {
+                isset($embedding[$uri]) => 'embeds-uncached',
+                ! isset($node['methods']) => 'no-declarations',
+                default => 'writes-only',
+            };
+            $lists[$kind][] = $this->uri($uri) . ' ' . self::source($node['source']);
         }
 
-        $lists = self::group('embeds-uncached', 'Embedded among uncached resources only', 'Not cached, and embeds or is embedded by resources that are not cached either.', $embeds)
-            . self::group('no-declarations', 'No declarations', 'Declares nothing the cache acts on.', $bare);
+        $html = self::group('embeds-uncached', 'Embedded among uncached resources only', 'Not cached, and embeds or is embedded by resources that are not cached either.', $lists['embeds-uncached'])
+            . self::group('no-declarations', 'No declarations', 'Declares nothing the cache acts on.', $lists['no-declarations'])
+            . self::group('writes-only', 'Writes only', 'Not cached, and declares writes none of the warnings above names.', $lists['writes-only']);
 
-        return $lists === '' ? '' : "<details>\n<summary>Not drawn</summary>\n{$lists}</details>\n";
+        return $html === '' ? '' : "<details>\n<summary>Not drawn</summary>\n{$html}</details>\n";
     }
 
-    /** @param Method $method */
-    private static function declaresWrite(array $method): bool
+    /**
+     * The scanned resource a declared URI names; a trailing `/` names its `index`, as BEAR.Resource resolves it
+     *
+     * @return Node|null
+     */
+    private function node(string $uri): array|null
     {
-        foreach ([...$method['refresh'] ?? [], ...$method['purge'] ?? []] as $target) {
-            if (! isset($target['implicit'])) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /** @param Node $node */
-    private static function declaresMore(array $node): bool
-    {
-        foreach ($node['methods'] ?? [] as $method) {
-            if (isset($method['dependsOn']) || self::declaresWrite($method)) {
-                return true;
-            }
-        }
-
-        return false;
+        return $this->byKey[$this->converter->key($uri)] ?? (str_ends_with($uri, '/') ? $this->byKey[$this->converter->key($uri . 'index')] ?? null : null);
     }
 
     /** @param list<ImpactLine> $lines */
@@ -243,12 +263,11 @@ final class HtmlWarnings
         );
     }
 
-    /** @param array<string, true> $drawn */
-    private static function uri(string $uri, array $drawn): string
+    private function uri(string $uri): string
     {
         $escaped = self::escape($uri);
 
-        return isset($drawn[$uri]) ? "<a class=\"uri\" href=\"#\" data-uri=\"{$escaped}\">{$escaped}</a>" : "<span class=\"uri\">{$escaped}</span>";
+        return isset($this->drawn[$uri]) ? "<a class=\"uri\" href=\"#\" data-uri=\"{$escaped}\">{$escaped}</a>" : "<span class=\"uri\">{$escaped}</span>";
     }
 
     private static function code(string $text): string

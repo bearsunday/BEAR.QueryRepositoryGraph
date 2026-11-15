@@ -111,27 +111,32 @@ vendor/bin/qr-graph html > graph.html
 ```
 
 One self-contained page, readable from `file://`: the `dot --cached` picture rendered by Graphviz, whose `dot` must be
-on the `PATH` (without it, an error, 1). `--cached` is still accepted and changes nothing. Click a resource: what
-invalidates it glows green, what it invalidates glows orange, and a write that invalidates it (a resource reaching it
-only through its own refresh or purge) glows blue with its arrows; the rest dims. The legend counts each side among
-the resources drawn. A resource can also be focused and selected with Enter; clicking it again, clicking
-elsewhere or Escape clears. The page embeds, as JSON, what `impact` computes from each resource and from each of its
-write methods that refresh or purge, with which starts reach it only through a write: one shortest path per reached
-resource, as `impact` shows it; a resource's refresh of itself is not lit.
+on the `PATH` (without it, an error, 1). `--cached` is still accepted and changes nothing. The whole graph is no
+longer drawn here: `qr-graph dot | dot -Tsvg` draws it. With nothing cached, the page says so in place of the picture.
+Click a resource: what invalidates it glows green, what it invalidates glows orange, and a write that invalidates it
+(a resource reaching it only through its own refresh or purge) glows blue with its arrows; the rest dims. The legend
+counts each side among the resources drawn. A resource can also be focused and selected with Enter; clicking it
+again, clicking elsewhere in the picture or Escape clears. The page embeds, as JSON, what `impact` computes from each
+resource and from each of its write methods that refresh or purge, with which starts reach it only through a write:
+one shortest path per reached resource, as `impact` shows it; a resource's refresh of itself is not lit.
 
 Below the picture, Warnings lists the declarations that affect no cache, one group per kind, each item with the
-`file:line` that declares it; an empty group is left out:
+`file:line` that declares it; an empty group is left out. A declared URI ending in `/` names that path's `index`, as
+BEAR.Resource resolves it (`page://self/` is `page://self/index`).
 
-- Invalidates no cache — a write method declaring `#[Purge]` or `#[Refresh]` whose impact reaches no cached resource.
-- Depends on, but not cached — a resource declaring `#[DependsOn]` that is not cached, and whose impact reaches no
-  cached resource.
+- Invalidates no cache — each `#[Purge]` or `#[Refresh]` target in this application whose invalidation reaches no
+  cached resource, with the write method that names it. A target in another application is listed only under
+  No such resource.
+- Depends on, but not cached — a resource declaring `#[DependsOn]` that is neither cached nor embedded, directly or
+  not, by a cached resource: no cache stores the tags it declares.
 - No such resource — a URI an `#[Embed]`, `#[DependsOn]`, `#[Refresh]` or `#[Purge]` names that no scanned resource
   serves: this application's (`self`) first, then other applications', which the scan cannot see.
 - `#[DependsOn]` warnings — the [warnings](#warnings-on-dependson) every command writes on stderr.
 
-A collapsed Not drawn then counts the scanned resources the picture leaves out and no warning lists: those not
-cached that embed or are embedded only by resources not cached either, and those that declare nothing. Click a listed
-URI the picture draws to select it there.
+A collapsed Not drawn then lists every scanned resource the picture leaves out and no warning names: those not cached
+that embed or are embedded only by resources not cached either, those that declare nothing, and those whose only
+declarations are writes no warning names. Click a listed URI the picture draws to select it there; a click elsewhere
+in the Warnings keeps the selection.
 
 ### `snapshot` — impacts to review as a diff
 

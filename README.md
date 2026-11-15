@@ -46,10 +46,10 @@ JSONL, described by the [JSON Schemas](docs/schemas/graph). Each command and its
 Arrows point the way they are declared. Invalidation travels against them: refreshing `article` reaches `ranking`
 through its grey arrow, and `index` through the black one.
 
-`qr-graph html > graph.html` writes the cached part of the picture (`dot --cached`) as one page. Click a resource: what
-invalidates it glows green, the writes that invalidate it blue, and what it invalidates orange, each side counted; the
-rest dims. Below the picture, Warnings lists the declarations that affect no cache, each with its `file:line`, and a
-collapsed Not drawn counts the resources left out.
+`qr-graph html > graph.html` writes the cached part of the picture (`dot --cached`) as one page; the whole graph is
+`qr-graph dot | dot -Tsvg`. Click a resource: what invalidates it glows green, the writes that invalidate it blue, and
+what it invalidates orange, each side counted; the rest dims. Below the picture, Warnings lists the declarations that
+affect no cache, each with its `file:line`, and a collapsed Not drawn lists the resources left out.
 
 ## What a change reaches
 

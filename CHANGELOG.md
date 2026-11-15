@@ -6,11 +6,11 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
-- `html` draws only the cached part of the picture, as `dot --cached` does; `--cached` is still accepted and changes nothing.
+- `html` draws only the cached part of the picture, as `dot --cached` does, so the whole graph is no longer clickable; draw it with `qr-graph dot | dot -Tsvg`. `--cached` is still accepted and changes nothing.
 
 ### Added
 
-- `html` lists, below the picture, the declarations that affect no cache, each with its `file:line`: writes that reach no cached resource, uncached resources declaring `#[DependsOn]`, URIs no scanned resource serves, and the `#[DependsOn]` warnings. A collapsed "Not drawn" counts the resources the picture leaves out.
+- `html` lists, below the picture, the declarations that affect no cache, each with its `file:line`: `#[Purge]`/`#[Refresh]` targets that reach no cached resource, `#[DependsOn]` on resources no cache stores, URIs no scanned resource serves, and the `#[DependsOn]` warnings. A collapsed "Not drawn" lists the resources the picture leaves out.
 
 ## [0.1.0] - 2026-11-15
 

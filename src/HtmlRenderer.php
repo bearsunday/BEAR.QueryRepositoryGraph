@@ -38,6 +38,7 @@ use const JSON_UNESCAPED_UNICODE;
  * The `dot --cached` picture as one self-contained HTML page: clicking a resource lights what `impact` reaches from
  * it and what reaches it. Below it, the declarations that affect no cache, and what the picture leaves out.
  *
+ * @internal
  * @psalm-import-type Node from GraphBuilder
  * @psalm-import-type ImpactLine from Impact
  * @psalm-import-type Warning from DependsOnWarnings
@@ -48,6 +49,7 @@ use const JSON_UNESCAPED_UNICODE;
 final class HtmlRenderer
 {
     private const NONE = ['nodes' => [], 'edges' => [], 'writes' => []];
+    private const NOTHING_CACHED = '<p>Nothing is cached: no resource declares #[Cacheable], #[CacheableResponse] or #[DonutCache], so there is no picture. <code>qr-graph dot | dot -Tsvg</code> draws the whole graph.</p>';
 
     /** @param non-empty-list<string> $dot the command that reads dot on stdin and writes SVG on stdout */
     public function __construct(private readonly array $dot = ['dot', '-Tsvg'])
@@ -63,11 +65,12 @@ final class HtmlRenderer
     public function __invoke(array $nodes, array $dependsOn): string
     {
         $dot = new DotRenderer();
+        $drawn = $dot->cachedUris($nodes);
         $json = json_encode(self::glow($nodes), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_THROW_ON_ERROR);
 
         return strtr(self::PAGE, [
-            '{{svg}}' => $this->svg($dot->cached($nodes)),
-            '{{warnings}}' => (new HtmlWarnings())($nodes, $dot->cachedUris($nodes), $dependsOn),
+            '{{svg}}' => $drawn === [] ? self::NOTHING_CACHED : $this->svg($dot->cached($nodes)),
+            '{{warnings}}' => (new HtmlWarnings($nodes, $drawn))($dependsOn),
             '{{json}}' => $json,
         ]);
     }
@@ -328,6 +331,9 @@ final class HtmlRenderer
 (() => {
   const graph = JSON.parse(document.getElementById('qr-graph-data').textContent);
   const svg = document.querySelector('main svg');
+  if (!svg) {
+    return;
+  }
   const status = document.getElementById('status');
   const counts = {
     reaches: document.getElementById('count-reaches'),
@@ -397,6 +403,10 @@ final class HtmlRenderer
       event.preventDefault();
       select(item.dataset.uri);
       nodes.get(selected)?.scrollIntoView({ block: 'center', inline: 'center' });
+      return;
+    }
+    // A click on the warnings, their summary included, keeps what is selected.
+    if (event.target.closest?.('#warnings')) {
       return;
     }
     const node = event.target.closest?.('g.node');
