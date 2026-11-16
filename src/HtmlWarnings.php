@@ -18,8 +18,6 @@ use function preg_match;
 use function rawurlencode;
 use function realpath;
 use function sprintf;
-use function str_ends_with;
-use function strlen;
 use function strrpos;
 use function strval;
 use function substr;
@@ -89,7 +87,7 @@ final class HtmlWarnings
             return "<h2>Warnings</h2>\n<p>No warnings.</p>\n" . $this->notDrawn($warned);
         }
 
-        $premise = "<p>qr-graph does not read #[ResourceParam] or a row class's #[DependsOn] yet, and does not see a dependency a template declares with depends() while rendering: check such a case at runtime before removing anything.</p>\n";
+        $premise = "<p>A resource depends on what it embeds: the warnings follow the #[Embed], #[DependsOn], #[Refresh] and #[Purge] declarations.</p>\n";
 
         return "<details data-kind=\"warnings\">\n<summary>Warnings ({$count})</summary>\n" . $premise . $html . "</details>\n" . $this->notDrawn($warned);
     }
@@ -107,7 +105,7 @@ final class HtmlWarnings
                 foreach (['refresh' => $method['refresh'] ?? [], 'purge' => $method['purge'] ?? []] as $via => $targets) {
                     foreach ($targets as $target) {
                         $uri = $this->node($target['uri'])['uri'] ?? $target['uri'];
-                        if (isset($target['implicit']) || ! self::isSelf($uri) || $this->invalidatesACache($target['uri'], $uri)) {
+                        if (isset($target['implicit']) || ! self::isSelf($uri) || self::reachesCache(($this->impact)($uri))) {
                             continue;
                         }
 
@@ -119,26 +117,6 @@ final class HtmlWarnings
         }
 
         return array_values($items);
-    }
-
-    /**
-     * Whether invalidating the target reaches a cached resource under any spelling: an embed or #[DependsOn] names a
-     * URI as written, so `app://self/blog/` and `app://self/blog/index` reach different declarations of one resource
-     */
-    private function invalidatesACache(string $written, string $resolved): bool
-    {
-        $spellings = [$written, $resolved];
-        if (str_ends_with($resolved, '/index')) {
-            $spellings[] = substr($resolved, 0, -strlen('index'));
-        }
-
-        foreach ($spellings as $spelling) {
-            if (self::reachesCache(($this->impact)($spelling))) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /** @return list<Item> */
@@ -277,7 +255,7 @@ final class HtmlWarnings
             $lists[$kind][] = $this->uri($uri) . ' ' . $this->source($node['source']);
         }
 
-        $html = self::group('embeds-uncached', 'Embedded among uncached resources only', 'Not cached, and embeds or is embedded by resources that are not cached either.', $lists['embeds-uncached'])
+        $html = self::group('embeds-uncached', 'Not embedded by a cache', 'Not cached, and no cached resource embeds it, directly or not.', $lists['embeds-uncached'])
             . self::group('no-declarations', 'No declarations', 'Declares nothing the cache acts on.', $lists['no-declarations'])
             . self::group('writes-only', 'Writes only', 'Not cached, and declares writes none of the warnings above names.', $lists['writes-only']);
 
@@ -285,13 +263,13 @@ final class HtmlWarnings
     }
 
     /**
-     * The scanned resource a declared URI names; a trailing `/` names its `index`, as BEAR.Resource resolves it
+     * The scanned resource a declared URI names
      *
      * @return Node|null
      */
     private function node(string $uri): array|null
     {
-        return $this->byKey[$this->converter->key($uri)] ?? (str_ends_with($uri, '/') ? $this->byKey[$this->converter->key($uri . 'index')] ?? null : null);
+        return $this->byKey[$this->converter->key($uri)] ?? null;
     }
 
     /** @param list<ImpactLine> $lines */

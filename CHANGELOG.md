@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file.
 ### Changed
 
 - `html` draws only the cached part of the picture, as `dot --cached` does, so the whole graph is no longer clickable; draw it with `qr-graph dot | dot -Tsvg`. `--cached` is still accepted and changes nothing.
+- A URI ending in `/` is read as that path's `index` in every command, as BEAR.Resource serves it: `page://self/` is `page://self/index`.
 
 ### Added
 

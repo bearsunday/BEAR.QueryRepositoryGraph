@@ -18,7 +18,7 @@ is declared but never observed, or observed but never declared.
 vendor/bin/qr-graph dump [--dir=src/Resource]
 vendor/bin/qr-graph impact <uri> [--method=onPut] [--allow-unknown] [--json] [--dir=src/Resource]
 vendor/bin/qr-graph dot [--cached] [--dir=src/Resource]
-vendor/bin/qr-graph html [--dir=src/Resource]
+vendor/bin/qr-graph html [--editor=phpstorm] [--dir=src/Resource]
 vendor/bin/qr-graph snapshot [--dir=src/Resource]
 vendor/bin/qr-graph observe <session.json|dir>... [--dir=src/Resource] [--fail-on=<verdict>[,<verdict>...]]
 ```
@@ -48,7 +48,8 @@ v4 `dependsOn`, v5 dropped the source-text guesses, `dynamic` and the embed `usa
 - `uri` is `scheme://host/path` without query, exact-matchable everywhere it appears; `template` keeps the
   declaration as written when it differs, including another spelling of a resource's URI (`galleryArticle` is
   listed as `gallery-article`; a URI no scanned resource serves is listed by the first spelling the scan meets).
-  The PHP class is not repeated: it follows from `uri` and `meta.namespaces`.
+  A URI ending in `/` names that path's `index`, as BEAR.Resource serves it: `page://self/` is listed as
+  `page://self/index`, in every command. The PHP class is not repeated: it follows from `uri` and `meta.namespaces`.
 - `source` is `file:line`, to open the declaration.
 - `dependsOn` on `onGet` lists its `#[DependsOn]` declarations, including those on an `onGet()` it overrides.
   A declaration on a row class is not in the graph: see [what the graph does not know](#what-the-graph-does-not-know).
@@ -142,10 +143,8 @@ invalidates it. The page's JSON holds each layout under `layout:<class>`. The le
 or column heads.
 
 Below the picture, Warnings lists the declarations that affect no cache, one group per kind, each item with the
-`file:line` that declares it; an empty group is left out. A declared URI ending in `/` names that path's `index`, as
-BEAR.Resource resolves it (`page://self/` is `page://self/index`). qr-graph does not read `#[ResourceParam]` or a row
-class's `#[DependsOn]` yet, and does not see a dependency a template declares with `depends()` while rendering, so such
-a dependency can make a working declaration look idle: check it at runtime before removing anything.
+`file:line` that declares it; an empty group is left out. A resource depends on what it embeds: the warnings follow
+the `#[Embed]`, `#[DependsOn]`, `#[Refresh]` and `#[Purge]` declarations.
 
 - Invalidates no cache — each `#[Purge]` or `#[Refresh]` target in this application whose invalidation reaches no
   cached resource, with the write method that names it. A target in another application is listed only under
@@ -156,9 +155,9 @@ a dependency can make a working declaration look idle: check it at runtime befor
   resource serves: this application's (`self`) first, then other applications', which the scan cannot see.
 - `#[DependsOn]` warnings — the [warnings](#warnings-on-dependson) every command writes on stderr.
 
-After the Warnings section, a collapsed Not drawn lists every scanned resource the picture leaves out and no warning names: those not cached
-that embed or are embedded only by resources not cached either, those that declare nothing, and those whose only
-declarations are writes no warning names. Click a listed URI the picture draws to select it there; a click elsewhere
+After the Warnings section, a collapsed Not drawn lists every scanned resource the picture leaves out and no warning
+names: those not cached that no cached resource embeds, directly or not, those that declare nothing, and those whose
+only declarations are writes no warning names. Click a listed URI the picture draws to select it there; a click elsewhere
 in the Warnings keeps the selection.
 
 The Warnings section starts collapsed, its summary counting the items listed; with none, "No warnings" shows as is.
