@@ -606,6 +606,16 @@ class QrGraphTest extends TestCase
         $this->assertArrayNotHasKey('layout', $nodes['page://self/esi/footer']);
     }
 
+    public function testALayoutWithoutAnEmbedOfItsOwnIsAnError(): void
+    {
+        [$code, , $err] = self::qrGraph(['dump', '--dir=tests/Fixture/LayoutWithoutEmbed/Resource']);
+        $this->assertSame(1, $code);
+        $this->assertSame(
+            'BEAR\QueryRepositoryGraph\Fixture\LayoutWithoutEmbed\Attribute\Bare, the layout of BEAR\QueryRepositoryGraph\Fixture\LayoutWithoutEmbed\Resource\Page\Index, declares no EMBED of its own',
+            $this->lastError($err),
+        );
+    }
+
     public function testALayoutPartReachesEveryPageCarryingTheLayout(): void
     {
         $dir = '--dir=' . self::LAYOUT;

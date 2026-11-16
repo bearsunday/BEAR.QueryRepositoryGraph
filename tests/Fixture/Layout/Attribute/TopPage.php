@@ -8,11 +8,9 @@ use BEAR\Resource\Annotation\AbstractResourceLayout;
 #[Attribute(Attribute::TARGET_CLASS)]
 final class TopPage extends AbstractResourceLayout
 {
-    public function embed(): array
-    {
-        return [
-            'header' => 'page://self/esi/header',
-            'ranking' => 'page://self/esi/ranking',
-        ];
-    }
+    /** @var array<string, string> */
+    public const EMBED = [
+        'header' => 'page://self/esi/header',
+        'ranking' => 'page://self/esi/ranking',
+    ];
 }

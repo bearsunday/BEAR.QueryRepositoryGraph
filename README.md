@@ -54,6 +54,22 @@ collapsed Not drawn after it lists the resources left out.
 
 ### Resource layouts
 
+```php
+#[Attribute(Attribute::TARGET_CLASS)]
+final class ContentPage extends AbstractResourceLayout
+{
+    /** @var array<string, string> */
+    public const EMBED = ['header' => 'page://self/esi/header', 'footer' => 'page://self/esi/footer'];
+}
+
+#[Attribute(Attribute::TARGET_CLASS)]
+final class SearchPage extends AbstractResourceLayout
+{
+    /** @var array<string, string> */
+    public const EMBED = [...ContentPage::EMBED, 'search' => '/esi/search{?q}'];
+}
+```
+
 A resource layout, a class attribute extending BEAR.Resource's `AbstractResourceLayout` such as `#[ContentPage]`, is
 drawn as one table at the top-left instead of arrows: a column per layout, a row per part it embeds, ● where the layout
 has the part. The top-left cell holds the scheme and the directory the rows share. Each page names its layout after

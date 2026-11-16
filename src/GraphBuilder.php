@@ -187,7 +187,8 @@ final class GraphBuilder
      *
      * @return Layout|null
      *
-     * @throws RuntimeException when the class declares more than one layout, which BEAR.Resource rejects too.
+     * @throws RuntimeException when the class declares more than one layout, or a layout without an EMBED of its own,
+     *                          both of which BEAR.Resource rejects too.
      */
     private function layout(ReflectionClass $ref, string $uri): array|null
     {
@@ -200,17 +201,25 @@ final class GraphBuilder
             throw new RuntimeException(sprintf('%s has more than one layout', $ref->getName()));
         }
 
-        $layout = $attributes[0]->newInstance();
-        $class = new ReflectionClass($layout);
+        /** @var class-string<AbstractResourceLayout> $name IS_INSTANCEOF matched it */
+        $name = $attributes[0]->getName();
+        $layout = new ReflectionClass($name);
+        $constant = $layout->getReflectionConstant('EMBED');
+        if ($constant === false || $constant->getDeclaringClass()->getName() === AbstractResourceLayout::class) {
+            throw new RuntimeException(sprintf('%s, the layout of %s, declares no EMBED of its own', $layout->getName(), $ref->getName()));
+        }
+
+        /** @var array<string, string> $parts */
+        $parts = $constant->getValue();
         $embed = [];
-        foreach ($layout->embed() as $rel => $src) {
+        foreach ($parts as $rel => $src) {
             $embed[] = ['rel' => $rel] + $this->target($src, $uri);
         }
 
         return [
-            'name' => $class->getShortName(),
-            'class' => $class->getName(),
-            'source' => $this->source((string) $class->getFileName(), (int) $class->getStartLine()),
+            'name' => $layout->getShortName(),
+            'class' => $layout->getName(),
+            'source' => $this->source((string) $layout->getFileName(), (int) $layout->getStartLine()),
             'embed' => $embed,
         ];
     }

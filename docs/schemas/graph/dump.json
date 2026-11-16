@@ -84,7 +84,7 @@
                         "name": {"description": "The attribute's short class name, as in `#[ContentPage]`.", "type": "string"},
                         "class": {"type": "string"},
                         "source": {"description": "Where the attribute class is declared.", "$ref": "#/$defs/source"},
-                        "embed": {"description": "embed() as declared, each URI resolved against this resource's.", "type": "array", "items": {"$ref": "#/$defs/embed"}}
+                        "embed": {"description": "The layout's EMBED constant as declared, each URI resolved against this resource's.", "type": "array", "items": {"$ref": "#/$defs/embed"}}
                     },
                     "additionalProperties": false
                 },
