@@ -46,10 +46,64 @@ final class DotRenderer
     }
 
     /**
+     * The URIs `cached()` draws
+     *
+     * @param list<Node> $nodes
+     *
+     * @return array<string, true>
+     */
+    public function cachedUris(array $nodes): array
+    {
+        [$drawn, , $targets] = self::select($nodes, self::cachedAndInvalidators($nodes));
+        $uris = [];
+        foreach ([...array_keys($drawn), ...array_keys($targets)] as $uri) {
+            $uris[$uri] = true;
+        }
+
+        return $uris;
+    }
+
+    /**
      * @param list<Node>               $nodes
      * @param array<string, true>|null $shown the URIs to draw; null draws every resource
      */
     private static function render(array $nodes, array|null $shown): string
+    {
+        [$drawn, $edges, $targets] = self::select($nodes, $shown);
+
+        // A page nothing embeds is where a request starts: those line up in the leftmost column.
+        $entries = array_keys(array_filter($drawn, static fn (array $node): bool => self::scheme($node['uri']) === 'page' && ! isset($targets[$node['uri']])));
+        $lines = [
+            'digraph qr {',
+            '  rankdir=LR; nodesep=0.35; ranksep=1.1;',
+            '  node [fontname="Helvetica", fontsize=13];',
+            '  edge [fontname="Helvetica", fontsize=10, fontcolor="#333333", arrowhead=empty];',
+            ...self::nodeLines($drawn, array_keys($targets)),
+        ];
+        $edgeLines = [];
+        foreach ($edges as [$from, $to, $attrs]) {
+            $edgeLines[] = sprintf('  %s -> %s [%s];', self::id($from), self::id($to), $attrs);
+        }
+
+        // Declarations that differ only in their query name the same resource: one arrow each.
+        $lines = [...$lines, ...array_unique($edgeLines)];
+
+        if ($entries !== []) {
+            $lines[] = '  {rank=min; ' . implode('; ', array_map(self::id(...), $entries)) . ';}';
+        }
+
+        $lines[] = '}';
+
+        return implode("\n", $lines) . "\n";
+    }
+
+    /**
+     * @param list<Node>               $nodes
+     * @param array<string, true>|null $shown
+     *
+     * @return array{array<string, Node>, list<array{string, string, string}>, array<string, true>} the scanned resources drawn, the arrows, and the URIs an arrow points to
+     */
+    private static function select(array $nodes, array|null $shown): array
     {
         $drawn = [];
         $edges = [];
@@ -77,30 +131,7 @@ final class DotRenderer
         // A resource no arrow touches says nothing about cache dependencies, unless it is a cache no declared write invalidates.
         $drawn = array_filter($drawn, static fn (array $node): bool => isset($touched[$node['uri']]) || Impact::isCached($node));
 
-        // A page nothing embeds is where a request starts: those line up in the leftmost column.
-        $entries = array_keys(array_filter($drawn, static fn (array $node): bool => self::scheme($node['uri']) === 'page' && ! isset($targets[$node['uri']])));
-        $lines = [
-            'digraph qr {',
-            '  rankdir=LR; nodesep=0.35; ranksep=1.1;',
-            '  node [fontname="Helvetica", fontsize=13];',
-            '  edge [fontname="Helvetica", fontsize=10, fontcolor="#333333", arrowhead=empty];',
-            ...self::nodeLines($drawn, array_keys($targets)),
-        ];
-        $edgeLines = [];
-        foreach ($edges as [$from, $to, $attrs]) {
-            $edgeLines[] = sprintf('  %s -> %s [%s];', self::id($from), self::id($to), $attrs);
-        }
-
-        // Declarations that differ only in their query name the same resource: one arrow each.
-        $lines = [...$lines, ...array_unique($edgeLines)];
-
-        if ($entries !== []) {
-            $lines[] = '  {rank=min; ' . implode('; ', array_map(self::id(...), $entries)) . ';}';
-        }
-
-        $lines[] = '}';
-
-        return implode("\n", $lines) . "\n";
+        return [$drawn, $edges, $targets];
     }
 
     /**

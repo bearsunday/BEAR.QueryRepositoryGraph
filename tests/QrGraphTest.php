@@ -4,40 +4,67 @@ declare(strict_types=1);
 
 namespace BEAR\QueryRepositoryGraph;
 
+use DOMDocument;
+use DOMElement;
+use DOMXPath;
 use JsonSchema\Validator;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
 use function array_column;
+use function array_filter;
+use function array_intersect;
 use function array_key_first;
+use function array_keys;
 use function array_map;
 use function array_slice;
+use function array_unique;
+use function array_values;
+use function bin2hex;
 use function count;
 use function dirname;
 use function explode;
+use function file_put_contents;
 use function fopen;
 use function getcwd;
+use function htmlspecialchars;
 use function is_array;
 use function json_decode;
 use function json_encode;
+use function mkdir;
 use function preg_match;
+use function preg_replace;
+use function random_bytes;
+use function rawurlencode;
+use function realpath;
 use function rewind;
+use function rmdir;
 use function shell_exec;
 use function sort;
+use function sprintf;
+use function str_replace;
 use function stream_get_contents;
 use function substr_count;
+use function sys_get_temp_dir;
+use function touch;
 use function trim;
+use function unlink;
 
 use const JSON_THROW_ON_ERROR;
+use const LIBXML_NOERROR;
 use const PHP_BINARY;
+use const PHP_OS_FAMILY;
 
 /**
  * The declared cache graph of the fake application, as `qr-graph` prints it
+ *
+ * @psalm-import-type Node from GraphBuilder
  */
 class QrGraphTest extends TestCase
 {
     private const DIR = 'tests/Fake/fake-app/src/Resource';
     private const SESSIONS = 'tests/Fixture/Sessions';
+    private const WARNINGS = 'tests/Fixture/HtmlWarnings/Resource';
 
     /** @var array<string, array<string, mixed>> */
     private static array $nodes = [];
@@ -90,6 +117,8 @@ class QrGraphTest extends TestCase
             $converter->resolve('app://self/user/friend?user_id={id}', 'app://self/user'),
         );
         $this->assertSame(['uri' => 'app://self/user/{id}'], $converter->resolve('app://self/user/{id}', 'app://self/user'));
+        $this->assertSame('typo', $converter->key('Typo'), 'an argument without a scheme is matched as written, case-insensitively');
+        $this->assertSame('app://self', $converter->key('App://Self'), 'so is one without a path');
     }
 
     public function testEveryLineMatchesItsSchema(): void
@@ -272,7 +301,7 @@ class QrGraphTest extends TestCase
     {
         $dir = 'tests/Fixture/DependsOn/Resource';
         $nodes = (new GraphBuilder(new UriConverter(), (string) getcwd()))->build((new ResourceScanner())->scan($dir))['nodes'];
-        $html = (new HtmlRenderer([PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo "<?xml version=\"1.0\"?>\n<svg></svg>\n";']))($nodes, (new DotRenderer())($nodes));
+        $html = (new HtmlRenderer([PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo "<?xml version=\"1.0\"?>\n<svg></svg>\n";']))($nodes, []);
         $this->assertStringContainsString("<main>\n<svg></svg>", $html, 'the SVG goes in without its XML prolog');
         $glow = self::glow($html);
 
@@ -293,7 +322,7 @@ class QrGraphTest extends TestCase
     public function testHtmlTellsAWriteFromWhatAResourceShows(): void
     {
         $nodes = (new GraphBuilder(new UriConverter(), (string) getcwd()))->build((new ResourceScanner())->scan('tests/Fixture/Html/Resource'))['nodes'];
-        $html = (new HtmlRenderer([PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo "<svg></svg>";']))($nodes, (new DotRenderer())($nodes));
+        $html = (new HtmlRenderer([PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo "<svg></svg>";']))($nodes, []);
         $glow = self::glow($html);
 
         $this->assertSame(['app://self/admin', 'app://self/banner'], self::at($glow, 'page://self/front', 'reachedBy', 'nodes'));
@@ -301,7 +330,7 @@ class QrGraphTest extends TestCase
         $this->assertSame([['app://self/admin', 'app://self/banner'], ['app://self/banner', 'page://self/front']], self::at($glow, 'page://self/front', 'reachedBy', 'writes'), 'the purge and the refresh on the way are writes');
     }
 
-    public function testHtmlDrawsTheDotPicture(): void
+    public function testHtmlRendersWithGraphviz(): void
     {
         if ((string) shell_exec('command -v dot') === '') {
             $this->markTestSkipped('Graphviz dot is not installed');
@@ -313,11 +342,251 @@ class QrGraphTest extends TestCase
         $this->assertSame(['app://self/writer'], self::at(self::glow($out), 'app://self/article', 'reachedBy', 'nodes'));
     }
 
+    public function testHtmlDrawsOnlyTheCachedPart(): void
+    {
+        $html = self::warningsPage(self::WARNINGS);
+        $this->assertSame(1, substr_count($html, '<svg'), 'one picture');
+        $this->assertStringContainsString('<svg>' . htmlspecialchars((new DotRenderer())->cached(self::nodes(self::WARNINGS))) . '</svg>', $html, 'the cached part, as dot --cached draws it');
+        $this->assertSame(
+            ['app://self/editor', 'app://self/liker', 'app://self/liker', 'app://self/tally', 'app://self/digest', 'app://ads/banner', 'app://self/summary'],
+            self::selectable($html),
+            'only a URI the picture draws selects it',
+        );
+    }
+
+    public function testHtmlListsEachTargetWhoseInvalidationReachesNoCache(): void
+    {
+        $html = self::warningsPage(self::WARNINGS);
+        // Editor's onPut, and liker's refresh of page://self/, reach the cached index; tally's own refresh reaches itself.
+        $this->assertSame([
+            'app://self/counter purge by app://self/editor onDelete',
+            'app://self/counter purge by app://self/liker onPost',
+            'app://self/removed purge by app://self/liker onPost',
+            'app://self/counter purge by app://self/tally onPut',
+        ], self::listed($html, 'invalidates-no-cache'), 'ad-writer purges another application: not listed here');
+        $this->assertSame([
+            'tests/Fixture/HtmlWarnings/Resource/App/Editor.php:17',
+            'tests/Fixture/HtmlWarnings/Resource/App/Liker.php:14',
+            'tests/Fixture/HtmlWarnings/Resource/App/Liker.php:14',
+            'tests/Fixture/HtmlWarnings/Resource/App/Tally.php:18',
+        ], self::sources($html, 'invalidates-no-cache'));
+    }
+
+    public function testHtmlListsADependsOnWhoseTagsAreStoredNowhere(): void
+    {
+        $html = self::warningsPage(self::WARNINGS);
+        // Feed is embedded by the cached index and summary is cached; digest is only depended on by summary.
+        $this->assertSame(['app://self/digest', 'app://self/stats'], self::listed($html, 'depends-on-not-cached'));
+        $this->assertSame(
+            ['tests/Fixture/HtmlWarnings/Resource/App/Digest.php:11', 'tests/Fixture/HtmlWarnings/Resource/App/Stats.php:12'],
+            self::sources($html, 'depends-on-not-cached'),
+        );
+    }
+
+    public function testHtmlListsTheUrisNoResourceServes(): void
+    {
+        $html = self::warningsPage(self::WARNINGS);
+        $this->assertSame([
+            'app://self/removed purge',
+            'app://ads/banner (another application) embed',
+            'app://ads/campaign (another application) purge',
+        ], self::listed($html, 'no-such-resource'), 'this application before another');
+        $this->assertSame([
+            'tests/Fixture/HtmlWarnings/Resource/App/Liker.php:14',
+            'tests/Fixture/HtmlWarnings/Resource/App/Feed.php:13',
+            'tests/Fixture/HtmlWarnings/Resource/App/AdWriter.php:11',
+        ], self::sources($html, 'no-such-resource'));
+    }
+
+    public function testHtmlListsTheDependsOnWarnings(): void
+    {
+        $html = self::warningsPage(self::WARNINGS);
+        $this->assertSame([
+            'app://self/stats depends-on-never-invalidated app://self/plain',
+            'app://self/summary depends-on-never-invalidated app://self/digest',
+        ], self::listed($html, 'depends-on'));
+        $this->assertSame(
+            ['tests/Fixture/HtmlWarnings/Resource/App/Stats.php:12', 'tests/Fixture/HtmlWarnings/Resource/App/Summary.php:13'],
+            self::sources($html, 'depends-on'),
+        );
+    }
+
+    public function testHtmlCountsWhatItDoesNotDraw(): void
+    {
+        $html = self::warningsPage(self::WARNINGS);
+        $this->assertSame(['app://self/archive-list', 'app://self/blog/index', 'page://self/archive'], self::listed($html, 'embeds-uncached'), 'archive also embeds stats, which is listed above');
+        $this->assertSame(['app://self/plain'], self::listed($html, 'no-declarations'), 'counter is listed above');
+        $this->assertSame(['app://self/ad-writer'], self::listed($html, 'writes-only'));
+        $page = self::xpath($html);
+        $this->assertSame('3', self::text($page, '//*[@data-kind="embeds-uncached"]//*[@class="count"]'));
+        $this->assertSame('Not drawn', self::text($page, '//details[@data-kind="not-drawn"][not(@open)]/summary'), 'collapsed');
+    }
+
+    public function testHtmlAccountsForEveryScannedResource(): void
+    {
+        foreach ([self::WARNINGS, 'tests/Fixture/DependsOnWarn/Resource'] as $dir) {
+            $nodes = self::nodes($dir);
+            $page = self::xpath(self::warningsPage($dir));
+            $drawn = array_keys((new DotRenderer())->cachedUris($nodes));
+            $warned = self::texts($page, '//section[@data-kind][not(ancestor::*[@data-kind="not-drawn"])]//*[contains(@class, "uri")]');
+            $notDrawn = self::texts($page, '//*[@data-kind="not-drawn"]//*[contains(@class, "uri")]');
+            $scanned = array_column($nodes, 'uri');
+            $accounted = array_values(array_unique(array_intersect([...$drawn, ...$warned, ...$notDrawn], $scanned)));
+            sort($accounted);
+            $this->assertSame($scanned, $accounted, $dir);
+            $this->assertSame([], array_values(array_intersect($notDrawn, [...$drawn, ...$warned])), $dir);
+        }
+    }
+
+    public function testHtmlExplainsAPictureWithNothingCached(): void
+    {
+        $nodes = array_values(array_filter(self::nodes(self::WARNINGS), static fn (array $node): bool => ! Impact::isCached($node)));
+        $html = (new HtmlRenderer([PHP_BINARY, '-r', 'exit(1);']))($nodes, []);
+        $this->assertSame(0, substr_count($html, '<svg'));
+        $this->assertStringContainsString('Nothing is cached', $html);
+    }
+
+    public function testHtmlWarningsStartCollapsed(): void
+    {
+        $page = self::xpath(self::warningsPage(self::WARNINGS));
+        $this->assertSame('Warnings (11)', self::text($page, '//*[@id="warnings"]/details[not(@open)]/summary'), 'the items the four groups list');
+    }
+
+    public function testHtmlLinksSourcesOnlyForAnEditor(): void
+    {
+        $plain = self::warningsPage(self::WARNINGS);
+        $this->assertStringNotContainsString('phpstorm://', $plain);
+        $this->assertStringNotContainsString((string) getcwd(), $plain, 'no absolute path of the generating machine');
+        $this->assertStringNotContainsString(rawurlencode((string) getcwd()), $plain);
+        $this->assertSame('span', self::elements(self::xpath($plain), '//*[@data-kind="invalidates-no-cache"]//*[@class="source"]')[0]->tagName);
+
+        $page = self::xpath(self::warningsPage(self::WARNINGS, 'phpstorm'));
+        $source = self::elements($page, '//*[@data-kind="invalidates-no-cache"]//*[@class="source"]')[0];
+        $this->assertSame('tests/Fixture/HtmlWarnings/Resource/App/Editor.php:17', $source->textContent);
+        $this->assertSame('phpstorm://open?file=' . rawurlencode((string) realpath('tests/Fixture/HtmlWarnings/Resource/App/Editor.php')) . '&line=17', $source->getAttribute('href'));
+    }
+
+    public function testHtmlRejectsAnUnknownEditor(): void
+    {
+        foreach (['--editor=vscode', '--editor', '--editor='] as $option) {
+            [$code, , $err] = self::qrGraph(['html', $option, '--dir=' . self::WARNINGS]);
+            $this->assertSame(2, $code, $option);
+            $this->assertStringContainsString('accepted: phpstorm', $err, $option);
+        }
+
+        [$code] = self::qrGraph(['dump', '--editor=phpstorm', '--dir=' . self::WARNINGS]);
+        $this->assertSame(2, $code, 'only html takes an editor');
+    }
+
+    public function testHtmlLinksSourcesWithTheEditorOption(): void
+    {
+        if ((string) shell_exec('command -v dot') === '') {
+            $this->markTestSkipped('Graphviz dot is not installed');
+        }
+
+        [$code, $out, $err] = self::qrGraph(['html', '--editor=phpstorm', '--dir=' . self::WARNINGS]);
+        $this->assertSame(0, $code, $err);
+        $this->assertStringContainsString('phpstorm://open?file=' . rawurlencode((string) realpath('tests/Fixture/HtmlWarnings/Resource/App/Editor.php')), $out);
+        [, $out] = self::qrGraph(['html', '--dir=' . self::WARNINGS]);
+        $this->assertStringNotContainsString('phpstorm://', $out);
+    }
+
+    public function testAUriEndingInSlashIsRefused(): void
+    {
+        [$code, , $err] = self::qrGraph(['dump', '--dir=tests/Fixture/IndexSlash/Resource']);
+        $this->assertSame(1, $code);
+        $this->assertSame(
+            'A URI ending in "/" is no longer accepted since 0.2.0: "app://self/blog/" in an #[Embed], #[DependsOn], #[Refresh] or #[Purge] of page://self/index.'
+            . ' Please write "app://self/blog/index" instead: BEAR.Resource serves both as the index, but the cache tags the two spellings apart.',
+            $this->lastError($err),
+        );
+        $this->assertStringContainsString('TrailingSlashUriException', $err);
+
+        [$code, , $err] = self::qrGraph(['impact', 'page://self/?id=1', '--dir=' . self::DIR]);
+        $this->assertSame(1, $code);
+        $this->assertStringContainsString('"page://self/?id=1". Please write "page://self/index?id=1" instead', $this->lastError($err));
+    }
+
+    public function testHtmlEscapesASourcePath(): void
+    {
+        // Windows forbids `"`, `<` and `>` in a file name.
+        $names = PHP_OS_FAMILY === 'Windows' ? ["we'ird & #%.php"] : ["we'ird & #%.php", 'we"ird <&> #%.php'];
+        foreach ($names as $name) {
+            $dir = sys_get_temp_dir() . '/qr-graph-' . bin2hex(random_bytes(4));
+            mkdir($dir);
+            $file = $dir . '/' . $name;
+            touch($file);
+            try {
+                $path = realpath($file);
+                $this->assertIsString($path, $name);
+                // GraphBuilder writes every source with forward slashes.
+                $source = str_replace('\\', '/', $file) . ':7';
+                $nodes = [
+                    ['uri' => 'app://self/odd', 'source' => $source],
+                    ['uri' => 'app://self/gone', 'source' => 'no/such/file.php:3'],
+                ];
+                $html = (new HtmlRenderer([PHP_BINARY, '-r', 'exit(1);']))($nodes, [], 'phpstorm');
+                $this->assertStringNotContainsString($name, $html, 'escaped');
+                $sources = self::elements(self::xpath($html), '//*[@class="source"]');
+                $this->assertSame([$source, 'no/such/file.php:3'], array_map(static fn (DOMElement $element): string => $element->textContent, $sources), $name);
+                $this->assertSame('phpstorm://open?file=' . rawurlencode($path) . '&line=7', $sources[0]->getAttribute('href'), $name);
+                $this->assertSame(['a', 'span'], [$sources[0]->tagName, $sources[1]->tagName], 'a file that does not resolve stays text');
+            } finally {
+                unlink($file);
+                rmdir($dir);
+            }
+        }
+    }
+
+    public function testHtmlKeepsAMachinePathOutWithoutAnEditor(): void
+    {
+        // A resource file outside the working directory keeps its absolute path in the graph.
+        $nodes = [['uri' => 'app://self/external', 'source' => '/opt/shared/External.php:7']];
+        $html = (new HtmlRenderer([PHP_BINARY, '-r', 'exit(1);']))($nodes, []);
+        $this->assertSame(['External.php:7'], self::texts(self::xpath($html), '//*[@class="source"]'));
+        $this->assertStringNotContainsString('/opt/shared', $html);
+    }
+
+    public function testHtmlSaysSoWhenNothingIsWarned(): void
+    {
+        $html = self::warningsPage('tests/Fixture/Html/Resource');
+        $this->assertStringContainsString('No warnings', $html);
+        $this->assertSame(0, substr_count($html, 'data-kind='));
+        $this->assertSame(0, substr_count($html, '<details'), 'nothing to collapse, everything is drawn');
+    }
+
+    public function testHtmlPlacesNotDrawnAfterTheWarnings(): void
+    {
+        // The warnings fixture has warnings; tests/Fixture/Resource has none, and an uncached page left out.
+        foreach ([self::WARNINGS => 'details[@data-kind="warnings"]', 'tests/Fixture/Resource' => 'p[.="No warnings."]'] as $dir => $warnings) {
+            $page = self::xpath(self::warningsPage($dir));
+            $this->assertSame('Not drawn', self::text($page, sprintf('//*[@id="warnings"]/%s/following-sibling::details[@data-kind="not-drawn"]/summary', $warnings)), $dir);
+            $this->assertSame([], self::elements($page, '//details[@data-kind="warnings"]//details'), $dir);
+        }
+    }
+
+    public function testHtmlIsTheCachedPictureWithOrWithoutCached(): void
+    {
+        if ((string) shell_exec('command -v dot') === '') {
+            $this->markTestSkipped('Graphviz dot is not installed');
+        }
+
+        [$code, $out, $err] = self::qrGraph(['html', '--dir=' . self::WARNINGS]);
+        $this->assertSame(0, $code, $err);
+        [, $cached] = self::qrGraph(['html', '--cached', '--dir=' . self::WARNINGS]);
+        $this->assertSame($out, $cached);
+        $this->assertSame(1, substr_count($out, '<svg'));
+        $this->assertStringContainsString('<title>app://self/editor</title>', $out);
+        $this->assertStringContainsString('<title>app://self/liker</title>', $out, 'liker refreshes page://self/, the cached index');
+        $this->assertStringNotContainsString('<title>app://self/ad-writer</title>', $out);
+        $this->assertSame(self::listed(self::warningsPage(self::WARNINGS), 'depends-on'), self::listed($out, 'depends-on'), 'the CLI passes the #[DependsOn] warnings');
+    }
+
     public function testHtmlFailsWhenDotCannotDraw(): void
     {
         foreach ([['/no/such/dot'], [PHP_BINARY, '-r', 'stream_get_contents(STDIN); fwrite(STDERR, "syntax error"); exit(1);'], [PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo "no picture";']] as $dot) {
             try {
-                (new HtmlRenderer($dot))([], 'digraph qr {}');
+                (new HtmlRenderer($dot))(self::nodes('tests/Fixture/Html/Resource'), []);
                 $this->fail('no exception');
             } catch (RuntimeException $e) {
                 $this->assertStringContainsString($dot[0], $e->getMessage());
@@ -362,6 +631,30 @@ class QrGraphTest extends TestCase
         [$code, , $err] = self::qrGraph(['impact', 'page://self/dep/level-one', '--method=onGet', '--dir=' . self::DIR]);
         $this->assertSame(1, $code);
         $this->assertStringContainsString('No write method onGet on page://self/dep/level-one', $err);
+    }
+
+    public function testDumpRecordsTheAutoloadRelativeToTheWorkingDirectory(): void
+    {
+        foreach ([[getcwd() . '/vendor/autoload.php', 'vendor/autoload.php'], ['/elsewhere/vendor/autoload.php', null]] as [$autoload, $recorded]) {
+            $out = fopen('php://memory', 'w+');
+            $err = fopen('php://memory', 'w+');
+            $this->assertIsResource($out);
+            $this->assertIsResource($err);
+            $this->assertSame(0, (new Cli($autoload))(['dump', '--dir=tests/Fixture/Resource'], $out, $err));
+            rewind($out);
+            $this->assertSame($recorded, self::at(self::jsonl((string) stream_get_contents($out))[0], 'meta', 'autoload'), 'never a path outside the working directory');
+        }
+    }
+
+    public function testOneApplicationPerGraph(): void
+    {
+        [$code, $out, $err] = self::qrGraph(['dump', '--dir=tests/Fixture/TwoApps/Resource']);
+        $this->assertSame(0, $code, $err);
+        $this->assertSame(['page://self/index'], array_column(array_slice(self::jsonl($out), 1), 'uri'), 'a resource class directly in the Resource namespace names no scheme: no node');
+
+        [$code, , $err] = self::qrGraph(['dump', '--dir=tests/Fixture/TwoApps']);
+        $this->assertSame(1, $code);
+        $this->assertSame('One application per graph: found BEAR\QueryRepositoryGraph\Fixture\TwoApps\Other and BEAR\QueryRepositoryGraph\Fixture\TwoApps', $this->lastError($err));
     }
 
     public function testNoResourceClassesIsAnError(): void
@@ -508,6 +801,7 @@ class QrGraphTest extends TestCase
             ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/method-cached-list', 'dependsOn' => 'app://self/method-cached{?id}'],
             ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/mismatch', 'dependsOn' => 'app://self/article{?articleId}'],
             ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/mixed-keys', 'dependsOn' => 'app://self/camel-pair{?leftId,right_id}'],
+            ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/no-get-list', 'dependsOn' => 'app://self/no-get{?id}'],
             ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/no-write-list', 'dependsOn' => 'app://self/no-write{?id}'],
             ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/origin-by-id', 'dependsOn' => 'app://self/origin{?id}'],
             ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/plain-refresh-list', 'dependsOn' => 'app://self/plain-refresh{?id}'],
@@ -523,6 +817,7 @@ class QrGraphTest extends TestCase
         $this->assertStringContainsString('the writes that refresh it are onPost() whose arguments', $messages['app://self/post-only-list']);
         $this->assertStringContainsString('the writes that refresh it are onPost() whose arguments', $messages['app://self/donut-refresh-post-list'], 'its onPost() already has #[RefreshCache]');
         $this->assertStringContainsString('it is cached, but has no write method', $messages['app://self/no-write-list']);
+        $this->assertStringContainsString('it has no onGet() for a write to refresh', $messages['app://self/no-get-list'], 'its onPut() refreshes nothing');
         $this->assertStringContainsString('the writes that refresh it are onPost() whose arguments', $messages['app://self/plain-refresh-list'], 'uncached, refreshed only by a #[RefreshCache] onPost() that is skipped');
         $this->assertStringContainsString('only when the write method carries #[RefreshCache] or #[CacheableResponse]', $messages['app://self/method-cached-list'], '#[CacheableResponse] on onGet() caches it, and binds no write');
     }
@@ -644,6 +939,22 @@ class QrGraphTest extends TestCase
         [$code, , $err] = self::qrGraph(['observe', 'no/such/session.json', '--dir=tests/Fixture/Usage/Resource']);
         $this->assertSame(1, $code);
         $this->assertStringContainsString('No such session file or directory: no/such/session.json', $err);
+
+        $dir = sys_get_temp_dir() . '/qr-graph-' . bin2hex(random_bytes(4));
+        mkdir($dir);
+        try {
+            [$code, , $err] = self::qrGraph(['observe', $dir, '--dir=tests/Fixture/Usage/Resource']);
+            $this->assertSame(1, $code);
+            $this->assertSame("No session found in {$dir}", $this->lastError($err));
+
+            file_put_contents($dir . '/broken.json', '{"log":');
+            [$code, , $err] = self::qrGraph(['observe', $dir, '--dir=tests/Fixture/Usage/Resource']);
+            $this->assertSame(1, $code);
+            $this->assertStringStartsWith("{$dir}/broken.json: not JSON (", $this->lastError($err));
+        } finally {
+            @unlink($dir . '/broken.json');
+            rmdir($dir);
+        }
     }
 
     /** @return list<array{string, string, string}> page, child, verdict */
@@ -706,6 +1017,94 @@ class QrGraphTest extends TestCase
         $glow = json_decode($match[1], true, 512, JSON_THROW_ON_ERROR);
 
         return $glow;
+    }
+
+    /** The page html renders for the directory, its picture the dot source as text */
+    private static function warningsPage(string $dir, string|null $editor = null): string
+    {
+        $classes = (new ResourceScanner())->scan($dir);
+        $nodes = (new GraphBuilder(new UriConverter(), (string) getcwd()))->build($classes)['nodes'];
+        $echo = [PHP_BINARY, '-r', 'echo "<svg>", htmlspecialchars(stream_get_contents(STDIN)), "</svg>";'];
+
+        return (new HtmlRenderer($echo))($nodes, (new DependsOnWarnings())($classes, $nodes), $editor);
+    }
+
+    /** @return list<Node> */
+    private static function nodes(string $dir): array
+    {
+        return (new GraphBuilder(new UriConverter(), (string) getcwd()))->build((new ResourceScanner())->scan($dir))['nodes'];
+    }
+
+    /**
+     * Each item a group of the page lists, as read without its sources and messages
+     *
+     * @return list<string>
+     */
+    private static function listed(string $html, string $kind): array
+    {
+        $xpath = self::xpath($html);
+        $listed = [];
+        foreach (self::elements($xpath, sprintf('//*[@data-kind="%s"]//li', $kind)) as $item) {
+            $text = '';
+            foreach ($xpath->query('.//text()[not(ancestor::*[@class="source" or @class="message"])]', $item) ?: [] as $node) {
+                $text .= $node->nodeValue;
+            }
+
+            $listed[] = (string) preg_replace(['/\s+/', '/ ,/'], [' ', ','], trim($text));
+        }
+
+        return $listed;
+    }
+
+    /** @return list<string> the `file:line` of each item a group lists */
+    private static function sources(string $html, string $kind): array
+    {
+        return self::texts(self::xpath($html), sprintf('//*[@data-kind="%s"]//*[@class="source"]', $kind));
+    }
+
+    /** @return list<string> */
+    private static function texts(DOMXPath $xpath, string $query): array
+    {
+        return array_map(static fn (DOMElement $element): string => trim($element->textContent), self::elements($xpath, $query));
+    }
+
+    /** @return list<string> the URIs a click on a listed item selects in the picture */
+    private static function selectable(string $html): array
+    {
+        $uris = [];
+        foreach (self::elements(self::xpath($html), '//*[@data-uri]') as $element) {
+            $uris[] = $element->getAttribute('data-uri');
+        }
+
+        return $uris;
+    }
+
+    private static function text(DOMXPath $xpath, string $query, DOMElement|null $context = null): string
+    {
+        $elements = self::elements($xpath, $query, $context);
+
+        return trim($elements === [] ? '' : $elements[0]->textContent);
+    }
+
+    private static function xpath(string $html): DOMXPath
+    {
+        $document = new DOMDocument();
+        $document->loadHTML($html, LIBXML_NOERROR);
+
+        return new DOMXPath($document);
+    }
+
+    /** @return list<DOMElement> */
+    private static function elements(DOMXPath $xpath, string $query, DOMElement|null $context = null): array
+    {
+        $elements = [];
+        foreach ($xpath->query($query, $context) ?: [] as $node) {
+            if ($node instanceof DOMElement) {
+                $elements[] = $node;
+            }
+        }
+
+        return $elements;
     }
 
     private function assertSchema(string $schema, string $line): void

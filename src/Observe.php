@@ -23,8 +23,6 @@ use function json_decode;
 use function ksort;
 use function sort;
 use function sprintf;
-use function strpos;
-use function substr;
 use function uasort;
 
 use const JSON_THROW_ON_ERROR;
@@ -211,7 +209,7 @@ final class Observe
         /** @var mixed $uri */
         $uri = $context['uri'] ?? null;
         if ($type === 'put_donut' && is_string($uri)) {
-            $page = self::withoutQuery($uri);
+            $page = $this->converter->withoutQuery($uri);
             $this->written[$this->converter->key($page)] = $page;
 
             return;
@@ -227,8 +225,8 @@ final class Observe
         /** @var mixed $reason */
         $reason = $context['reason'] ?? null;
         $observation = $type === 'dependency_skipped' && is_string($reason) && isset(self::VERDICTS[$reason]) ? $reason : $type;
-        $page = self::withoutQuery($parent);
-        $child = self::withoutQuery($child);
+        $page = $this->converter->withoutQuery($parent);
+        $child = $this->converter->withoutQuery($child);
         $pageKey = $this->converter->key($page);
         $childKey = $this->converter->key($child);
         $this->observed[$pageKey] ??= ['uri' => $page, 'children' => []];
@@ -253,12 +251,5 @@ final class Observe
         };
 
         return ['page' => $page, 'child' => $child, 'observed' => $observed, 'declared' => $declared, 'verdict' => $verdict];
-    }
-
-    private static function withoutQuery(string $uri): string
-    {
-        $query = strpos($uri, '?');
-
-        return $query === false ? $uri : substr($uri, 0, $query);
     }
 }

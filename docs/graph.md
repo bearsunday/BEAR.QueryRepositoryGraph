@@ -18,7 +18,7 @@ is declared but never observed, or observed but never declared.
 vendor/bin/qr-graph dump [--dir=src/Resource]
 vendor/bin/qr-graph impact <uri> [--method=onPut] [--allow-unknown] [--json] [--dir=src/Resource]
 vendor/bin/qr-graph dot [--cached] [--dir=src/Resource]
-vendor/bin/qr-graph html [--cached] [--dir=src/Resource]
+vendor/bin/qr-graph html [--editor=phpstorm] [--dir=src/Resource]
 vendor/bin/qr-graph snapshot [--dir=src/Resource]
 vendor/bin/qr-graph observe <session.json|dir>... [--dir=src/Resource] [--fail-on=<verdict>[,<verdict>...]]
 ```
@@ -48,7 +48,8 @@ v4 `dependsOn`, v5 dropped the source-text guesses, `dynamic` and the embed `usa
 - `uri` is `scheme://host/path` without query, exact-matchable everywhere it appears; `template` keeps the
   declaration as written when it differs, including another spelling of a resource's URI (`galleryArticle` is
   listed as `gallery-article`; a URI no scanned resource serves is listed by the first spelling the scan meets).
-  The PHP class is not repeated: it follows from `uri` and `meta.namespaces`.
+  A URI ending in `/` is an error, in a declaration and as an argument: write the `index` it names
+  (`page://self/index` for `page://self/`). The PHP class is not repeated: it follows from `uri` and `meta.namespaces`.
 - `source` is `file:line`, to open the declaration.
 - `dependsOn` on `onGet` lists its `#[DependsOn]` declarations, including those on an `onGet()` it overrides.
   A declaration on a row class is not in the graph: see [what the graph does not know](#what-the-graph-does-not-know).
@@ -108,16 +109,44 @@ resources whose writes refresh or purge any of these. Other arrows are kept when
 
 ```bash
 vendor/bin/qr-graph html > graph.html
+vendor/bin/qr-graph html --editor=phpstorm > graph.html   # each file:line opens in PhpStorm
 ```
 
-One self-contained page, readable from `file://`: the `dot` picture (`--cached` as for `dot`) rendered by Graphviz,
-whose `dot` must be on the `PATH` (without it, an error, 1). Click a resource: what invalidates it glows green, what
-it invalidates glows orange, and a write that invalidates it (a resource reaching it only through its own refresh or
-purge) glows blue with its arrows; the rest dims. The legend counts each side among the resources drawn, so
-`--cached` counts fewer. A resource can also be focused and selected with Enter; clicking it again, clicking
-elsewhere or Escape clears. The page embeds, as JSON, what `impact` computes from each resource and from each of its
-write methods that refresh or purge, with which starts reach it only through a write: one shortest path per reached
-resource, as `impact` shows it; a resource's refresh of itself is not lit.
+One self-contained page, readable from `file://`: the `dot --cached` picture rendered by Graphviz, whose `dot` must be
+on the `PATH` (without it, an error, 1). `--cached` is still accepted and changes nothing. The whole graph is no
+longer drawn here: `qr-graph dot | dot -Tsvg` draws it. With nothing cached, the page says so in place of the picture.
+Click a resource: what invalidates it glows green, what it invalidates glows orange, and a write that invalidates it
+(a resource reaching it only through its own refresh or purge) glows blue with its arrows; the rest dims. The legend
+counts each side among the resources drawn. A resource can also be focused and selected with Enter; clicking it
+again, clicking elsewhere in the picture or Escape clears. The page embeds, as JSON, what `impact` computes from each
+resource and from each of its write methods that refresh or purge, with which starts reach it only through a write:
+one shortest path per reached resource, as `impact` shows it; a resource's refresh of itself is not lit.
+
+Below the picture, Warnings lists the declarations that affect no cache, one group per kind, each item with the
+`file:line` that declares it; an empty group is left out. A resource depends on what it embeds: the warnings follow
+the `#[Embed]`, `#[DependsOn]`, `#[Refresh]` and `#[Purge]` declarations.
+
+- Invalidates no cache — each `#[Purge]` or `#[Refresh]` target in this application whose invalidation reaches no
+  cached resource, with the write method that names it. A target in another application is listed only under
+  No such resource.
+- Depends on, but not cached — a resource declaring `#[DependsOn]` that is neither cached nor embedded, directly or
+  not, by a cached resource: no cache stores the tags it declares.
+- No such resource — a URI an `#[Embed]`, `#[DependsOn]`, `#[Refresh]` or `#[Purge]` names that no scanned resource
+  serves: this application's (`self`) first, then other applications', which the scan cannot see.
+- `#[DependsOn]` warnings — the [warnings](#warnings-on-dependson) every command writes on stderr.
+
+After the Warnings section, a collapsed Not drawn lists every scanned resource the picture leaves out and no warning
+names: those not cached that no cached resource embeds, directly or not, those that declare nothing, and those whose
+only declarations are writes no warning names. Click a listed URI the picture draws to select it there; a click elsewhere
+in the Warnings keeps the selection.
+
+The Warnings section starts collapsed, its summary counting the items listed; with none, "No warnings" shows as is.
+Each `file:line` is plain text by default, relative to the working directory, or the file's name alone for a file
+outside it, so the page carries no path of the machine that generated it and reads the
+same wherever it is built. With `--editor=phpstorm` (the only editor accepted for now; another value is a usage error,
+2), each one opens the file at that line in PhpStorm (`phpstorm://open?file=…&line=…`) when the file resolves from the
+working directory `qr-graph` runs in, and stays plain text otherwise. Such a link holds the generating machine's
+absolute path, so it works only there.
 
 ### `snapshot` — impacts to review as a diff
 
