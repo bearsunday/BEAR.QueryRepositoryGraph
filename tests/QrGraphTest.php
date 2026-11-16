@@ -680,7 +680,7 @@ class QrGraphTest extends TestCase
         $layouts = json_decode($match[1], true, 512, JSON_THROW_ON_ERROR);
         $this->assertContains(['id' => 'esi-esi-ranking', 'uri' => 'page://self/esi/ranking'], $layouts['rows']);
         $this->assertContains(['id' => 'cell-esi-footer-SearchPage', 'uri' => 'page://self/esi/footer', 'pages' => ['page://self/search']], $layouts['cells']);
-        $this->assertContains(['id' => 'layout-TopPage', 'key' => 'layout:' . TopPage::class, 'pages' => ['page://self/index']], $layouts['heads']);
+        $this->assertContains(['id' => 'layout-TopPage', 'key' => 'layout:' . TopPage::class, 'label' => '#[TopPage]', 'pages' => ['page://self/index']], $layouts['heads'], 'a head selects its layout by key, and the status line names it by its label');
 
         $plain = self::warningsPage(self::WARNINGS);
         $this->assertStringNotContainsString('qr-graph-layouts', $plain, 'no table, no table data');

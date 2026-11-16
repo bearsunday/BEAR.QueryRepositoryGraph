@@ -393,7 +393,8 @@ final class HtmlRenderer
   .layout-head.reaches path { filter: drop-shadow(0 0 2px var(--goes-stale)) drop-shadow(0 0 6px var(--goes-stale)); }
   .layout-head.selected path { filter: drop-shadow(0 0 2px var(--selected)) drop-shadow(0 0 8px var(--selected)); }
   .layout-head.selected text:first-of-type { font-weight: bold; }
-  .layout-cell:focus-visible, .layout-head:focus-visible { outline: 2px solid var(--selected); outline-offset: 2px; }
+  /* A click focuses what it selects: no focus ring frames the table or a cell, the glow shows the selection. */
+  .layout-table:focus, .layout-table :focus { outline: none; }
 
 CSS;
 
@@ -420,8 +421,8 @@ CSS;
     event.stopPropagation();
     select(key);
   });
-  const focusable = (g, key) => {
-    Object.entries({ tabindex: '0', role: 'button', 'aria-label': key })
+  const focusable = (g, key, label = key) => {
+    Object.entries({ tabindex: '0', role: 'button', 'aria-label': label })
       .forEach(([name, value]) => g.setAttribute(name, value));
     g.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' || event.key === ' ') {
@@ -444,11 +445,14 @@ CSS;
     selects(g, uri);
     pages.forEach((page) => edges.set(uri + '->' + page, [...(edges.get(uri + '->' + page) ?? []), g]));
   });
-  const heads = layouts.heads.map(({ id, key, pages }) => {
+  // The status line names a layout as it is written, `#[ContentPage]`.
+  const labels = new Map();
+  const heads = layouts.heads.map(({ id, key, label, pages }) => {
     const g = cell(id, 'layout-head');
     nodes.set(key, g);
+    labels.set(key, label);
     selects(g, key);
-    focusable(g, key);
+    focusable(g, key, label);
     return [g, pages];
   });
 
@@ -458,6 +462,7 @@ JS;
     twins.forEach(([node, row]) => ['selected', 'reaches', 'reached-by', 'writer']
       .forEach((name) => node.classList.contains(name) && row.classList.add(name)));
     heads.forEach(([head, pages]) => pages.includes(uri) && head.classList.add('reached-by'));
+    status.textContent = labels.get(uri) ?? uri;
 
 JS;
 
@@ -592,8 +597,8 @@ JS;
     light(sets.reachedBy, 'reached-by');
     sets.writers.forEach((writer) => nodes.get(writer)?.classList.add('writer'));
     nodes.get(uri).classList.add('selected');
-{{layoutSelect}}    status.textContent = uri;
-    const writers = new Set(sets.writers);
+    status.textContent = uri;
+{{layoutSelect}}    const writers = new Set(sets.writers);
     counts.reaches.textContent = `(${drawn(sets.reaches.nodes)})`;
     counts.reachedBy.textContent = `(${drawn(sets.reachedBy.nodes.filter((node) => !writers.has(node)))})`;
     counts.writer.textContent = `(${drawn(sets.writers)})`;

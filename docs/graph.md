@@ -103,8 +103,8 @@ host when it is not `self`) and the cache attributes as declared: `page (cacheab
 `#[Cacheable]` expires by time, so only it shows a TTL.
 A resource no arrow touches is left out unless it is cached: then it shows a cache no declared write invalidates. A
 page carrying a layout is drawn as well.
-What layouts embed is one table rather than arrows: a column per layout, headed like a page node (`#[ContentPage]`
-over `layout`), a row per part, ● where the layout has the part. The top-left cell names the scheme the rows share and
+What layouts embed is one table rather than arrows: a column per layout, headed by a page's grey rounded box holding
+`#[ContentPage]`, a row per part, ● where the layout has the part. The top-left cell names the scheme the rows share and
 the directory they all start with, which the rows then leave out. A page names its layout after its cache:
 `page (cacheable response, #[ContentPage])`.
 No arrow touches the table. A part with arrows of its own (a write that refreshes or purges it, its own `#[Embed]` or
