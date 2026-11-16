@@ -205,7 +205,9 @@ final class HtmlRenderer
         $glow = [];
         foreach ($layouts as $class => $carriers) {
             $lit = ['reaches' => self::NONE, 'reachedBy' => self::NONE];
-            $writers = [];
+            // As for a page: a writer reaches the layout through a write only, never through a part or what reaches one.
+            $written = [];
+            $plain = [];
             foreach ($carriers as $node) {
                 $page = $node['uri'];
                 $lit['reaches'] = self::merge(self::add($lit['reaches'], $page, []), $reaches[$page] ?? self::NONE);
@@ -213,11 +215,12 @@ final class HtmlRenderer
                     $part = $embed['uri'];
                     $lit['reachedBy'] = self::merge(self::add($lit['reachedBy'], $part, []), $reachedBy[$part] ?? self::NONE);
                     $lit['reachedBy']['edges'][$part . ' ' . $page] = [$part, $page];
-                    $writers += array_diff_key($from['written'][$part] ?? [], $from['plain'][$part] ?? []);
+                    $written += $from['written'][$part] ?? [];
+                    $plain += [$part => true] + ($from['plain'][$part] ?? []);
                 }
             }
 
-            $writers = array_keys($writers);
+            $writers = array_keys(array_diff_key($written, $plain));
             sort($writers);
             $glow[LayoutTable::key($class)] = ['reaches' => self::lit($lit['reaches']), 'reachedBy' => self::lit($lit['reachedBy']), 'writers' => $writers];
         }

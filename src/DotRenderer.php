@@ -294,7 +294,7 @@ final class DotRenderer
 
         while ($pending !== []) {
             $uri = array_pop($pending);
-            $embeds = $byUri[$uri]['layout']['embed'] ?? [];
+            $embeds = isset($byUri[$uri]) ? Impact::layoutEmbeds($byUri[$uri]) : [];
             foreach ($byUri[$uri]['methods'] ?? [] as $method) {
                 $embeds = [...$embeds, ...$method['embed'] ?? []];
             }
