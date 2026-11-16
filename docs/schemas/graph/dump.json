@@ -77,7 +77,7 @@
                 "cacheableResponse": {"description": "#[CacheableResponse] on the class.", "const": true},
                 "httpCache": {"description": "The Cache-Control value #[HttpCache] or #[NoHttpCache] declares.", "type": "string"},
                 "layout": {
-                    "description": "The class attribute extending BEAR.Resource's AbstractResourceLayout. Its parts are embedded by onGet() as an #[Embed] is, except a `rel` an onGet() #[Embed] already declares.",
+                    "description": "The class attribute extending BEAR.Resource's AbstractResourceLayout. Its parts are embedded by onGet() as an #[Embed] is; a `rel` both the layout and an onGet() #[Embed] declare is an error (1).",
                     "type": "object",
                     "required": ["name", "class", "source", "embed"],
                     "properties": {
