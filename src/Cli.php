@@ -380,7 +380,7 @@ USAGE;
         return str_starts_with($path, $root . '/') ? substr($path, strlen($root) + 1) : null;
     }
 
-    /** The installed package version, or "unknown" when the autoloader in use does not list this package, as with a global install */
+    /** The installed package version, or "unknown" when the autoloader in use does not list this package */
     private static function version(): string
     {
         try {
