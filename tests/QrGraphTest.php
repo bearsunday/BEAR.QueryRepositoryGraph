@@ -745,6 +745,41 @@ class QrGraphTest extends TestCase
         $this->assertNotContains('page://self/esi/header', (array) self::at($glow, $searchPage, 'reachedBy', 'nodes'), 'search fills the header rel with its own #[Embed]');
     }
 
+    public function testDotCachedFollowsOnlyThePartsAPageKeeps(): void
+    {
+        $cacheable = ['expiry' => 'never', 'expirySecond' => 0, 'expiryAt' => '', 'update' => false, 'type' => 'value'];
+        $nodes = [
+            [
+                'uri' => 'page://self/p',
+                'source' => 'p.php:1',
+                'cacheable' => $cacheable,
+                'layout' => ['name' => 'L', 'class' => 'L', 'source' => 'l.php:1', 'embed' => [['rel' => 'footer', 'uri' => 'page://self/old-footer']]],
+                'methods' => ['onGet' => ['source' => 'p.php:2', 'embed' => [['rel' => 'footer', 'uri' => 'app://self/new-footer']]]],
+            ],
+            ['uri' => 'page://self/old-footer', 'source' => 'f.php:1', 'methods' => ['onGet' => ['source' => 'f.php:2', 'embed' => [['rel' => 'child', 'uri' => 'app://self/old-child']]]]],
+        ];
+
+        $dot = (new DotRenderer())->cached($nodes);
+        $this->assertStringContainsString('"page://self/p" -> "app://self/new-footer"', $dot);
+        $this->assertStringNotContainsString('old-child', $dot, 'the footer the page replaces brings nothing into the cached picture');
+    }
+
+    public function testALayoutsWritersReachItThroughAWriteOnly(): void
+    {
+        $cacheable = ['expiry' => 'never', 'expirySecond' => 0, 'expiryAt' => '', 'update' => false, 'type' => 'value'];
+        $layout = ['name' => 'L', 'class' => 'L', 'source' => 'l.php:1', 'embed' => [['rel' => 'a', 'uri' => 'page://self/a'], ['rel' => 'b', 'uri' => 'page://self/b']]];
+        $nodes = [
+            ['uri' => 'page://self/p', 'source' => 'p.php:1', 'cacheable' => $cacheable, 'layout' => $layout],
+            ['uri' => 'page://self/a', 'source' => 'a.php:1', 'methods' => ['onGet' => ['source' => 'a.php:2', 'dependsOn' => [['uri' => 'app://self/w']]]]],
+            ['uri' => 'page://self/b', 'source' => 'b.php:1'],
+            ['uri' => 'app://self/w', 'source' => 'w.php:1', 'methods' => ['onPost' => ['source' => 'w.php:2', 'refresh' => [['uri' => 'page://self/b']]]]],
+        ];
+        $glow = self::glow((new HtmlRenderer([PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo "<svg></svg>";']))($nodes, []));
+
+        $this->assertSame(['app://self/w'], self::at($glow, 'page://self/b', 'writers'), 'w reaches part b through its write only');
+        $this->assertSame([], self::at($glow, 'layout:L', 'writers'), 'w also reaches part a, so the layout, as a plain origin');
+    }
+
     public function testHtmlDrawsTheTableAboveThePictureWithTheIdsItLightsBy(): void
     {
         if ((string) shell_exec('command -v dot') === '') {
