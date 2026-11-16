@@ -168,14 +168,8 @@ final class LayoutTable
         }
 
         $slash = strrpos($prefix, '/');
-        $prefix = $slash === false ? '' : substr($prefix, 0, $slash + 1);
-        foreach ($paths as $path) {
-            if ($path === $prefix) {
-                return '';
-            }
-        }
 
-        return $prefix;
+        return $slash === false ? '' : substr($prefix, 0, $slash + 1);
     }
 
     private static function line(bool $last): string

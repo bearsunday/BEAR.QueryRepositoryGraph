@@ -631,16 +631,16 @@ class QrGraphTest extends TestCase
         $this->assertSame('BEAR\QueryRepositoryGraph\Fixture\LayoutTwice\Resource\Page\Home has more than one layout', $this->lastError($err));
     }
 
-    public function testLayoutRowsKeepTheirOwnIdsAndFullPaths(): void
+    public function testLayoutRowsKeepTheirOwnIds(): void
     {
         [, $out] = self::qrGraph(['dot', '--dir=tests/Fixture/LayoutEdge/Resource']);
         preg_match_all('/ID="(esi-[^"]+)"[^>]*>([^<]*)<\/TD>/', $out, $rows);
-        $this->assertSame(['esi-part-', 'esi-part-a-b', 'esi-part-a-b-2'], $rows[1], 'part/a-b and part/a/b read the same as an id: the second takes a suffix');
-        $this->assertSame(['part/', 'part/a-b', 'part/a/b'], $rows[2], 'a row that is the directory itself keeps every row its full path');
-        $this->assertStringContainsString('COLOR="#999999">page</FONT>', $out);
+        $this->assertSame(['esi-part-index', 'esi-part-a-b', 'esi-part-a-b-2'], $rows[1], 'part/a-b and part/a/b read the same as an id: the second takes a suffix');
+        $this->assertSame(['index', 'a-b', 'a/b'], $rows[2], 'page://self/part/ is its index');
+        $this->assertStringContainsString('COLOR="#999999">page&nbsp;&nbsp;part/</FONT>', $out);
 
         $this->assertSame(
-            ['page://self/part/ layout', 'page://self/part/a-b layout', 'page://self/part/a/b layout'],
+            ['page://self/part/a-b layout', 'page://self/part/a/b layout', 'page://self/part/index layout'],
             self::listed(self::warningsPage('tests/Fixture/LayoutEdge/Resource'), 'no-such-resource'),
             'a part no scanned resource serves is listed with the layout that names it',
         );
