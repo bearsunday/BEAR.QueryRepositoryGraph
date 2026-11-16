@@ -57,9 +57,9 @@ v4 `dependsOn`, v5 dropped the source-text guesses, `dynamic` and the embed `usa
   or one marked `#[RefreshCache]`, refreshes its own resource.
 - `layout` is the class attribute extending BEAR.Resource's `AbstractResourceLayout`: its `name` (`ContentPage`),
   `class`, the `source` of the attribute class, and `embed`, its `EMBED` constant, resolved as an `#[Embed]` is.
-  Every command takes each part as an `#[Embed]` on the resource's `onGet()`, except a `rel` such an `#[Embed]`
-  already declares, which BEAR.Resource keeps. A layout that does not declare its own `EMBED`, or a second layout on
-  one class, is an error (1), as it is in BEAR.Resource.
+  Every command takes each part as an `#[Embed]` on the resource's `onGet()`. A layout that does not declare its own
+  `EMBED`, a second layout on one class, or a `rel` both the layout and an `onGet()` `#[Embed]` declare, is an error
+  (1), as it is in BEAR.Resource.
 
 Local questions are a `grep` away: `grep '"uri":"app://self/user/profile"'` finds the resource, and
 `grep 'app://self/user/profile"'` also finds every line that embeds, refreshes or purges it.

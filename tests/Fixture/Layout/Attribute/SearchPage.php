@@ -9,5 +9,5 @@ use BEAR\Resource\Annotation\AbstractResourceLayout;
 final class SearchPage extends AbstractResourceLayout
 {
     /** @var array<string, string> */
-    public const EMBED = [...ContentPage::EMBED, 'search' => '/esi/search{?q}'];
+    public const EMBED = ['footer' => ContentPage::EMBED['footer'], 'search' => '/esi/search{?q}'];
 }

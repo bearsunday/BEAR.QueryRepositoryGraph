@@ -4,11 +4,7 @@ declare(strict_types=1);
 
 namespace BEAR\QueryRepositoryGraph;
 
-use function array_column;
-use function array_filter;
 use function array_shift;
-use function array_values;
-use function in_array;
 use function str_starts_with;
 
 /**
@@ -132,8 +128,7 @@ final class Impact
     }
 
     /**
-     * The parts the resource's layout places in its body: each is embedded as an onGet() #[Embed] is, except a rel an
-     * onGet() #[Embed] already fills, which BEAR.Resource keeps
+     * The parts the resource's layout places in its body, each embedded as an onGet() #[Embed] is
      *
      * @param Node $node
      *
@@ -141,9 +136,7 @@ final class Impact
      */
     public static function layoutEmbeds(array $node): array
     {
-        $taken = array_column($node['methods']['onGet']['embed'] ?? [], 'rel');
-
-        return array_values(array_filter($node['layout']['embed'] ?? [], static fn (array $embed): bool => ! in_array($embed['rel'], $taken, true)));
+        return $node['layout']['embed'] ?? [];
     }
 
     /**

@@ -21,9 +21,11 @@ use ReflectionMethod;
 use RuntimeException;
 
 use function array_filter;
+use function array_map;
 use function array_values;
 use function count;
 use function getcwd;
+use function in_array;
 use function sprintf;
 use function str_replace;
 use function str_starts_with;
@@ -187,8 +189,8 @@ final class GraphBuilder
      *
      * @return Layout|null
      *
-     * @throws RuntimeException when the class declares more than one layout, or a layout without an EMBED of its own,
-     *                          both of which BEAR.Resource rejects too.
+     * @throws RuntimeException when the class declares more than one layout, a layout without an EMBED of its own, or a rel
+     *                          both its layout and an onGet() #[Embed] declare, all of which BEAR.Resource rejects too.
      */
     private function layout(ReflectionClass $ref, string $uri): array|null
     {
@@ -212,8 +214,13 @@ final class GraphBuilder
 
         /** @var array<string, string> $parts */
         $parts = $constant->getValue();
+        $methodRels = array_map(static fn (ReflectionAttribute $embed): string => $embed->newInstance()->rel, $ref->getMethod('onGet')->getAttributes(Embed::class));
         $embed = [];
         foreach ($parts as $rel => $src) {
+            if (in_array($rel, $methodRels, true)) {
+                throw new RuntimeException(sprintf('%s declares rel "%s" in both its layout and a method #[Embed]', $ref->getName(), $rel));
+            }
+
             $embed[] = ['rel' => $rel] + $this->target($src, $uri);
         }
 

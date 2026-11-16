@@ -621,7 +621,6 @@ class QrGraphTest extends TestCase
             'class' => SearchPage::class,
             'source' => 'tests/Fixture/Layout/Attribute/SearchPage.php:9',
             'embed' => [
-                ['rel' => 'header', 'uri' => 'page://self/esi/header'],
                 ['rel' => 'footer', 'uri' => 'page://self/esi/footer'],
                 ['rel' => 'search', 'uri' => 'page://self/esi/search', 'template' => 'page://self/esi/search{?q}'],
             ],
@@ -644,6 +643,13 @@ class QrGraphTest extends TestCase
         [$code, , $err] = self::qrGraph(['dump', '--dir=tests/Fixture/LayoutTwice/Resource']);
         $this->assertSame(1, $code);
         $this->assertSame('BEAR\QueryRepositoryGraph\Fixture\LayoutTwice\Resource\Page\Home has more than one layout', $this->lastError($err));
+    }
+
+    public function testARelBothTheLayoutAndAnOnGetEmbedDeclareIsAnError(): void
+    {
+        [$code, , $err] = self::qrGraph(['dump', '--dir=tests/Fixture/LayoutClash/Resource']);
+        $this->assertSame(1, $code);
+        $this->assertSame('BEAR\QueryRepositoryGraph\Fixture\LayoutClash\Resource\Page\Home declares rel "header" in both its layout and a method #[Embed]', $this->lastError($err));
     }
 
     public function testLayoutRowsKeepTheirOwnIds(): void
@@ -689,7 +695,7 @@ class QrGraphTest extends TestCase
         $this->assertStringContainsString("  app://self/ranking (purge)\n    page://self/esi/ranking (embed)\n      page://self/index (embed, cacheable, ttl: never)\n", $out, 'through the part\'s own child');
 
         [, $out] = self::qrGraph(['impact', 'page://self/esi/header', $dir]);
-        $this->assertSame("page://self/esi/header\n  page://self/article (embed, cacheable response)\n  page://self/index (embed, cacheable, ttl: never)\n", $out, 'search fills the rel with its own #[Embed], which BEAR.Resource keeps');
+        $this->assertSame("page://self/esi/header\n  page://self/article (embed, cacheable response)\n  page://self/index (embed, cacheable, ttl: never)\n", $out, 'the search layout has no header part: search embeds its own');
     }
 
     public function testHtmlWarnsNoWriteToALayoutPartAsReachingNoCache(): void
@@ -705,7 +711,7 @@ class QrGraphTest extends TestCase
             $this->assertSame(0, $code, $err);
             preg_match_all('/ID="cell-([^"]+)"/', $out, $cells);
             $this->assertSame(
-                ['esi-header-ContentPage', 'esi-header-TopPage', 'esi-header-SearchPage', 'esi-footer-ContentPage', 'esi-footer-SearchPage', 'esi-ranking-TopPage', 'esi-search-SearchPage'],
+                ['esi-header-ContentPage', 'esi-header-TopPage', 'esi-footer-ContentPage', 'esi-footer-SearchPage', 'esi-ranking-TopPage', 'esi-search-SearchPage'],
                 $cells[1],
                 'a ● where the layout has the part; a row per part in declaration order',
             );
@@ -764,26 +770,7 @@ class QrGraphTest extends TestCase
         $this->assertSame(['app://self/ranking-editor'], self::at($glow, $topPage, 'writers'));
 
         $searchPage = 'layout:' . SearchPage::class;
-        $this->assertNotContains('page://self/esi/header', (array) self::at($glow, $searchPage, 'reachedBy', 'nodes'), 'search fills the header rel with its own #[Embed]');
-    }
-
-    public function testDotCachedFollowsOnlyThePartsAPageKeeps(): void
-    {
-        $cacheable = ['expiry' => 'never', 'expirySecond' => 0, 'expiryAt' => '', 'update' => false, 'type' => 'value'];
-        $nodes = [
-            [
-                'uri' => 'page://self/p',
-                'source' => 'p.php:1',
-                'cacheable' => $cacheable,
-                'layout' => ['name' => 'L', 'class' => 'L', 'source' => 'l.php:1', 'embed' => [['rel' => 'footer', 'uri' => 'page://self/old-footer']]],
-                'methods' => ['onGet' => ['source' => 'p.php:2', 'embed' => [['rel' => 'footer', 'uri' => 'app://self/new-footer']]]],
-            ],
-            ['uri' => 'page://self/old-footer', 'source' => 'f.php:1', 'methods' => ['onGet' => ['source' => 'f.php:2', 'embed' => [['rel' => 'child', 'uri' => 'app://self/old-child']]]]],
-        ];
-
-        $dot = (new DotRenderer())->cached($nodes);
-        $this->assertStringContainsString('"page://self/p" -> "app://self/new-footer"', $dot);
-        $this->assertStringNotContainsString('old-child', $dot, 'the footer the page replaces brings nothing into the cached picture');
+        $this->assertNotContains('page://self/esi/header', (array) self::at($glow, $searchPage, 'reachedBy', 'nodes'), 'the search layout has no header part');
     }
 
     public function testALayoutsWritersReachItThroughAWriteOnly(): void
