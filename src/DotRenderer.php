@@ -47,6 +47,18 @@ final class DotRenderer
     }
 
     /**
+     * `cached()` without the layout table, which html draws apart, above the picture
+     *
+     * @param list<Node> $nodes
+     *
+     * @internal
+     */
+    public function cachedGraph(array $nodes): string
+    {
+        return self::draw(self::select($nodes, self::cachedAndInvalidators($nodes)), new LayoutTable([]));
+    }
+
+    /**
      * The URIs `cached()` draws
      *
      * @param list<Node> $nodes
@@ -82,31 +94,40 @@ final class DotRenderer
      */
     private static function render(array $nodes, array|null $shown): string
     {
-        [$drawn, $edges, $targets] = self::select($nodes, $shown);
-        $table = new LayoutTable($drawn);
+        $selected = self::select($nodes, $shown);
+
+        return self::draw($selected, new LayoutTable($selected[0]));
+    }
+
+    /** @param array{array<string, Node>, list<array{string, string, string}>, array<string, true>} $selected what select() returns */
+    private static function draw(array $selected, LayoutTable $table): string
+    {
+        [$drawn, $edges, $targets] = $selected;
 
         // A page nothing embeds is where a request starts: those line up in the leftmost column.
-        $entries = array_keys(array_filter($drawn, static fn (array $node): bool => self::scheme($node['uri']) === 'page' && ! isset($targets[$node['uri']]) && ! $table->has($node['uri'])));
+        $entries = array_keys(array_filter($drawn, static fn (array $node): bool => self::scheme($node['uri']) === 'page' && ! isset($targets[$node['uri']])));
         $lines = [
             'digraph qr {',
             '  rankdir=LR; nodesep=0.35; ranksep=1.1;',
             '  node [fontname="Helvetica", fontsize=13];',
             '  edge [fontname="Helvetica", fontsize=10, fontcolor="#333333", arrowhead=empty];',
+            ...self::nodeLines($drawn, array_keys($targets)),
+            // With rankdir=LR, Graphviz lays a rank out bottom-up in declaration order unless crossings reorder it:
+            // the table, declared last and edge-free, lands at the top of the leftmost rank.
             ...($table->isEmpty() ? [] : ['  ' . $table->node()]),
-            ...self::nodeLines($drawn, array_keys($targets), $table),
         ];
         $edgeLines = [];
         foreach ($edges as [$from, $to, $attrs]) {
-            // The SVG title of an arrow at a row names the table, not the part: its id names both ends.
-            $id = $table->has($from) || $table->has($to) ? sprintf(', id="%s"', addcslashes($from . '->' . $to, '"\\')) : '';
-            $edgeLines[] = sprintf('  %s -> %s [%s%s];', self::end($from, 'e', $table), self::end($to, 'w', $table), $attrs, $id);
+            $edgeLines[] = sprintf('  %s -> %s [%s];', self::id($from), self::id($to), $attrs);
         }
 
         // Declarations that differ only in their query name the same resource: one arrow each.
         $lines = [...$lines, ...array_unique($edgeLines)];
 
-        if ($entries !== []) {
-            $lines[] = '  {rank=min; ' . implode('; ', array_map(self::id(...), $entries)) . ';}';
+        // The table goes in the leftmost rank, with the pages where requests start.
+        $leftmost = [...($table->isEmpty() ? [] : [LayoutTable::NODE]), ...array_map(self::id(...), $entries)];
+        if ($leftmost !== []) {
+            $lines[] = '  {rank=min; ' . implode('; ', $leftmost) . ';}';
         }
 
         $lines[] = '}';
@@ -153,35 +174,27 @@ final class DotRenderer
     }
 
     /**
-     * The scanned resources, then the URIs only an arrow names; a part of a layout is its table row instead
+     * The scanned resources, then the URIs only an arrow names
      *
      * @param array<string, Node> $drawn
      * @param list<string>        $targets
      *
      * @return list<string>
      */
-    private static function nodeLines(array $drawn, array $targets, LayoutTable $table): array
+    private static function nodeLines(array $drawn, array $targets): array
     {
         $lines = [];
         foreach ($drawn as $uri => $node) {
-            if (! $table->has($uri)) {
-                $lines[] = self::node($uri, $node);
-            }
+            $lines[] = self::node($uri, $node);
         }
 
         foreach ($targets as $uri) {
-            if (! isset($drawn[$uri]) && ! $table->has($uri)) {
+            if (! isset($drawn[$uri])) {
                 $lines[] = self::node($uri, null);
             }
         }
 
         return $lines;
-    }
-
-    /** @param 'e'|'w' $side */
-    private static function end(string $uri, string $side, LayoutTable $table): string
-    {
-        return $table->has($uri) ? $table->endpoint($uri, $side) : self::id($uri);
     }
 
     /**

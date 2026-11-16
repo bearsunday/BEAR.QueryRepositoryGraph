@@ -25,7 +25,7 @@ use const ENT_XML1;
 /**
  * The layouts of the drawn resources as one table node: a column per layout, a row per part, ● where the layout has the part
  *
- * A part is drawn as its row, never as a node of its own: an arrow to or from it attaches to the row's port.
+ * No arrow touches the table: a part with arrows of its own is also drawn as a node.
  *
  * @internal
  * @psalm-import-type Node from GraphBuilder
@@ -40,14 +40,14 @@ final class LayoutTable
     /** @var array<string, Column> by layout class, in the order the drawn resources carry them */
     private array $columns = [];
 
-    /** @var array<string, string> part URI => port, in declaration order */
-    private array $ports = [];
+    /** @var array<string, string> part URI => the key its row and cells are named by, in declaration order */
+    private array $rows = [];
 
     /** @param array<string, Node> $drawn */
     public function __construct(array $drawn)
     {
         $keys = [];
-        $ports = [];
+        $rowKeys = [];
         foreach ($drawn as $uri => $node) {
             $layout = $node['layout'] ?? null;
             if ($layout === null) {
@@ -59,7 +59,7 @@ final class LayoutTable
             $this->columns[$class]['pages'][] = $uri;
             foreach ($layout['embed'] as $embed) {
                 $this->columns[$class]['parts'][$embed['uri']] = true;
-                $this->ports[$embed['uri']] ??= self::unique(self::id(DotRenderer::path($embed['uri'])), $ports);
+                $this->rows[$embed['uri']] ??= self::unique(self::id(DotRenderer::path($embed['uri'])), $rowKeys);
             }
         }
     }
@@ -69,27 +69,22 @@ final class LayoutTable
         return $this->columns === [];
     }
 
-    public function has(string $uri): bool
-    {
-        return isset($this->ports[$uri]);
-    }
-
     /** @return array<string, true> the parts the rows stand for */
     public function uris(): array
     {
-        return array_fill_keys(array_keys($this->ports), true);
+        return array_fill_keys(array_keys($this->rows), true);
     }
 
-    /** @param 'e'|'w' $side the side an arrow leaves or enters the row on */
-    public function endpoint(string $uri, string $side): string
+    /** The table alone, as html draws it above the picture; its graph id keeps the SVG ids Graphviz makes apart from the picture's */
+    public function graph(): string
     {
-        return sprintf('%s:"%s":%s', self::NODE, $this->ports[$uri], $side);
+        return sprintf("digraph %1\$s {\n  id=\"%1\$s\";\n  node [fontname=\"Helvetica\", fontsize=13];\n  %2\$s\n}\n", self::NODE, $this->node());
     }
 
     /** Graphviz writes a cell's ID into the SVG only when the cell has a TOOLTIP, so every cell with an ID has one. */
     public function node(): string
     {
-        $uris = array_keys($this->ports);
+        $uris = array_keys($this->rows);
         $kinds = array_values(array_unique(array_map(DotRenderer::kind(...), $uris)));
         $mixed = count($kinds) > 1;
         $prefix = $mixed ? '' : self::prefix(array_map(DotRenderer::path(...), $uris));
@@ -102,12 +97,12 @@ final class LayoutTable
         $rows = ['<TR>' . implode('', $header) . '</TR>'];
         foreach ($uris as $i => $uri) {
             $line = self::line($i === count($uris) - 1);
-            $port = $this->ports[$uri];
+            $key = $this->rows[$uri];
             $label = $mixed ? $uri : substr(DotRenderer::path($uri), strlen($prefix));
-            $cells = [sprintf('<TD ALIGN="LEFT" ID="esi-%1$s" PORT="%1$s" TOOLTIP="%2$s" %3$s>%4$s</TD>', $port, self::escape($uri), $line, self::escape($label))];
+            $cells = [sprintf('<TD ALIGN="LEFT" ID="esi-%s" TOOLTIP="%s" %s>%s</TD>', $key, self::escape($uri), $line, self::escape($label))];
             foreach ($this->columns as $column) {
                 $cells[] = isset($column['parts'][$uri])
-                    ? sprintf('<TD ID="cell-%s-%s" TOOLTIP="#[%s] %s" %s><FONT POINT-SIZE="9" COLOR="#5b4a9e">●</FONT></TD>', $port, $column['key'], self::escape($column['name']), self::escape($uri), $line)
+                    ? sprintf('<TD ID="cell-%s-%s" TOOLTIP="#[%s] %s" %s><FONT POINT-SIZE="9" COLOR="#5b4a9e">●</FONT></TD>', $key, $column['key'], self::escape($column['name']), self::escape($uri), $line)
                     : sprintf('<TD %s> </TD>', $line);
             }
 
@@ -125,14 +120,14 @@ final class LayoutTable
     public function ids(): array
     {
         $ids = ['rows' => [], 'cells' => [], 'heads' => []];
-        foreach ($this->ports as $uri => $port) {
-            $ids['rows'][] = ['id' => 'esi-' . $port, 'uri' => $uri];
+        foreach ($this->rows as $uri => $key) {
+            $ids['rows'][] = ['id' => 'esi-' . $key, 'uri' => $uri];
         }
 
         foreach ($this->columns as $column) {
             $ids['heads'][] = ['id' => 'layout-' . $column['key'], 'pages' => $column['pages']];
             foreach (array_keys($column['parts']) as $uri) {
-                $ids['cells'][] = ['id' => sprintf('cell-%s-%s', $this->ports[$uri], $column['key']), 'uri' => $uri, 'pages' => $column['pages']];
+                $ids['cells'][] = ['id' => sprintf('cell-%s-%s', $this->rows[$uri], $column['key']), 'uri' => $uri, 'pages' => $column['pages']];
             }
         }
 

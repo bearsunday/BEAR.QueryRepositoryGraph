@@ -637,12 +637,14 @@ class QrGraphTest extends TestCase
                 'a ● where the layout has the part; a row per part in declaration order',
             );
             $this->assertStringContainsString('COLOR="#999999">page&nbsp;&nbsp;esi/</FONT>', $out, 'the scheme and directory the rows share go to the corner');
-            $this->assertMatchesRegularExpression('#ID="esi-esi-footer" PORT="esi-footer" TOOLTIP="page://self/esi/footer"[^>]*>footer</TD>#', $out);
-            $this->assertStringContainsString('"app://self/footer-editor" -> layouts:"esi-footer":w [', $out, 'a write to a part ends at its row');
-            $this->assertStringContainsString('layouts:"esi-ranking":e -> "app://self/ranking" [label="ranking"', $out, 'a part\'s own embed starts at its row');
+            $this->assertMatchesRegularExpression('#ID="esi-esi-footer" TOOLTIP="page://self/esi/footer"[^>]*>footer</TD>#', $out);
+            $this->assertDoesNotMatchRegularExpression('#(-> layouts|layouts:|layouts ->)#', $out, 'no arrow touches the table');
+            $this->assertStringContainsString('"app://self/footer-editor" -> "page://self/esi/footer" [label="onPut purge"', $out, 'a part with arrows of its own is also a node');
+            $this->assertStringContainsString('"page://self/esi/ranking" -> "app://self/ranking" [label="ranking"', $out);
+            $this->assertStringNotContainsString('"page://self/esi/search" [', $out, 'a part with no arrow is its row only');
             $this->assertStringContainsString('>page (cacheable response, #[ContentPage])<', $out);
-            $this->assertDoesNotMatchRegularExpression('#^  "page://self/esi/#m', $out, 'a part is no node of its own');
-            $this->assertStringNotContainsString('-> "page://self/esi/', $out, 'no arrow from a page to a part');
+            $this->assertDoesNotMatchRegularExpression('#"page://self/(article|index|search)" -> "page://self/esi/#', $out, 'no arrow from a page to a part');
+            $this->assertStringContainsString('{rank=min; layouts;', $out, 'the table goes in the leftmost rank');
         }
     }
 
@@ -674,7 +676,7 @@ class QrGraphTest extends TestCase
         $this->assertStringNotContainsString('{{', $plain);
     }
 
-    public function testGraphvizWritesTheIdsThePageLightsTheTableBy(): void
+    public function testHtmlDrawsTheTableAboveThePictureWithTheIdsItLightsBy(): void
     {
         if ((string) shell_exec('command -v dot') === '') {
             $this->markTestSkipped('Graphviz dot is not installed');
@@ -683,11 +685,15 @@ class QrGraphTest extends TestCase
         [$code, $out, $err] = self::qrGraph(['html', '--dir=' . self::LAYOUT]);
         $this->assertSame(0, $code, $err);
         $page = self::xpath($out);
+        $svgs = self::elements($page, '//main/*[local-name()="svg"]/*[local-name()="svg"]');
+        $this->assertCount(2, $svgs, 'one SVG holding the table and the picture');
+        $this->assertSame('0', $svgs[0]->getAttribute('y'), 'the table first, at the top');
+        $this->assertGreaterThan(0, (float) $svgs[1]->getAttribute('y'));
         foreach (['a_esi-esi-footer', 'a_cell-esi-footer-ContentPage', 'a_layout-ContentPage'] as $id) {
-            $this->assertCount(1, self::elements($page, sprintf('//*[@id="%s"]', $id)), $id);
+            $this->assertCount(1, self::elements($page, sprintf('.//*[@id="%s"]', $id), $svgs[0]), $id);
         }
 
-        $this->assertCount(1, self::elements($page, '//*[@class="edge"][@id="app://self/footer-editor->page://self/esi/footer"]'), 'an arrow at a row names both ends');
+        $this->assertSame('page://self/esi/footer', self::text($page, './/*[@class="node"][*[local-name()="title"]="page://self/esi/footer"]/*[local-name()="title"]', $svgs[1]), 'the part with a write to it is a node of the picture too');
     }
 
     public function testTokensFindOneLineDeclarationsAndBracedNamespaces(): void

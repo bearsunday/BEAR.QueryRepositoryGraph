@@ -12,7 +12,7 @@ All notable changes to this project are documented in this file.
 
 - `html` lists, below the picture in a section that starts collapsed, the declarations that affect no cache, each with its `file:line`: `#[Purge]`/`#[Refresh]` targets that reach no cached resource, `#[DependsOn]` on resources no cache stores, URIs no scanned resource serves, and the `#[DependsOn]` warnings. A collapsed "Not drawn" lists the resources the picture leaves out.
 - `html --editor=phpstorm` links each `file:line` to the file in PhpStorm; without it the page holds no absolute path, so it can be shared.
-- Resource layouts (BEAR.Resource's `AbstractResourceLayout`, such as `#[ContentPage]`): every command takes each part as an `#[Embed]` of the pages carrying the layout, `dump` records it as `layout` (`meta.version` 6), and `dot`/`html` draw the layouts as one table of layouts × parts instead of arrows.
+- Resource layouts (BEAR.Resource's `AbstractResourceLayout`, such as `#[ContentPage]`): every command takes each part as an `#[Embed]` of the pages carrying the layout, `dump` records it as `layout` (`meta.version` 6), and `dot`/`html` draw the layouts as one table of layouts × parts at the top-left instead of arrows.
 
 ## [0.1.0] - 2026-11-15
 

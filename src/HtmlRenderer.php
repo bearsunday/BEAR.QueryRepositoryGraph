@@ -14,6 +14,9 @@ use function fwrite;
 use function implode;
 use function json_encode;
 use function ksort;
+use function max;
+use function preg_match;
+use function preg_replace;
 use function proc_close;
 use function proc_open;
 use function restore_error_handler;
@@ -78,10 +81,55 @@ final class HtmlRenderer
         ];
 
         return strtr(self::PAGE, [
-            '{{svg}}' => $drawn === [] ? self::NOTHING_CACHED : $this->svg($dot->cached($nodes)),
+            '{{svg}}' => $drawn === [] ? self::NOTHING_CACHED : $this->picture($dot, $table, $nodes),
             '{{warnings}}' => (new HtmlWarnings($nodes, $drawn, $editor))($dependsOn),
             '{{json}}' => $json,
         ] + $layout);
+    }
+
+    /**
+     * @param list<Node> $nodes
+     *
+     * @throws RuntimeException
+     */
+    private function picture(DotRenderer $dot, LayoutTable $table, array $nodes): string
+    {
+        if ($table->isEmpty()) {
+            return $this->svg($dot->cached($nodes));
+        }
+
+        return self::stack($this->svg($table->graph()), $this->svg($dot->cachedGraph($nodes)));
+    }
+
+    /** The table's SVG at the top-left, the picture's below it, in one SVG: the page's script and styles act on one */
+    private static function stack(string $table, string $picture): string
+    {
+        $gap = 24.0;
+        [$tableWidth, $tableHeight, $table] = self::placed($table, 0.0);
+        [$width, $height, $picture] = self::placed($picture, $tableHeight + $gap);
+
+        return sprintf(
+            "<svg width=\"%1\$spt\" height=\"%2\$spt\" viewBox=\"0 0 %1\$s %2\$s\" xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\">\n%3\$s%4\$s</svg>\n",
+            max($width, $tableWidth),
+            $tableHeight + $gap + $height,
+            $table,
+            $picture,
+        );
+    }
+
+    /**
+     * Graphviz sizes its SVG in points; nested, the SVG takes the outer one's units, which are points too
+     *
+     * @return array{float, float, string} the width and height, and the SVG placed `$top` points down
+     */
+    private static function placed(string $svg, float $top): array
+    {
+        $root = '/^<svg width="([\d.]+)pt" height="([\d.]+)pt"/';
+        if (preg_match($root, $svg, $size) !== 1) {
+            return [0.0, 0.0, $svg];
+        }
+
+        return [(float) $size[1], (float) $size[2], (string) preg_replace($root, sprintf('<svg x="0" y="%s" width="$1" height="$2"', $top), $svg, 1)];
     }
 
     /**
@@ -310,9 +358,11 @@ CSS;
     event.stopPropagation();
     select(uri);
   });
+  // A part with arrows of its own is also a node: the node stands for it, and its row lights with it.
+  const twins = [];
   layouts.rows.forEach(({ id, uri }) => {
     const g = cell(id);
-    nodes.set(uri, g);
+    nodes.has(uri) ? twins.push([nodes.get(uri), g]) : nodes.set(uri, g);
     selects(g, uri);
     Object.entries({ tabindex: '0', role: 'button', 'aria-label': uri })
       .forEach(([name, value]) => g.setAttribute(name, value));
@@ -330,16 +380,12 @@ CSS;
     pages.forEach((page) => edges.set(uri + '->' + page, [...(edges.get(uri + '->' + page) ?? []), g]));
   });
   const heads = layouts.heads.map(({ id, pages }) => [cell(id), pages]);
-  // An arrow at a row is titled by the table; its id names its two ends.
-  svg.querySelectorAll('g.edge').forEach((g) => {
-    if (g.id.includes('->')) {
-      edges.set(g.id, [...(edges.get(g.id) ?? []), g]);
-    }
-  });
 
 JS;
 
     private const LAYOUT_SELECT = <<<'JS'
+    twins.forEach(([node, row]) => ['selected', 'reaches', 'reached-by', 'writer']
+      .forEach((name) => node.classList.contains(name) && row.classList.add(name)));
     heads.forEach(([head, pages]) => pages.includes(uri) && head.classList.add('reached-by'));
 
 JS;

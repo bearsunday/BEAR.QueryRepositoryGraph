@@ -55,11 +55,12 @@ collapsed Not drawn after it lists the resources left out.
 ### Resource layouts
 
 A resource layout, a class attribute extending BEAR.Resource's `AbstractResourceLayout` such as `#[ContentPage]`, is
-drawn as one table instead of arrows: a column per layout, a row per part it embeds, ● where the layout has the part.
-The top-left cell holds the scheme and the directory the rows share. Each page names its layout after its cache,
-`page (cacheable response, #[ContentPage])`, and an arrow to or from a part ends at its row. In `html`, clicking a row
-lights the pages whose layout has the part, with its ●; clicking a page lights its layout's column. `impact`,
-`snapshot` and the warnings take each part as an `#[Embed]` of every page carrying the layout.
+drawn as one table at the top-left instead of arrows: a column per layout, a row per part it embeds, ● where the layout
+has the part. The top-left cell holds the scheme and the directory the rows share. Each page names its layout after
+its cache, `page (cacheable response, #[ContentPage])`. No arrow touches the table: a part with arrows of its own, or
+a cached one, is also drawn as a node. In `html`, clicking a row lights the pages whose layout has the part, with its
+●; clicking a page lights its layout's column. `impact`, `snapshot` and the warnings take each part as an `#[Embed]`
+of every page carrying the layout.
 
 ## What a change reaches
 

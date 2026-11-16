@@ -100,11 +100,15 @@ invalidation travels. Declarations that differ only in their query (`?type=news`
 host when it is not `self`) and the cache attributes as declared: `page (cacheable, ttl: medium)`,
 `app (cacheable view, ttl: never)` for `type: 'view'`, `page (cacheable response)`, `page (donut cache)`. Only
 `#[Cacheable]` expires by time, so only it shows a TTL.
-A resource no arrow touches is left out unless it is cached or carries a layout.
+A resource no arrow touches is left out unless it is cached: then it shows a cache no declared write invalidates. A
+page carrying a layout is drawn as well.
 What layouts embed is one table rather than arrows: a column per layout (`#[ContentPage]`), a row per part, ● where
 the layout has the part. The top-left cell names the scheme the rows share and the directory they all start with,
 which the rows then leave out. A page names its layout after its cache: `page (cacheable response, #[ContentPage])`.
-A part is drawn only as its row: an arrow from a write to it, or from one of its own declarations, ends at the row.
+No arrow touches the table. A part with arrows of its own (a write that refreshes or purges it, its own `#[Embed]` or
+`#[DependsOn]`), or one cached and so drawn for itself, is also an ordinary node with those arrows; a part with none
+is its row only. The table goes in the leftmost rank, declared after every other node, which with `rankdir=LR` puts
+it at the top-left unless Graphviz reorders the rank to save crossings.
 Pages no drawn arrow points to (other than their own arrows to themselves), where a request starts, line up in the leftmost
 column; with `--cached`, an arrow from a resource left out does not count.
 
@@ -127,8 +131,9 @@ Click a resource: what invalidates it glows green, what it invalidates glows ora
 counts each side among the resources drawn. A resource can also be focused and selected with Enter; clicking it
 again, clicking elsewhere in the picture or Escape clears. The page embeds, as JSON, what `impact` computes from each
 resource and from each of its write methods that refresh or purge, with which starts reach it only through a write:
-one shortest path per reached resource, as `impact` shows it; a resource's refresh of itself is not lit. In the layout
-table, a row and its ● cells select the row's part, and light the pages whose layout has it; selecting a page lights its
+one shortest path per reached resource, as `impact` shows it; a resource's refresh of itself is not lit. The layout
+table is drawn apart, above the picture, so it is always at the top-left. A row and its ● cells select the row's part,
+and light the pages whose layout has it; a part drawn as a node too lights with its row. Selecting a page lights its
 layout's column head and the ● of the parts that reach it. The legend counts resources only, not cells.
 
 Below the picture, Warnings lists the declarations that affect no cache, one group per kind, each item with the
