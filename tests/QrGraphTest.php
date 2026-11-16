@@ -345,7 +345,7 @@ class QrGraphTest extends TestCase
         $this->assertSame(1, substr_count($html, '<svg'), 'one picture');
         $this->assertStringContainsString('<svg>' . htmlspecialchars((new DotRenderer())->cached(self::nodes(self::WARNINGS))) . '</svg>', $html, 'the cached part, as dot --cached draws it');
         $this->assertSame(
-            ['app://self/editor', 'app://self/tally', 'app://self/digest', 'app://ads/banner', 'app://self/summary'],
+            ['app://self/editor', 'app://self/liker', 'app://self/liker', 'app://self/tally', 'app://self/digest', 'app://ads/banner', 'app://self/summary'],
             self::selectable($html),
             'only a URI the picture draws selects it',
         );
@@ -489,9 +489,15 @@ class QrGraphTest extends TestCase
         $this->assertStringNotContainsString('phpstorm://', $out);
     }
 
-    public function testHtmlFollowsATargetWrittenWithATrailingSlash(): void
+    public function testATrailingSlashNamesItsIndex(): void
     {
-        // The cached index embeds app://self/blog/, which App\Blog\Index serves; writer purges it as app://self/blog/ and as app://self/blog/index.
+        $this->assertSame(['uri' => 'app://self/blog/index', 'template' => 'app://self/blog/'], (new UriConverter())->resolve('app://self/blog/', 'page://self/index'));
+
+        $dir = '--dir=tests/Fixture/IndexSlash/Resource';
+        [, $out] = self::qrGraph(['impact', 'app://self/blog/', $dir]);
+        $this->assertSame("app://self/blog/index\n  page://self/index (embed, cacheable, ttl: never)\n", $out);
+
+        // The cached index embeds app://self/blog/; writer purges it as app://self/blog/ and as app://self/blog/index.
         $this->assertSame([], self::listed(self::warningsPage('tests/Fixture/IndexSlash/Resource'), 'invalidates-no-cache'));
     }
 
@@ -556,7 +562,8 @@ class QrGraphTest extends TestCase
         $this->assertSame($out, $cached);
         $this->assertSame(1, substr_count($out, '<svg'));
         $this->assertStringContainsString('<title>app://self/editor</title>', $out);
-        $this->assertStringNotContainsString('<title>app://self/liker</title>', $out);
+        $this->assertStringContainsString('<title>app://self/liker</title>', $out, 'liker refreshes page://self/, the cached index');
+        $this->assertStringNotContainsString('<title>app://self/ad-writer</title>', $out);
         $this->assertSame(self::listed(self::warningsPage(self::WARNINGS), 'depends-on'), self::listed($out, 'depends-on'), 'the CLI passes the #[DependsOn] warnings');
     }
 

@@ -392,7 +392,7 @@ final class HtmlRenderer
     light(sets.reaches, 'reaches');
     light(sets.reachedBy, 'reached-by');
     sets.writers.forEach((writer) => nodes.get(writer)?.classList.add('writer'));
-    nodes.get(uri).classList.add('selected');
+    nodes.get(uri)?.classList.add('selected');
     status.textContent = uri;
     const writers = new Set(sets.writers);
     counts.reaches.textContent = `(${drawn(sets.reaches.nodes)})`;

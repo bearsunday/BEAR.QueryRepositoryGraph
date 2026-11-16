@@ -11,6 +11,7 @@ use function implode;
 use function lcfirst;
 use function min;
 use function preg_replace;
+use function str_ends_with;
 use function str_replace;
 use function str_starts_with;
 use function strlen;
@@ -55,8 +56,8 @@ final class UriConverter
      * Resolves a declared URI (an #[Embed] src, a #[Refresh]/#[Purge] uri) against the
      * declaring resource, and splits off its query part
      *
-     * @return array{uri: string, template?: string} `uri` is exact-matchable against node URIs;
-     *                                               `template` is the declaration as written, when it differs
+     * @return array{uri: string, template?: string} `uri` is exact-matchable against node URIs, a trailing `/` read as
+     *                                               its `index`; `template` is the declaration as written, when it differs
      */
     public function resolve(string $declared, string $base): array
     {
@@ -76,8 +77,10 @@ final class UriConverter
         }
 
         $uri = substr($absolute, 0, $cut);
+        // A path ending in `/` names its `index`, as BEAR.Resource serves it.
+        $indexed = str_ends_with($uri, '/') ? $uri . 'index' : $uri;
 
-        return $uri === $absolute ? ['uri' => $uri] : ['uri' => $uri, 'template' => $absolute];
+        return $indexed === $absolute ? ['uri' => $indexed] : ['uri' => $indexed, 'template' => $absolute];
     }
 
     /**
