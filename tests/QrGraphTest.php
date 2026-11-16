@@ -639,6 +639,24 @@ class QrGraphTest extends TestCase
         );
     }
 
+    public function testHtmlDrawsLayoutPartsOfMixedSchemes(): void
+    {
+        $dir = '--dir=tests/Fixture/LayoutMixed/Resource';
+        [, $out] = self::qrGraph(['dot', $dir]);
+        preg_match_all('/ID="esi-[^"]+"[^>]*>([^<]*)<\/TD>/', $out, $rows);
+        $this->assertSame(['page://self/layout/nav', 'app://self/own'], $rows[1], 'rows of more than one scheme show their whole URI');
+
+        [, $out] = self::qrGraph(['impact', 'page://self/layout/nav', '--allow-unknown', $dir]);
+        $this->assertSame("page://self/layout/nav\n  page://self/home (embed, cacheable, ttl: never)\n", $out, 'a class without onGet() embeds nothing through its layout');
+
+        if ((string) shell_exec('command -v dot') === '') {
+            $this->markTestSkipped('Graphviz dot is not installed');
+        }
+
+        [$code, , $err] = self::qrGraph(['html', $dir]);
+        $this->assertSame(0, $code, $err);
+    }
+
     public function testALayoutPartReachesEveryPageCarryingTheLayout(): void
     {
         $dir = '--dir=' . self::LAYOUT;

@@ -89,17 +89,7 @@ final class LayoutTable
         $mixed = count($kinds) > 1;
         $prefix = $mixed ? '' : self::prefix(array_map(DotRenderer::path(...), $uris));
         $corner = ($mixed ? '' : self::escape($kinds[0] ?? '')) . ($prefix === '' ? '' : '&nbsp;&nbsp;' . self::escape($prefix));
-        $header = [sprintf('<TD ALIGN="LEFT" %s><FONT POINT-SIZE="10" COLOR="#999999">%s</FONT></TD>', self::line(false), $corner)];
-        foreach ($this->columns as $column) {
-            $header[] = sprintf(
-                '<TD ID="layout-%s" TOOLTIP="#[%2$s]" %3$s><TABLE BORDER="0" CELLPADDING="6" BGCOLOR="#e8e8e8" STYLE="rounded"><TR><TD>#[%2$s]</TD></TR></TABLE></TD>',
-                $column['key'],
-                self::escape($column['name']),
-                self::line(false),
-            );
-        }
-
-        $rows = ['<TR>' . implode('', $header) . '</TR>'];
+        $rows = ['<TR>' . $this->header($corner) . '</TR>'];
         foreach ($uris as $i => $uri) {
             $line = self::line($i === count($uris) - 1);
             $key = $this->rows[$uri];
@@ -115,6 +105,23 @@ final class LayoutTable
         }
 
         return sprintf('%s [shape=plaintext, margin=0, label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="7">%s</TABLE>>];', self::NODE, implode('', $rows));
+    }
+
+    /** The corner cell, then a head per layout */
+    private function header(string $corner): string
+    {
+        // Graphviz rejects an empty FONT: with nothing shared, the corner is an empty cell.
+        $cells = [sprintf('<TD ALIGN="LEFT" %s>%s</TD>', self::line(false), $corner === '' ? '' : '<FONT POINT-SIZE="10" COLOR="#999999">' . $corner . '</FONT>')];
+        foreach ($this->columns as $column) {
+            $cells[] = sprintf(
+                '<TD ID="layout-%s" TOOLTIP="#[%2$s]" %3$s><TABLE BORDER="0" CELLPADDING="6" BGCOLOR="#e8e8e8" STYLE="rounded"><TR><TD>#[%2$s]</TD></TR></TABLE></TD>',
+                $column['key'],
+                self::escape($column['name']),
+                self::line(false),
+            );
+        }
+
+        return implode('', $cells);
     }
 
     /**

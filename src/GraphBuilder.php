@@ -193,7 +193,8 @@ final class GraphBuilder
     private function layout(ReflectionClass $ref, string $uri): array|null
     {
         $attributes = $ref->getAttributes(AbstractResourceLayout::class, ReflectionAttribute::IS_INSTANCEOF);
-        if ($attributes === []) {
+        // BEAR.Resource binds a layout to onGet(): a class without one embeds nothing through it.
+        if ($attributes === [] || ! $ref->hasMethod('onGet')) {
             return null;
         }
 
