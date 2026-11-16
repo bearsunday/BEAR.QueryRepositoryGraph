@@ -434,9 +434,11 @@ CSS;
   };
   // A part with arrows of its own is also a node: the node stands for it, and its row lights with it.
   const twins = [];
+  const rowCells = [];
   layouts.rows.forEach(({ id, uri }) => {
     const g = cell(id);
     nodes.has(uri) ? twins.push([nodes.get(uri), g]) : nodes.set(uri, g);
+    rowCells.push(g);
     selects(g, uri);
     focusable(g, uri);
   });
@@ -462,6 +464,10 @@ JS;
     twins.forEach(([node, row]) => ['selected', 'reaches', 'reached-by', 'writer']
       .forEach((name) => node.classList.contains(name) && row.classList.add(name)));
     heads.forEach(([head, pages]) => pages.includes(uri) && head.classList.add('reached-by'));
+    // A selected layout lights its column; the rows, its parts, stay as they are.
+    if (labels.has(uri)) {
+      rowCells.forEach((row) => row.classList.remove('reaches', 'reached-by', 'writer'));
+    }
     status.textContent = labels.get(uri) ?? uri;
 
 JS;
