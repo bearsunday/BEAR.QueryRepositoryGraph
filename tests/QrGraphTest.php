@@ -648,7 +648,7 @@ class QrGraphTest extends TestCase
         [, $out] = self::qrGraph(['dot', '--dir=tests/Fixture/LayoutEdge/Resource']);
         preg_match_all('/ID="(esi-[^"]+)"[^>]*>([^<]*)<\/TD>/', $out, $rows);
         $this->assertSame(['esi-part-index', 'esi-part-a-b', 'esi-part-a-b-2'], $rows[1], 'part/a-b and part/a/b read the same as an id: the second takes a suffix');
-        $this->assertSame(['index', 'a-b', 'a/b'], $rows[2], 'page://self/part/ is its index');
+        $this->assertSame(['index', 'a-b', 'a/b'], $rows[2], 'the rows leave out the directory they share');
         $this->assertStringContainsString('COLOR="#999999">page&nbsp;&nbsp;part/</FONT>', $out);
 
         $this->assertSame(

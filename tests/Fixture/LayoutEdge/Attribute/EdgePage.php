@@ -10,7 +10,7 @@ final class EdgePage extends AbstractResourceLayout
 {
     /** @var array<string, string> */
     public const EMBED = [
-        'index' => 'page://self/part/',
+        'index' => 'page://self/part/index',
         'dash' => 'page://self/part/a-b',
         'slash' => 'page://self/part/a/b',
     ];
