@@ -24,6 +24,7 @@ use function bin2hex;
 use function count;
 use function dirname;
 use function explode;
+use function file_put_contents;
 use function fopen;
 use function getcwd;
 use function htmlspecialchars;

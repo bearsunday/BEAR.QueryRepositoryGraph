@@ -1,0 +1,1 @@
+Not PHP: the scan leaves this file alone.
