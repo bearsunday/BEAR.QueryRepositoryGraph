@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace BEAR\QueryRepositoryGraph;
 
+use BEAR\QueryRepositoryGraph\Exception\TrailingSlashUriException;
+
 use function array_shift;
 use function count;
 use function explode;
@@ -56,8 +58,10 @@ final class UriConverter
      * Resolves a declared URI (an #[Embed] src, a #[Refresh]/#[Purge] uri) against the
      * declaring resource, and splits off its query part
      *
-     * @return array{uri: string, template?: string} `uri` is exact-matchable against node URIs, a trailing `/` read as
-     *                                               its `index`; `template` is the declaration as written, when it differs
+     * @return array{uri: string, template?: string} `uri` is exact-matchable against node URIs;
+     *                                               `template` is the declaration as written, when it differs
+     *
+     * @throws TrailingSlashUriException
      */
     public function resolve(string $declared, string $base): array
     {
@@ -67,20 +71,28 @@ final class UriConverter
             $absolute = substr($base, 0, (int) strpos($base, '://')) . '://self' . $declared;
         }
 
-        // A path template ({id}) stays in the URI; a query ({?id}, ?id=, {&id}) or fragment does not.
-        $cut = strlen($absolute);
+        $uri = $this->withoutQuery($absolute);
+        if (str_ends_with($uri, '/')) {
+            $path = $this->withoutQuery($declared);
+
+            throw new TrailingSlashUriException($declared, $path . 'index' . substr($declared, strlen($path)), $declared === $base ? null : $base);
+        }
+
+        return $uri === $absolute ? ['uri' => $uri] : ['uri' => $uri, 'template' => $absolute];
+    }
+
+    /** The URI up to its query: a path template ({id}) stays; a query ({?id}, ?id=, {&id}) or fragment does not */
+    public function withoutQuery(string $uri): string
+    {
+        $cut = strlen($uri);
         foreach (['?', '#', '{?', '{&'] as $marker) {
-            $pos = strpos($absolute, $marker);
+            $pos = strpos($uri, $marker);
             if ($pos !== false) {
                 $cut = min($cut, $pos);
             }
         }
 
-        $uri = substr($absolute, 0, $cut);
-        // A path ending in `/` names its `index`, as BEAR.Resource serves it.
-        $indexed = str_ends_with($uri, '/') ? $uri . 'index' : $uri;
-
-        return $indexed === $absolute ? ['uri' => $indexed] : ['uri' => $indexed, 'template' => $absolute];
+        return substr($uri, 0, $cut);
     }
 
     /**

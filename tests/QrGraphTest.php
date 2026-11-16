@@ -387,7 +387,6 @@ class QrGraphTest extends TestCase
     public function testHtmlListsTheUrisNoResourceServes(): void
     {
         $html = self::warningsPage(self::WARNINGS);
-        // page://self/ and app://self/blog/ are page://self/index and app://self/blog/index.
         $this->assertSame([
             'app://self/removed purge',
             'app://ads/banner (another application) embed',
@@ -493,19 +492,20 @@ class QrGraphTest extends TestCase
         $this->assertStringNotContainsString('phpstorm://', $out);
     }
 
-    public function testATrailingSlashNamesItsIndex(): void
+    public function testAUriEndingInSlashIsRefused(): void
     {
-        $this->assertSame(['uri' => 'app://self/blog/index', 'template' => 'app://self/blog/'], (new UriConverter())->resolve('app://self/blog/', 'page://self/index'));
+        [$code, , $err] = self::qrGraph(['dump', '--dir=tests/Fixture/IndexSlash/Resource']);
+        $this->assertSame(1, $code);
+        $this->assertSame(
+            'A URI ending in "/" is no longer accepted since 0.2.0: "app://self/blog/" in an #[Embed], #[DependsOn], #[Refresh] or #[Purge] of page://self/index.'
+            . ' Please write "app://self/blog/index" instead: BEAR.Resource serves both as the index, but the cache tags the two spellings apart.',
+            $this->lastError($err),
+        );
+        $this->assertStringContainsString('TrailingSlashUriException', $err);
 
-        $dir = '--dir=tests/Fixture/IndexSlash/Resource';
-        [, $out] = self::qrGraph(['impact', 'app://self/blog/', $dir]);
-        $this->assertSame("app://self/blog/index\n  app://self/feed (dependsOn, cacheable, ttl: never)\n  page://self/index (embed, cacheable, ttl: never)\n", $out);
-
-        [, , $err] = self::qrGraph(['dump', $dir]);
-        $this->assertSame('', $err, 'feed depends on app://self/blog/, the tag writer purges as app://self/blog/index');
-
-        // The cached index embeds app://self/blog/; writer purges it as app://self/blog/ and as app://self/blog/index.
-        $this->assertSame([], self::listed(self::warningsPage('tests/Fixture/IndexSlash/Resource'), 'invalidates-no-cache'));
+        [$code, , $err] = self::qrGraph(['impact', 'page://self/?id=1', '--dir=' . self::DIR]);
+        $this->assertSame(1, $code);
+        $this->assertStringContainsString('"page://self/?id=1". Please write "page://self/index?id=1" instead', $this->lastError($err));
     }
 
     public function testHtmlEscapesASourcePath(): void

@@ -162,7 +162,7 @@
             "type": "string",
             "pattern": "^[a-z]+://[^?#]+$"
         },
-        "template": {"description": "The URI as declared, when it differs from `uri`: a query or template part, or another spelling of the resource's URI (`galleryArticle` for `gallery-article`, `app://self/blog/` for `app://self/blog/index`).", "type": "string"},
+        "template": {"description": "The URI as declared, when it differs from `uri`: a query or template part, or another spelling of the resource's URI (`galleryArticle` for `gallery-article`).", "type": "string"},
         "source": {"description": "file:line, relative to the working directory.", "type": "string", "pattern": ":[0-9]+$"}
     }
 }
