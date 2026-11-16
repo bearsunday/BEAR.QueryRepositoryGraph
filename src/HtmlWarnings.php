@@ -19,6 +19,7 @@ use function rawurlencode;
 use function realpath;
 use function sprintf;
 use function str_ends_with;
+use function strlen;
 use function strrpos;
 use function strval;
 use function substr;
@@ -105,7 +106,7 @@ final class HtmlWarnings
                 foreach (['refresh' => $method['refresh'] ?? [], 'purge' => $method['purge'] ?? []] as $via => $targets) {
                     foreach ($targets as $target) {
                         $uri = $this->node($target['uri'])['uri'] ?? $target['uri'];
-                        if (isset($target['implicit']) || ! self::isSelf($uri) || self::reachesCache(($this->impact)($uri))) {
+                        if (isset($target['implicit']) || ! self::isSelf($uri) || $this->invalidatesACache($target['uri'], $uri)) {
                             continue;
                         }
 
@@ -117,6 +118,26 @@ final class HtmlWarnings
         }
 
         return array_values($items);
+    }
+
+    /**
+     * Whether invalidating the target reaches a cached resource under any spelling: an embed or #[DependsOn] names a
+     * URI as written, so `app://self/blog/` and `app://self/blog/index` reach different declarations of one resource
+     */
+    private function invalidatesACache(string $written, string $resolved): bool
+    {
+        $spellings = [$written, $resolved];
+        if (str_ends_with($resolved, '/index')) {
+            $spellings[] = substr($resolved, 0, -strlen('index'));
+        }
+
+        foreach ($spellings as $spelling) {
+            if (self::reachesCache(($this->impact)($spelling))) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** @return list<Item> */

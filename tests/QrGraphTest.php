@@ -464,7 +464,7 @@ class QrGraphTest extends TestCase
         $this->assertSame('phpstorm://open?file=' . rawurlencode((string) realpath('tests/Fixture/HtmlWarnings/Resource/App/Editor.php')) . '&line=17', $source->getAttribute('href'));
     }
 
-    public function testHtmlEditorOption(): void
+    public function testHtmlRejectsAnUnknownEditor(): void
     {
         foreach (['--editor=vscode', '--editor', '--editor='] as $option) {
             [$code, , $err] = self::qrGraph(['html', $option, '--dir=' . self::WARNINGS]);
@@ -474,7 +474,10 @@ class QrGraphTest extends TestCase
 
         [$code] = self::qrGraph(['dump', '--editor=phpstorm', '--dir=' . self::WARNINGS]);
         $this->assertSame(2, $code, 'only html takes an editor');
+    }
 
+    public function testHtmlLinksSourcesWithTheEditorOption(): void
+    {
         if ((string) shell_exec('command -v dot') === '') {
             $this->markTestSkipped('Graphviz dot is not installed');
         }
@@ -484,6 +487,12 @@ class QrGraphTest extends TestCase
         $this->assertStringContainsString('phpstorm://open?file=' . rawurlencode((string) realpath('tests/Fixture/HtmlWarnings/Resource/App/Editor.php')), $out);
         [, $out] = self::qrGraph(['html', '--dir=' . self::WARNINGS]);
         $this->assertStringNotContainsString('phpstorm://', $out);
+    }
+
+    public function testHtmlFollowsATargetWrittenWithATrailingSlash(): void
+    {
+        // The cached index embeds app://self/blog/, which App\Blog\Index serves; writer purges it as app://self/blog/ and as app://self/blog/index.
+        $this->assertSame([], self::listed(self::warningsPage('tests/Fixture/IndexSlash/Resource'), 'invalidates-no-cache'));
     }
 
     public function testHtmlEscapesASourcePath(): void
