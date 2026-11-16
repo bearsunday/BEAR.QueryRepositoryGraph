@@ -47,9 +47,8 @@ final class HtmlWarnings
     /**
      * @param list<Node>          $nodes
      * @param array<string, true> $drawn the URIs the picture draws: an item naming one selects it
-     * @param string              $cwd   what a relative `file:line` is relative to
      */
-    public function __construct(private readonly array $nodes, private readonly array $drawn, private readonly string $cwd)
+    public function __construct(private readonly array $nodes, private readonly array $drawn)
     {
         $this->impact = new Impact($nodes);
         $this->converter = new UriConverter();
@@ -84,9 +83,9 @@ final class HtmlWarnings
             return "<h2>Warnings</h2>\n<p>No warnings.</p>\n" . $this->notDrawn($warned);
         }
 
-        $premise = "<p>Read from the declarations alone: a dependency made only through a #[ResourceParam] read, a row class's #[DependsOn] or a template's resource() call is not seen, so check such a case at runtime before removing anything.</p>\n";
+        $premise = "<p>qr-graph does not read #[ResourceParam] or a row class's #[DependsOn] yet, and does not see a dependency a template declares with depends() while rendering: check such a case at runtime before removing anything.</p>\n";
 
-        return "<details>\n<summary>Warnings ({$count})</summary>\n" . $premise . $html . $this->notDrawn($warned) . "</details>\n";
+        return "<details data-kind=\"warnings\">\n<summary>Warnings ({$count})</summary>\n" . $premise . $html . "</details>\n" . $this->notDrawn($warned);
     }
 
     /**
@@ -289,14 +288,14 @@ final class HtmlWarnings
         return '<code>' . self::escape($text) . '</code>';
     }
 
-    /** A `file:line` whose file resolves to an absolute path opens in PhpStorm */
+    /** A `file:line` whose file resolves from the working directory, which the scan ran from, opens in PhpStorm */
     private function source(string $source): string
     {
         $escaped = self::escape($source);
         $colon = (int) strrpos($source, ':');
         $file = substr($source, 0, $colon);
         $line = substr($source, $colon + 1);
-        $path = $colon > 0 && preg_match('/\A\d+\z/', $line) === 1 ? realpath(preg_match('#^(/|[A-Za-z]:/)#', $file) === 1 ? $file : $this->cwd . '/' . $file) : false;
+        $path = $colon > 0 && preg_match('/\A\d+\z/', $line) === 1 ? realpath($file) : false;
         if ($path === false) {
             return "<span class=\"source\">{$escaped}</span>";
         }

@@ -497,6 +497,16 @@ class QrGraphTest extends TestCase
         $this->assertSame(0, substr_count($html, '<details'), 'nothing to collapse, everything is drawn');
     }
 
+    public function testHtmlPlacesNotDrawnAfterTheWarnings(): void
+    {
+        // The warnings fixture has warnings; tests/Fixture/Resource has none, and an uncached page left out.
+        foreach ([self::WARNINGS => 'details[@data-kind="warnings"]', 'tests/Fixture/Resource' => 'p[.="No warnings."]'] as $dir => $warnings) {
+            $page = self::xpath(self::warningsPage($dir));
+            $this->assertSame('Not drawn', self::text($page, sprintf('//*[@id="warnings"]/%s/following-sibling::details[@data-kind="not-drawn"]/summary', $warnings)), $dir);
+            $this->assertSame([], self::elements($page, '//details[@data-kind="warnings"]//details'), $dir);
+        }
+    }
+
     public function testHtmlIsTheCachedPictureWithOrWithoutCached(): void
     {
         if ((string) shell_exec('command -v dot') === '') {

@@ -48,8 +48,9 @@ through its grey arrow, and `index` through the black one.
 
 `qr-graph html > graph.html` writes the cached part of the picture (`dot --cached`) as one page; the whole graph is
 `qr-graph dot | dot -Tsvg`. Click a resource: what invalidates it glows green, the writes that invalidate it blue, and
-what it invalidates orange, each side counted; the rest dims. Below the picture, Warnings lists the declarations that
-affect no cache, each with its `file:line`, and a collapsed Not drawn lists the resources left out.
+what it invalidates orange, each side counted; the rest dims. Below the picture, a collapsed Warnings section lists
+the declarations that affect no cache, each `file:line` linking to PhpStorm, and a collapsed Not drawn after it lists
+the resources left out.
 
 ## What a change reaches
 

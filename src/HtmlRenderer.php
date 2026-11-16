@@ -11,7 +11,6 @@ use function array_keys;
 use function array_values;
 use function fclose;
 use function fwrite;
-use function getcwd;
 use function implode;
 use function json_encode;
 use function ksort;
@@ -52,15 +51,9 @@ final class HtmlRenderer
     private const NONE = ['nodes' => [], 'edges' => [], 'writes' => []];
     private const NOTHING_CACHED = '<p>Nothing is cached: no resource declares #[Cacheable], #[CacheableResponse] or #[DonutCache], so there is no picture. <code>qr-graph dot | dot -Tsvg</code> draws the whole graph.</p>';
 
-    private readonly string $cwd;
-
-    /**
-     * @param non-empty-list<string> $dot the command that reads dot on stdin and writes SVG on stdout
-     * @param string|null            $cwd what a relative `file:line` is relative to; null for the working directory
-     */
-    public function __construct(private readonly array $dot = ['dot', '-Tsvg'], string|null $cwd = null)
+    /** @param non-empty-list<string> $dot the command that reads dot on stdin and writes SVG on stdout */
+    public function __construct(private readonly array $dot = ['dot', '-Tsvg'])
     {
-        $this->cwd = $cwd ?? (string) getcwd();
     }
 
     /**
@@ -77,7 +70,7 @@ final class HtmlRenderer
 
         return strtr(self::PAGE, [
             '{{svg}}' => $drawn === [] ? self::NOTHING_CACHED : $this->svg($dot->cached($nodes)),
-            '{{warnings}}' => (new HtmlWarnings($nodes, $drawn, $this->cwd))($dependsOn),
+            '{{warnings}}' => (new HtmlWarnings($nodes, $drawn))($dependsOn),
             '{{json}}' => $json,
         ]);
     }

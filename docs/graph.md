@@ -122,9 +122,9 @@ one shortest path per reached resource, as `impact` shows it; a resource's refre
 
 Below the picture, Warnings lists the declarations that affect no cache, one group per kind, each item with the
 `file:line` that declares it; an empty group is left out. A declared URI ending in `/` names that path's `index`, as
-BEAR.Resource resolves it (`page://self/` is `page://self/index`). The warnings come from the declarations alone, so a
-dependency made only through what the graph does not see (a `#[ResourceParam]` read, a row class's `#[DependsOn]`, a
-template's `resource()` call) can make a working declaration look idle; check it at runtime before removing it.
+BEAR.Resource resolves it (`page://self/` is `page://self/index`). qr-graph does not read `#[ResourceParam]` or a row
+class's `#[DependsOn]` yet, and does not see a dependency a template declares with `depends()` while rendering, so such
+a dependency can make a working declaration look idle: check it at runtime before removing anything.
 
 - Invalidates no cache — each `#[Purge]` or `#[Refresh]` target in this application whose invalidation reaches no
   cached resource, with the write method that names it. A target in another application is listed only under
@@ -135,14 +135,14 @@ template's `resource()` call) can make a working declaration look idle; check it
   serves: this application's (`self`) first, then other applications', which the scan cannot see.
 - `#[DependsOn]` warnings — the [warnings](#warnings-on-dependson) every command writes on stderr.
 
-A collapsed Not drawn then lists every scanned resource the picture leaves out and no warning names: those not cached
+After the Warnings section, a collapsed Not drawn lists every scanned resource the picture leaves out and no warning names: those not cached
 that embed or are embedded only by resources not cached either, those that declare nothing, and those whose only
 declarations are writes no warning names. Click a listed URI the picture draws to select it there; a click elsewhere
 in the Warnings keeps the selection.
 
 The Warnings section starts collapsed, its summary counting the items listed; with none, "No warnings" shows as is.
-Each `file:line` opens the file at that line in PhpStorm (`phpstorm://open?file=…&line=…`) when it resolves to a file
-relative to the working directory or as an absolute path; otherwise it is plain text.
+Each `file:line` opens the file at that line in PhpStorm (`phpstorm://open?file=…&line=…`) when the file resolves from
+the working directory `qr-graph` runs in; otherwise it is plain text.
 
 ### `snapshot` — impacts to review as a diff
 
