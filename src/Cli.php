@@ -8,12 +8,14 @@ use Composer\InstalledVersions;
 use RuntimeException;
 use Throwable;
 
+use function array_keys;
 use function array_shift;
 use function class_exists;
 use function count;
 use function explode;
 use function fwrite;
 use function getcwd;
+use function implode;
 use function in_array;
 use function is_dir;
 use function is_string;
@@ -36,17 +38,18 @@ use const JSON_UNESCAPED_UNICODE;
  *
  * @psalm-import-type Node from GraphBuilder
  * @psalm-import-type Warning from DependsOnWarnings
- * @psalm-type Options = array{dir: string, method: string|null, allowUnknown: bool, failOn: list<string>, cached: bool, json: bool}
+ * @psalm-type Options = array{dir: string, method: string|null, allowUnknown: bool, failOn: list<string>, cached: bool, json: bool, editor: string|null}
  */
 final class Cli
 {
     private const JSON = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR;
+    private const FLAGS = ['--allow-unknown' => 'allowUnknown', '--cached' => 'cached', '--json' => 'json'];
     public const USAGE = <<<'USAGE'
 Usage:
   qr-graph dump   [--dir=src/Resource]                      one JSONL line per resource
   qr-graph impact <uri> [--method=onPut] [--allow-unknown] [--json] [--dir=src/Resource]  what invalidating <uri> (or calling its write method) reaches, as a tree; --json prints one JSONL line per reached resource
   qr-graph dot    [--cached] [--dir=src/Resource]           Graphviz view; --cached keeps the cached resources, what they embed and depend on, and the writes that invalidate them
-  qr-graph html   [--dir=src/Resource]                      the dot --cached picture as one HTML page (needs Graphviz dot), with the declarations that reach no cache listed below it; click a resource to light what invalidates it and what it invalidates; --cached is accepted and changes nothing
+  qr-graph html   [--editor=phpstorm] [--dir=src/Resource]  the dot --cached picture as one HTML page (needs Graphviz dot), with the declarations that reach no cache listed below it; click a resource to light what invalidates it and what it invalidates; --editor=phpstorm links each file:line to the file on this machine; --cached is accepted and changes nothing
   qr-graph snapshot [--dir=src/Resource]                    every impact as an indented tree, to keep and review as a diff
   qr-graph observe <session.json|dir>... [--dir=src/Resource] [--fail-on=<verdict>[,<verdict>...]]  each embedded child the log saw, joined with its declaration; --fail-on is repeatable or comma-separated and exits 3 when a printed line carries a listed verdict (e.g. --fail-on=untagged-material)
 
@@ -88,7 +91,7 @@ USAGE;
      */
     private static function parse(string $command, array $argv): array|string
     {
-        $options = ['dir' => 'src/Resource', 'method' => null, 'allowUnknown' => false, 'failOn' => [], 'cached' => false, 'json' => false];
+        $options = ['dir' => 'src/Resource', 'method' => null, 'allowUnknown' => false, 'failOn' => [], 'cached' => false, 'json' => false, 'editor' => null];
         $args = [];
         foreach ($argv as $arg) {
             if (str_starts_with($arg, '--dir=')) {
@@ -109,18 +112,14 @@ USAGE;
                 continue;
             }
 
-            if ($arg === '--allow-unknown') {
-                $options['allowUnknown'] = true;
+            if ($arg === '--editor' || str_starts_with($arg, '--editor=')) {
+                $options['editor'] = substr($arg, strlen('--editor='));
                 continue;
             }
 
-            if ($arg === '--cached') {
-                $options['cached'] = true;
-                continue;
-            }
-
-            if ($arg === '--json') {
-                $options['json'] = true;
+            $flag = self::FLAGS[$arg] ?? null;
+            if ($flag !== null) {
+                $options[$flag] = true;
                 continue;
             }
 
@@ -148,6 +147,10 @@ USAGE;
             }
         }
 
+        if ($options['editor'] !== null && ! isset(HtmlWarnings::EDITORS[$options['editor']])) {
+            return sprintf("Unknown --editor: %s; accepted: %s\n", $options['editor'], implode(', ', array_keys(HtmlWarnings::EDITORS)));
+        }
+
         if (! is_dir($options['dir'])) {
             return "No such directory: {$options['dir']}\n";
         }
@@ -160,7 +163,8 @@ USAGE;
             }
             && ($command === 'impact' || ($options['method'] === null && ! $options['allowUnknown'] && ! $options['json']))
             && ($command === 'observe' || $options['failOn'] === [])
-            && ($command === 'dot' || $command === 'html' || ! $options['cached']);
+            && ($command === 'dot' || $command === 'html' || ! $options['cached'])
+            && ($command === 'html' || $options['editor'] === null);
 
         return $isValid ? null : '';
     }
@@ -226,7 +230,7 @@ USAGE;
 
         return match (true) {
             $command === 'dot' => $options['cached'] ? $dot->cached($nodes) : $dot($nodes),
-            $command === 'html' => (new HtmlRenderer())($nodes, $warnings),
+            $command === 'html' => (new HtmlRenderer())($nodes, $warnings, $options['editor']),
             $command === 'snapshot' => (new SnapshotRenderer())($nodes),
             $command === 'impact' && ! $options['json'] => (new SnapshotRenderer())->impact($nodes, $args[0], $options['method']),
             default => null,

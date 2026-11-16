@@ -38,6 +38,9 @@ use const ENT_QUOTES;
  */
 final class HtmlWarnings
 {
+    /** The URL each `--editor` opens a `file:line` with: the file's absolute path and the line */
+    public const EDITORS = ['phpstorm' => 'phpstorm://open?file=%s&line=%s'];
+
     private readonly Impact $impact;
     private readonly UriConverter $converter;
 
@@ -46,9 +49,10 @@ final class HtmlWarnings
 
     /**
      * @param list<Node>          $nodes
-     * @param array<string, true> $drawn the URIs the picture draws: an item naming one selects it
+     * @param array<string, true> $drawn  the URIs the picture draws: an item naming one selects it
+     * @param string|null         $editor a key of EDITORS; null keeps each `file:line` text, so the page carries no absolute path
      */
-    public function __construct(private readonly array $nodes, private readonly array $drawn)
+    public function __construct(private readonly array $nodes, private readonly array $drawn, private readonly string|null $editor = null)
     {
         $this->impact = new Impact($nodes);
         $this->converter = new UriConverter();
@@ -288,19 +292,20 @@ final class HtmlWarnings
         return '<code>' . self::escape($text) . '</code>';
     }
 
-    /** A `file:line` whose file resolves from the working directory, which the scan ran from, opens in PhpStorm */
+    /** With an editor, a `file:line` whose file resolves from the working directory, which the scan ran from, opens in it */
     private function source(string $source): string
     {
         $escaped = self::escape($source);
         $colon = (int) strrpos($source, ':');
         $file = substr($source, 0, $colon);
         $line = substr($source, $colon + 1);
-        $path = $colon > 0 && preg_match('/\A\d+\z/', $line) === 1 ? realpath($file) : false;
-        if ($path === false) {
+        $url = self::EDITORS[$this->editor ?? ''] ?? null;
+        $path = $url !== null && $colon > 0 && preg_match('/\A\d+\z/', $line) === 1 ? realpath($file) : false;
+        if ($url === null || $path === false) {
             return "<span class=\"source\">{$escaped}</span>";
         }
 
-        $href = self::escape('phpstorm://open?file=' . rawurlencode($path) . '&line=' . $line);
+        $href = self::escape(sprintf($url, rawurlencode($path), $line));
 
         return "<a class=\"source\" href=\"{$href}\">{$escaped}</a>";
     }

@@ -450,12 +450,40 @@ class QrGraphTest extends TestCase
         $this->assertSame('Warnings (11)', self::text($page, '//*[@id="warnings"]/details[not(@open)]/summary'), 'the items the four groups list');
     }
 
-    public function testHtmlSourcesOpenInPhpStorm(): void
+    public function testHtmlLinksSourcesOnlyForAnEditor(): void
     {
-        $page = self::xpath(self::warningsPage(self::WARNINGS));
+        $plain = self::warningsPage(self::WARNINGS);
+        $this->assertStringNotContainsString('phpstorm://', $plain);
+        $this->assertStringNotContainsString((string) getcwd(), $plain, 'no absolute path of the generating machine');
+        $this->assertStringNotContainsString(rawurlencode((string) getcwd()), $plain);
+        $this->assertSame('span', self::elements(self::xpath($plain), '//*[@data-kind="invalidates-no-cache"]//*[@class="source"]')[0]->tagName);
+
+        $page = self::xpath(self::warningsPage(self::WARNINGS, 'phpstorm'));
         $source = self::elements($page, '//*[@data-kind="invalidates-no-cache"]//*[@class="source"]')[0];
         $this->assertSame('tests/Fixture/HtmlWarnings/Resource/App/Editor.php:17', $source->textContent);
         $this->assertSame('phpstorm://open?file=' . rawurlencode((string) realpath('tests/Fixture/HtmlWarnings/Resource/App/Editor.php')) . '&line=17', $source->getAttribute('href'));
+    }
+
+    public function testHtmlEditorOption(): void
+    {
+        foreach (['--editor=vscode', '--editor', '--editor='] as $option) {
+            [$code, , $err] = self::qrGraph(['html', $option, '--dir=' . self::WARNINGS]);
+            $this->assertSame(2, $code, $option);
+            $this->assertStringContainsString('accepted: phpstorm', $err, $option);
+        }
+
+        [$code] = self::qrGraph(['dump', '--editor=phpstorm', '--dir=' . self::WARNINGS]);
+        $this->assertSame(2, $code, 'only html takes an editor');
+
+        if ((string) shell_exec('command -v dot') === '') {
+            $this->markTestSkipped('Graphviz dot is not installed');
+        }
+
+        [$code, $out, $err] = self::qrGraph(['html', '--editor=phpstorm', '--dir=' . self::WARNINGS]);
+        $this->assertSame(0, $code, $err);
+        $this->assertStringContainsString('phpstorm://open?file=' . rawurlencode((string) realpath('tests/Fixture/HtmlWarnings/Resource/App/Editor.php')), $out);
+        [, $out] = self::qrGraph(['html', '--dir=' . self::WARNINGS]);
+        $this->assertStringNotContainsString('phpstorm://', $out);
     }
 
     public function testHtmlEscapesASourcePath(): void
@@ -476,7 +504,7 @@ class QrGraphTest extends TestCase
                     ['uri' => 'app://self/odd', 'source' => $source],
                     ['uri' => 'app://self/gone', 'source' => 'no/such/file.php:3'],
                 ];
-                $html = (new HtmlRenderer([PHP_BINARY, '-r', 'exit(1);']))($nodes, []);
+                $html = (new HtmlRenderer([PHP_BINARY, '-r', 'exit(1);']))($nodes, [], 'phpstorm');
                 $this->assertStringNotContainsString($name, $html, 'escaped');
                 $sources = self::elements(self::xpath($html), '//*[@class="source"]');
                 $this->assertSame([$source, 'no/such/file.php:3'], array_map(static fn (DOMElement $element): string => $element->textContent, $sources), $name);
@@ -919,13 +947,13 @@ class QrGraphTest extends TestCase
     }
 
     /** The page html renders for the directory, its picture the dot source as text */
-    private static function warningsPage(string $dir): string
+    private static function warningsPage(string $dir, string|null $editor = null): string
     {
         $classes = (new ResourceScanner())->scan($dir);
         $nodes = (new GraphBuilder(new UriConverter(), (string) getcwd()))->build($classes)['nodes'];
         $echo = [PHP_BINARY, '-r', 'echo "<svg>", htmlspecialchars(stream_get_contents(STDIN)), "</svg>";'];
 
-        return (new HtmlRenderer($echo))($nodes, (new DependsOnWarnings())($classes, $nodes));
+        return (new HtmlRenderer($echo))($nodes, (new DependsOnWarnings())($classes, $nodes), $editor);
     }
 
     /** @return list<Node> */

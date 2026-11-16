@@ -108,6 +108,7 @@ resources whose writes refresh or purge any of these. Other arrows are kept when
 
 ```bash
 vendor/bin/qr-graph html > graph.html
+vendor/bin/qr-graph html --editor=phpstorm > graph.html   # each file:line opens in PhpStorm
 ```
 
 One self-contained page, readable from `file://`: the `dot --cached` picture rendered by Graphviz, whose `dot` must be
@@ -141,8 +142,11 @@ declarations are writes no warning names. Click a listed URI the picture draws t
 in the Warnings keeps the selection.
 
 The Warnings section starts collapsed, its summary counting the items listed; with none, "No warnings" shows as is.
-Each `file:line` opens the file at that line in PhpStorm (`phpstorm://open?file=…&line=…`) when the file resolves from
-the working directory `qr-graph` runs in; otherwise it is plain text.
+Each `file:line` is plain text by default, so the page carries no path of the machine that generated it and reads the
+same wherever it is built. With `--editor=phpstorm` (the only editor accepted for now; another value is a usage error,
+2), each one opens the file at that line in PhpStorm (`phpstorm://open?file=…&line=…`) when the file resolves from the
+working directory `qr-graph` runs in, and stays plain text otherwise. Such a link holds the generating machine's
+absolute path, so it works only there.
 
 ### `snapshot` — impacts to review as a diff
 

@@ -59,10 +59,11 @@ final class HtmlRenderer
     /**
      * @param list<Node>    $nodes     the whole graph: what is reached is computed on it, not only on what is drawn
      * @param list<Warning> $dependsOn listed with the other warnings
+     * @param string|null   $editor    a key of HtmlWarnings::EDITORS to link each `file:line` to; null for text
      *
      * @throws RuntimeException when the dot command cannot run or fails.
      */
-    public function __invoke(array $nodes, array $dependsOn): string
+    public function __invoke(array $nodes, array $dependsOn, string|null $editor = null): string
     {
         $dot = new DotRenderer();
         $drawn = $dot->cachedUris($nodes);
@@ -70,7 +71,7 @@ final class HtmlRenderer
 
         return strtr(self::PAGE, [
             '{{svg}}' => $drawn === [] ? self::NOTHING_CACHED : $this->svg($dot->cached($nodes)),
-            '{{warnings}}' => (new HtmlWarnings($nodes, $drawn))($dependsOn),
+            '{{warnings}}' => (new HtmlWarnings($nodes, $drawn, $editor))($dependsOn),
             '{{json}}' => $json,
         ]);
     }
