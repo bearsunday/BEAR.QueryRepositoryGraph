@@ -802,6 +802,16 @@ class QrGraphTest extends TestCase
         $this->assertSame([], self::at($glow, 'layout:L', 'writers'), 'w also reaches part a, so the layout, as a plain origin');
     }
 
+    public function testTheTableTakesItsOwnHeightAboveThePicture(): void
+    {
+        $layout = ['name' => 'L', 'class' => 'L', 'source' => 'l.php:1', 'embed' => [['rel' => 'a', 'uri' => 'page://self/a']]];
+        $nodes = [['uri' => 'page://self/p', 'source' => 'p.php:1', 'cacheable' => ['expiry' => 'never', 'expirySecond' => 0, 'expiryAt' => '', 'update' => false, 'type' => 'value'], 'layout' => $layout]];
+        $html = (new HtmlRenderer([PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo \'<svg width="100pt" height="50pt"><g/></svg>\';']))($nodes, []);
+
+        $this->assertStringContainsString('<svg width="100pt" height="124pt" viewBox="0 0 100 124"', $html, 'both heights and the gap between them');
+        $this->assertStringContainsString('<svg x="0" y="0" width="100" height="50"><g/></svg><svg x="0" y="74" width="100" height="50"><g/></svg>', $html, 'the picture starts below the table, in the outer viewBox units');
+    }
+
     public function testHtmlDrawsTheTableAboveThePictureWithTheIdsItLightsBy(): void
     {
         if ((string) shell_exec('command -v dot') === '') {
