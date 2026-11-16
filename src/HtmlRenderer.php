@@ -382,6 +382,7 @@ final class HtmlRenderer
   .layout-cell { transition: opacity .15s; }
   svg.lit .layout-cell { opacity: .22; }
   svg.lit .layout-cell.selected, svg.lit .layout-cell.reaches, svg.lit .layout-cell.reached-by { opacity: 1; }
+  svg.lit.layout-lit .layout-row { opacity: 1; }
   .layout-cell.reaches text { fill: var(--goes-stale); font-weight: bold; }
   .layout-cell.reached-by text { fill: var(--makes-stale); font-weight: bold; }
   .layout-cell.reached-by.writer text { fill: var(--write); }
@@ -438,6 +439,7 @@ CSS;
   layouts.rows.forEach(({ id, uri }) => {
     const g = cell(id);
     nodes.has(uri) ? twins.push([nodes.get(uri), g]) : nodes.set(uri, g);
+    g.classList.add('layout-row');
     rowCells.push(g);
     selects(g, uri);
     focusable(g, uri);
@@ -464,7 +466,8 @@ JS;
     twins.forEach(([node, row]) => ['selected', 'reaches', 'reached-by', 'writer']
       .forEach((name) => node.classList.contains(name) && row.classList.add(name)));
     heads.forEach(([head, pages]) => pages.includes(uri) && head.classList.add('reached-by'));
-    // A selected layout lights its column; the rows, its parts, stay as they are.
+    // A selected layout lights its column; the rows, its parts, stay as they are, neither lit nor dimmed.
+    svg.classList.toggle('layout-lit', labels.has(uri));
     if (labels.has(uri)) {
       rowCells.forEach((row) => row.classList.remove('reaches', 'reached-by', 'writer'));
     }
