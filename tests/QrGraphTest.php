@@ -899,6 +899,18 @@ class QrGraphTest extends TestCase
         $this->assertSame('', $out);
         $this->assertSame('skipped', array_key_first(self::jsonl($err)[0]));
         $this->assertStringContainsString('No resource classes found in tests/Fixture/Orphan/Resource', $this->lastError($err));
+
+        $dir = sys_get_temp_dir() . '/qr-graph-' . bin2hex(random_bytes(4));
+        mkdir($dir);
+        try {
+            file_put_contents($dir . '/Broken.php', '<?php class');
+            [$code, , $err] = self::qrGraph(['dump', '--dir=' . $dir]);
+            $this->assertSame(1, $code);
+            $this->assertSame("No resource classes found in {$dir}", $this->lastError($err), 'a file that ends at its class keyword declares nothing');
+        } finally {
+            @unlink($dir . '/Broken.php');
+            rmdir($dir);
+        }
     }
 
     public function testUnknownTargetUriIsAnErrorUnlessAllowed(): void
@@ -1052,7 +1064,7 @@ class QrGraphTest extends TestCase
         $this->assertStringContainsString('the writes that refresh it are onPost() whose arguments', $messages['app://self/post-only-list']);
         $this->assertStringContainsString('the writes that refresh it are onPost() whose arguments', $messages['app://self/donut-refresh-post-list'], 'its onPost() already has #[RefreshCache]');
         $this->assertStringContainsString('it is cached, but has no write method', $messages['app://self/no-write-list']);
-        $this->assertStringContainsString('it has no onGet() for a write to refresh', $messages['app://self/no-get-list'], 'its onPut() refreshes nothing');
+        $this->assertStringEndsWith('it has no onGet(), so no write refreshes it; name it in a #[Purge].', $messages['app://self/no-get-list'], 'its onPut() refreshes nothing, and a #[Refresh] of it fails at run time');
         $this->assertStringContainsString('the writes that refresh it are onPost() whose arguments', $messages['app://self/plain-refresh-list'], 'uncached, refreshed only by a #[RefreshCache] onPost() that is skipped');
         $this->assertStringContainsString('only when the write method carries #[RefreshCache] or #[CacheableResponse]', $messages['app://self/method-cached-list'], '#[CacheableResponse] on onGet() caches it, and binds no write');
     }

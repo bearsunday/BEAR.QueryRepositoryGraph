@@ -1,1 +1,11 @@
-Not PHP: the scan leaves this file alone.
+<?php
+
+// Not a .php file: the scan leaves this class alone.
+
+namespace BEAR\QueryRepositoryGraph\Fixture\Resource\Page;
+
+use BEAR\Resource\ResourceObject;
+
+class Notes extends ResourceObject
+{
+}

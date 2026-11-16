@@ -164,7 +164,7 @@ final class DependsOnWarnings
                 ...$warnings,
                 ['warning' => 'depends-on-never-invalidated'] + $where +
                 [
-                    'message' => sprintf('No write refreshes or purges %s: %s', $target['uri'], $refs[$targetKey]->hasMethod('onGet') ? self::refreshAdvice($byKey[$targetKey] ?? null) : 'it has no onGet() for a write to refresh; name it in a #[Purge]/#[Refresh].'),
+                    'message' => sprintf('No write refreshes or purges %s: %s', $target['uri'], $refs[$targetKey]->hasMethod('onGet') ? self::refreshAdvice($byKey[$targetKey] ?? null) : 'it has no onGet(), so no write refreshes it; name it in a #[Purge].'),
                 ],
             ];
         }
