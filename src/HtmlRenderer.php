@@ -11,6 +11,7 @@ use function array_keys;
 use function array_values;
 use function fclose;
 use function fwrite;
+use function getcwd;
 use function implode;
 use function json_encode;
 use function ksort;
@@ -51,9 +52,15 @@ final class HtmlRenderer
     private const NONE = ['nodes' => [], 'edges' => [], 'writes' => []];
     private const NOTHING_CACHED = '<p>Nothing is cached: no resource declares #[Cacheable], #[CacheableResponse] or #[DonutCache], so there is no picture. <code>qr-graph dot | dot -Tsvg</code> draws the whole graph.</p>';
 
-    /** @param non-empty-list<string> $dot the command that reads dot on stdin and writes SVG on stdout */
-    public function __construct(private readonly array $dot = ['dot', '-Tsvg'])
+    private readonly string $cwd;
+
+    /**
+     * @param non-empty-list<string> $dot the command that reads dot on stdin and writes SVG on stdout
+     * @param string|null            $cwd what a relative `file:line` is relative to; null for the working directory
+     */
+    public function __construct(private readonly array $dot = ['dot', '-Tsvg'], string|null $cwd = null)
     {
+        $this->cwd = $cwd ?? (string) getcwd();
     }
 
     /**
@@ -70,7 +77,7 @@ final class HtmlRenderer
 
         return strtr(self::PAGE, [
             '{{svg}}' => $drawn === [] ? self::NOTHING_CACHED : $this->svg($dot->cached($nodes)),
-            '{{warnings}}' => (new HtmlWarnings($nodes, $drawn))($dependsOn),
+            '{{warnings}}' => (new HtmlWarnings($nodes, $drawn, $this->cwd))($dependsOn),
             '{{json}}' => $json,
         ]);
     }
@@ -282,13 +289,15 @@ final class HtmlRenderer
   #status { color: #666; }
   main { padding: 16px; overflow: auto; }
   #warnings { padding: 4px 16px 24px; border-top: 1px solid #e4e4e4; }
-  #warnings h2 { font-size: 15px; margin: 8px 0; }
+  #warnings > details > summary, #warnings h2 { font-size: 15px; margin: 8px 0; }
   #warnings h3 { font-size: 13px; margin: 14px 0 2px; }
   #warnings p { margin: 0 0 4px; color: #666; }
   #warnings ul { margin: 0; padding-left: 18px; }
   #warnings li { margin: 3px 0; }
   #warnings a.uri { color: var(--selected); }
-  #warnings .source { color: #666; }
+  #warnings .source { color: #666; font-size: 11px; }
+  #warnings a.source { text-decoration: none; }
+  #warnings a.source:hover { text-decoration: underline; }
   #warnings .message { color: #444; }
   #warnings summary { margin-top: 14px; font-weight: bold; cursor: pointer; }
   svg .node { cursor: pointer; }

@@ -20,6 +20,7 @@ use function array_map;
 use function array_slice;
 use function array_unique;
 use function array_values;
+use function bin2hex;
 use function count;
 use function dirname;
 use function explode;
@@ -29,15 +30,23 @@ use function htmlspecialchars;
 use function is_array;
 use function json_decode;
 use function json_encode;
+use function mkdir;
 use function preg_match;
 use function preg_replace;
+use function random_bytes;
+use function rawurlencode;
+use function realpath;
 use function rewind;
+use function rmdir;
 use function shell_exec;
 use function sort;
 use function sprintf;
 use function stream_get_contents;
 use function substr_count;
+use function sys_get_temp_dir;
+use function touch;
 use function trim;
+use function unlink;
 
 use const JSON_THROW_ON_ERROR;
 use const LIBXML_NOERROR;
@@ -406,7 +415,7 @@ class QrGraphTest extends TestCase
         $this->assertSame(['app://self/ad-writer'], self::listed($html, 'writes-only'));
         $page = self::xpath($html);
         $this->assertSame('3', self::text($page, '//*[@data-kind="embeds-uncached"]//*[@class="count"]'));
-        $this->assertSame('Not drawn', self::text($page, '//details[not(@open)]/summary'), 'collapsed');
+        $this->assertSame('Not drawn', self::text($page, '//details[@data-kind="not-drawn"][not(@open)]/summary'), 'collapsed');
     }
 
     public function testHtmlAccountsForEveryScannedResource(): void
@@ -415,8 +424,8 @@ class QrGraphTest extends TestCase
             $nodes = self::nodes($dir);
             $page = self::xpath(self::warningsPage($dir));
             $drawn = array_keys((new DotRenderer())->cachedUris($nodes));
-            $warned = self::texts($page, '//section[@data-kind][not(ancestor::details)]//*[contains(@class, "uri")]');
-            $notDrawn = self::texts($page, '//details//*[contains(@class, "uri")]');
+            $warned = self::texts($page, '//section[@data-kind][not(ancestor::*[@data-kind="not-drawn"])]//*[contains(@class, "uri")]');
+            $notDrawn = self::texts($page, '//*[@data-kind="not-drawn"]//*[contains(@class, "uri")]');
             $scanned = array_column($nodes, 'uri');
             $accounted = array_values(array_unique(array_intersect([...$drawn, ...$warned, ...$notDrawn], $scanned)));
             sort($accounted);
@@ -433,12 +442,49 @@ class QrGraphTest extends TestCase
         $this->assertStringContainsString('Nothing is cached', $html);
     }
 
+    public function testHtmlWarningsStartCollapsed(): void
+    {
+        $page = self::xpath(self::warningsPage(self::WARNINGS));
+        $this->assertSame('Warnings (11)', self::text($page, '//*[@id="warnings"]/details[not(@open)]/summary'), 'the items the four groups list');
+    }
+
+    public function testHtmlSourcesOpenInPhpStorm(): void
+    {
+        $page = self::xpath(self::warningsPage(self::WARNINGS));
+        $source = self::elements($page, '//*[@data-kind="invalidates-no-cache"]//*[@class="source"]')[0];
+        $this->assertSame('tests/Fixture/HtmlWarnings/Resource/App/Editor.php:17', $source->textContent);
+        $this->assertSame('phpstorm://open?file=' . rawurlencode((string) realpath('tests/Fixture/HtmlWarnings/Resource/App/Editor.php')) . '&line=17', $source->getAttribute('href'));
+    }
+
+    public function testHtmlEscapesASourcePath(): void
+    {
+        $dir = sys_get_temp_dir() . '/qr-graph-' . bin2hex(random_bytes(4));
+        mkdir($dir);
+        $file = $dir . '/we"ird <&> #%.php';
+        touch($file);
+        try {
+            $nodes = [
+                ['uri' => 'app://self/odd', 'source' => $file . ':7'],
+                ['uri' => 'app://self/gone', 'source' => 'no/such/file.php:3'],
+            ];
+            $html = (new HtmlRenderer([PHP_BINARY, '-r', 'exit(1);']))($nodes, []);
+            $this->assertStringNotContainsString('<&>', $html);
+            $sources = self::elements(self::xpath($html), '//*[@class="source"]');
+            $this->assertSame([$file . ':7', 'no/such/file.php:3'], array_map(static fn (DOMElement $source): string => $source->textContent, $sources));
+            $this->assertSame('phpstorm://open?file=' . rawurlencode((string) realpath($file)) . '&line=7', $sources[0]->getAttribute('href'));
+            $this->assertSame(['a', 'span'], [$sources[0]->tagName, $sources[1]->tagName], 'a file that does not resolve stays text');
+        } finally {
+            unlink($file);
+            rmdir($dir);
+        }
+    }
+
     public function testHtmlSaysSoWhenNothingIsWarned(): void
     {
         $html = self::warningsPage('tests/Fixture/Html/Resource');
         $this->assertStringContainsString('No warnings', $html);
         $this->assertSame(0, substr_count($html, 'data-kind='));
-        $this->assertSame(0, substr_count($html, '<details'), 'everything is drawn');
+        $this->assertSame(0, substr_count($html, '<details'), 'nothing to collapse, everything is drawn');
     }
 
     public function testHtmlIsTheCachedPictureWithOrWithoutCached(): void

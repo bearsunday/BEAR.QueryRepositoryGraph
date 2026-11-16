@@ -140,6 +140,10 @@ that embed or are embedded only by resources not cached either, those that decla
 declarations are writes no warning names. Click a listed URI the picture draws to select it there; a click elsewhere
 in the Warnings keeps the selection.
 
+The Warnings section starts collapsed, its summary counting the items listed; with none, "No warnings" shows as is.
+Each `file:line` opens the file at that line in PhpStorm (`phpstorm://open?file=…&line=…`) when it resolves to a file
+relative to the working directory or as an absolute path; otherwise it is plain text.
+
 ### `snapshot` — impacts to review as a diff
 
 ```bash

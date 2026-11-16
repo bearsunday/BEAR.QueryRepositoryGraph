@@ -10,13 +10,19 @@ use function array_map;
 use function array_pop;
 use function array_values;
 use function count;
+use function ctype_digit;
 use function explode;
 use function htmlspecialchars;
 use function implode;
 use function in_array;
+use function preg_match;
+use function rawurlencode;
+use function realpath;
 use function sprintf;
 use function str_ends_with;
+use function strrpos;
 use function strval;
+use function substr;
 use function usort;
 
 use const ENT_HTML5;
@@ -42,8 +48,9 @@ final class HtmlWarnings
     /**
      * @param list<Node>          $nodes
      * @param array<string, true> $drawn the URIs the picture draws: an item naming one selects it
+     * @param string              $cwd   what a relative `file:line` is relative to
      */
-    public function __construct(private readonly array $nodes, private readonly array $drawn)
+    public function __construct(private readonly array $nodes, private readonly array $drawn, private readonly string $cwd)
     {
         $this->impact = new Impact($nodes);
         $this->converter = new UriConverter();
@@ -62,9 +69,11 @@ final class HtmlWarnings
             ['depends-on', '#[DependsOn] warnings', 'Every command also writes these on stderr.', array_map($this->dependsOnItem(...), $dependsOn)],
         ];
         $html = '';
+        $count = 0;
         $warned = [];
         foreach ($groups as [$kind, $title, $about, $items]) {
             $html .= self::group($kind, $title, $about, array_column($items, 0));
+            $count += count($items);
             foreach (array_column($items, 1) as $uris) {
                 foreach ($uris as $uri) {
                     $warned[$uri] = true;
@@ -72,9 +81,13 @@ final class HtmlWarnings
             }
         }
 
+        if ($html === '') {
+            return "<h2>Warnings</h2>\n<p>No warnings.</p>\n" . $this->notDrawn($warned);
+        }
+
         $premise = "<p>Read from the declarations alone: a dependency made only through a #[ResourceParam] read, a row class's #[DependsOn] or a template's resource() call is not seen, so check such a case at runtime before removing anything.</p>\n";
 
-        return "<h2>Warnings</h2>\n" . ($html === '' ? "<p>No warnings.</p>\n" : $premise . $html) . $this->notDrawn($warned);
+        return "<details>\n<summary>Warnings ({$count})</summary>\n" . $premise . $html . $this->notDrawn($warned) . "</details>\n";
     }
 
     /**
@@ -94,7 +107,7 @@ final class HtmlWarnings
                             continue;
                         }
 
-                        $html = $this->uri($uri) . " {$via} by " . $this->uri($node['uri']) . ' ' . self::code($name) . ' ' . self::source($method['source']);
+                        $html = $this->uri($uri) . " {$via} by " . $this->uri($node['uri']) . ' ' . self::code($name) . ' ' . $this->source($method['source']);
                         $items[$html] = [$html, [$uri, $node['uri']]];
                     }
                 }
@@ -112,7 +125,7 @@ final class HtmlWarnings
         foreach ($this->nodes as $node) {
             $onGet = $node['methods']['onGet'] ?? null;
             if (isset($onGet['dependsOn']) && ! isset($stored[$node['uri']])) {
-                $items[] = [$this->uri($node['uri']) . ' ' . self::source($onGet['source']), [$node['uri']]];
+                $items[] = [$this->uri($node['uri']) . ' ' . $this->source($onGet['source']), [$node['uri']]];
             }
         }
 
@@ -160,7 +173,7 @@ final class HtmlWarnings
                 foreach ($declared as $via => $targets) {
                     foreach ($targets as $target) {
                         if ($this->node($target['uri']) === null) {
-                            $named[$target['uri']][$via . $method['source']] = $via . ' ' . self::source($method['source']);
+                            $named[$target['uri']][$via . $method['source']] = $via . ' ' . $this->source($method['source']);
                         }
                     }
                 }
@@ -186,7 +199,7 @@ final class HtmlWarnings
     {
         $html = $this->uri($warning['resource']) . ' ' . self::code($warning['warning'])
             . (isset($warning['dependsOn']) ? ' ' . self::code($warning['dependsOn']) : '')
-            . ' ' . self::source($warning['source'])
+            . ' ' . $this->source($warning['source'])
             . '<div class="message">' . self::escape($warning['message']) . '</div>';
 
         return [$html, [$warning['resource']]];
@@ -217,14 +230,14 @@ final class HtmlWarnings
                 ! isset($node['methods']) => 'no-declarations',
                 default => 'writes-only',
             };
-            $lists[$kind][] = $this->uri($uri) . ' ' . self::source($node['source']);
+            $lists[$kind][] = $this->uri($uri) . ' ' . $this->source($node['source']);
         }
 
         $html = self::group('embeds-uncached', 'Embedded among uncached resources only', 'Not cached, and embeds or is embedded by resources that are not cached either.', $lists['embeds-uncached'])
             . self::group('no-declarations', 'No declarations', 'Declares nothing the cache acts on.', $lists['no-declarations'])
             . self::group('writes-only', 'Writes only', 'Not cached, and declares writes none of the warnings above names.', $lists['writes-only']);
 
-        return $html === '' ? '' : "<details>\n<summary>Not drawn</summary>\n{$html}</details>\n";
+        return $html === '' ? '' : "<details data-kind=\"not-drawn\">\n<summary>Not drawn</summary>\n{$html}</details>\n";
     }
 
     /**
@@ -277,9 +290,21 @@ final class HtmlWarnings
         return '<code>' . self::escape($text) . '</code>';
     }
 
-    private static function source(string $source): string
+    /** A `file:line` whose file resolves to an absolute path opens in PhpStorm */
+    private function source(string $source): string
     {
-        return '<span class="source">' . self::escape($source) . '</span>';
+        $escaped = self::escape($source);
+        $colon = (int) strrpos($source, ':');
+        $file = substr($source, 0, $colon);
+        $line = substr($source, $colon + 1);
+        $path = $colon > 0 && ctype_digit($line) ? realpath(preg_match('#^(/|[A-Za-z]:/)#', $file) === 1 ? $file : $this->cwd . '/' . $file) : false;
+        if ($path === false) {
+            return "<span class=\"source\">{$escaped}</span>";
+        }
+
+        $href = self::escape('phpstorm://open?file=' . rawurlencode($path) . '&line=' . $line);
+
+        return "<a class=\"source\" href=\"{$href}\">{$escaped}</a>";
     }
 
     private static function escape(string $text): string
