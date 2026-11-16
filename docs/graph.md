@@ -242,7 +242,8 @@ These leave the resource stale after a write to what it depends on:
   name or its snake_case form: otherwise the refresh is skipped for lack of them. This assumes the POST query uses
   the `onPost()` argument names. A resource cached by `#[DonutCache]`, or by `#[CacheableResponse]` on `onGet()`
   only, is refreshed only by a write method that carries `#[RefreshCache]` or `#[CacheableResponse]`.
-- `depends-on-tag-mismatch` — the tag the declaration expands to (its path as written, and its query keys) is none
+- `depends-on-tag-mismatch` — the tag the declaration expands to (its path as written, a trailing `/` read as its
+  `index`, and its query keys) is none
   of the tags a write purges. A write refreshes its own resource under the required `onGet()` parameters, as named
   or all in snake_case, at the resource's own path; a `#[Refresh]`/`#[Purge]` purges the URI it names.
 - `depends-on-bound-parameter` — a template variable is a parameter bound by a web-context attribute

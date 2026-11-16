@@ -499,7 +499,10 @@ class QrGraphTest extends TestCase
 
         $dir = '--dir=tests/Fixture/IndexSlash/Resource';
         [, $out] = self::qrGraph(['impact', 'app://self/blog/', $dir]);
-        $this->assertSame("app://self/blog/index\n  page://self/index (embed, cacheable, ttl: never)\n", $out);
+        $this->assertSame("app://self/blog/index\n  app://self/feed (dependsOn, cacheable, ttl: never)\n  page://self/index (embed, cacheable, ttl: never)\n", $out);
+
+        [, , $err] = self::qrGraph(['dump', $dir]);
+        $this->assertSame('', $err, 'feed depends on app://self/blog/, the tag writer purges as app://self/blog/index');
 
         // The cached index embeds app://self/blog/; writer purges it as app://self/blog/ and as app://self/blog/index.
         $this->assertSame([], self::listed(self::warningsPage('tests/Fixture/IndexSlash/Resource'), 'invalidates-no-cache'));
@@ -534,6 +537,15 @@ class QrGraphTest extends TestCase
                 rmdir($dir);
             }
         }
+    }
+
+    public function testHtmlKeepsAMachinePathOutWithoutAnEditor(): void
+    {
+        // A resource file outside the working directory keeps its absolute path in the graph.
+        $nodes = [['uri' => 'app://self/external', 'source' => '/opt/shared/External.php:7']];
+        $html = (new HtmlRenderer([PHP_BINARY, '-r', 'exit(1);']))($nodes, []);
+        $this->assertSame(['External.php:7'], self::texts(self::xpath($html), '//*[@class="source"]'));
+        $this->assertStringNotContainsString('/opt/shared', $html);
     }
 
     public function testHtmlSaysSoWhenNothingIsWarned(): void
