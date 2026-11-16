@@ -10,7 +10,6 @@ use function array_map;
 use function array_pop;
 use function array_values;
 use function count;
-use function ctype_digit;
 use function explode;
 use function htmlspecialchars;
 use function implode;
@@ -297,7 +296,7 @@ final class HtmlWarnings
         $colon = (int) strrpos($source, ':');
         $file = substr($source, 0, $colon);
         $line = substr($source, $colon + 1);
-        $path = $colon > 0 && ctype_digit($line) ? realpath(preg_match('#^(/|[A-Za-z]:/)#', $file) === 1 ? $file : $this->cwd . '/' . $file) : false;
+        $path = $colon > 0 && preg_match('/\A\d+\z/', $line) === 1 ? realpath(preg_match('#^(/|[A-Za-z]:/)#', $file) === 1 ? $file : $this->cwd . '/' . $file) : false;
         if ($path === false) {
             return "<span class=\"source\">{$escaped}</span>";
         }

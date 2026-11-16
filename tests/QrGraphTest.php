@@ -41,6 +41,7 @@ use function rmdir;
 use function shell_exec;
 use function sort;
 use function sprintf;
+use function str_replace;
 use function stream_get_contents;
 use function substr_count;
 use function sys_get_temp_dir;
@@ -51,6 +52,7 @@ use function unlink;
 use const JSON_THROW_ON_ERROR;
 use const LIBXML_NOERROR;
 use const PHP_BINARY;
+use const PHP_OS_FAMILY;
 
 /**
  * The declared cache graph of the fake application, as `qr-graph` prints it
@@ -458,24 +460,32 @@ class QrGraphTest extends TestCase
 
     public function testHtmlEscapesASourcePath(): void
     {
-        $dir = sys_get_temp_dir() . '/qr-graph-' . bin2hex(random_bytes(4));
-        mkdir($dir);
-        $file = $dir . '/we"ird <&> #%.php';
-        touch($file);
-        try {
-            $nodes = [
-                ['uri' => 'app://self/odd', 'source' => $file . ':7'],
-                ['uri' => 'app://self/gone', 'source' => 'no/such/file.php:3'],
-            ];
-            $html = (new HtmlRenderer([PHP_BINARY, '-r', 'exit(1);']))($nodes, []);
-            $this->assertStringNotContainsString('<&>', $html);
-            $sources = self::elements(self::xpath($html), '//*[@class="source"]');
-            $this->assertSame([$file . ':7', 'no/such/file.php:3'], array_map(static fn (DOMElement $source): string => $source->textContent, $sources));
-            $this->assertSame('phpstorm://open?file=' . rawurlencode((string) realpath($file)) . '&line=7', $sources[0]->getAttribute('href'));
-            $this->assertSame(['a', 'span'], [$sources[0]->tagName, $sources[1]->tagName], 'a file that does not resolve stays text');
-        } finally {
-            unlink($file);
-            rmdir($dir);
+        // Windows forbids `"`, `<` and `>` in a file name.
+        $names = PHP_OS_FAMILY === 'Windows' ? ["we'ird & #%.php"] : ["we'ird & #%.php", 'we"ird <&> #%.php'];
+        foreach ($names as $name) {
+            $dir = sys_get_temp_dir() . '/qr-graph-' . bin2hex(random_bytes(4));
+            mkdir($dir);
+            $file = $dir . '/' . $name;
+            touch($file);
+            try {
+                $path = realpath($file);
+                $this->assertIsString($path, $name);
+                // GraphBuilder writes every source with forward slashes.
+                $source = str_replace('\\', '/', $file) . ':7';
+                $nodes = [
+                    ['uri' => 'app://self/odd', 'source' => $source],
+                    ['uri' => 'app://self/gone', 'source' => 'no/such/file.php:3'],
+                ];
+                $html = (new HtmlRenderer([PHP_BINARY, '-r', 'exit(1);']))($nodes, []);
+                $this->assertStringNotContainsString($name, $html, 'escaped');
+                $sources = self::elements(self::xpath($html), '//*[@class="source"]');
+                $this->assertSame([$source, 'no/such/file.php:3'], array_map(static fn (DOMElement $element): string => $element->textContent, $sources), $name);
+                $this->assertSame('phpstorm://open?file=' . rawurlencode($path) . '&line=7', $sources[0]->getAttribute('href'), $name);
+                $this->assertSame(['a', 'span'], [$sources[0]->tagName, $sources[1]->tagName], 'a file that does not resolve stays text');
+            } finally {
+                unlink($file);
+                rmdir($dir);
+            }
         }
     }
 
