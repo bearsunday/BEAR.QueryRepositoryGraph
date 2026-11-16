@@ -535,6 +535,15 @@ class QrGraphTest extends TestCase
         }
     }
 
+    public function testHtmlKeepsAMachinePathOutWithoutAnEditor(): void
+    {
+        // A resource file outside the working directory keeps its absolute path in the graph.
+        $nodes = [['uri' => 'app://self/external', 'source' => '/opt/shared/External.php:7']];
+        $html = (new HtmlRenderer([PHP_BINARY, '-r', 'exit(1);']))($nodes, []);
+        $this->assertSame(['External.php:7'], self::texts(self::xpath($html), '//*[@class="source"]'));
+        $this->assertStringNotContainsString('/opt/shared', $html);
+    }
+
     public function testHtmlSaysSoWhenNothingIsWarned(): void
     {
         $html = self::warningsPage('tests/Fixture/Html/Resource');

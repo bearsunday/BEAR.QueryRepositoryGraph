@@ -9,6 +9,7 @@ use function array_keys;
 use function array_map;
 use function array_pop;
 use function array_values;
+use function basename;
 use function count;
 use function explode;
 use function htmlspecialchars;
@@ -301,7 +302,10 @@ final class HtmlWarnings
         $url = self::EDITORS[$this->editor ?? ''] ?? null;
         $path = $url !== null && $colon > 0 && preg_match('/\A\d+\z/', $line) === 1 ? realpath($file) : false;
         if ($url === null || $path === false) {
-            return "<span class=\"source\">{$escaped}</span>";
+            // A file outside the working directory keeps its absolute path in the graph: the page shows its name only.
+            $label = preg_match('#\A(/|[A-Za-z]:/)#', $file) === 1 ? self::escape(basename($file) . ':' . $line) : $escaped;
+
+            return "<span class=\"source\">{$label}</span>";
         }
 
         $href = self::escape(sprintf($url, rawurlencode($path), $line));
