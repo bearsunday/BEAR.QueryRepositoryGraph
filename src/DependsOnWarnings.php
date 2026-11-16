@@ -218,7 +218,7 @@ final class DependsOnWarnings
      */
     private function tagUri(array $target): string
     {
-        return $this->converter->resolve($target['template'] ?? $target['uri'], $target['uri'])['uri'];
+        return $this->converter->withoutQuery($target['template'] ?? $target['uri']);
     }
 
     /**

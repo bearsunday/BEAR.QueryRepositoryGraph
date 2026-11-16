@@ -10,7 +10,7 @@ class Liker extends ResourceObject
 {
     #[Purge(uri: 'app://self/counter')]
     #[Purge(uri: 'app://self/removed')]
-    #[Refresh(uri: 'page://self/')]
+    #[Refresh(uri: 'page://self/index')]
     public function onPost(): static
     {
         return $this;

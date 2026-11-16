@@ -48,8 +48,8 @@ v4 `dependsOn`, v5 dropped the source-text guesses, `dynamic` and the embed `usa
 - `uri` is `scheme://host/path` without query, exact-matchable everywhere it appears; `template` keeps the
   declaration as written when it differs, including another spelling of a resource's URI (`galleryArticle` is
   listed as `gallery-article`; a URI no scanned resource serves is listed by the first spelling the scan meets).
-  A URI ending in `/` names that path's `index`, as BEAR.Resource serves it: `page://self/` is listed as
-  `page://self/index`, in every command. The PHP class is not repeated: it follows from `uri` and `meta.namespaces`.
+  A URI ending in `/` is an error, in a declaration and as an argument: write the `index` it names
+  (`page://self/index` for `page://self/`). The PHP class is not repeated: it follows from `uri` and `meta.namespaces`.
 - `source` is `file:line`, to open the declaration.
 - `dependsOn` on `onGet` lists its `#[DependsOn]` declarations, including those on an `onGet()` it overrides.
   A declaration on a row class is not in the graph: see [what the graph does not know](#what-the-graph-does-not-know).
@@ -141,7 +141,8 @@ only declarations are writes no warning names. Click a listed URI the picture dr
 in the Warnings keeps the selection.
 
 The Warnings section starts collapsed, its summary counting the items listed; with none, "No warnings" shows as is.
-Each `file:line` is plain text by default, so the page carries no path of the machine that generated it and reads the
+Each `file:line` is plain text by default, relative to the working directory, or the file's name alone for a file
+outside it, so the page carries no path of the machine that generated it and reads the
 same wherever it is built. With `--editor=phpstorm` (the only editor accepted for now; another value is a usage error,
 2), each one opens the file at that line in PhpStorm (`phpstorm://open?file=…&line=…`) when the file resolves from the
 working directory `qr-graph` runs in, and stays plain text otherwise. Such a link holds the generating machine's
@@ -222,8 +223,7 @@ These leave the resource stale after a write to what it depends on:
   name or its snake_case form: otherwise the refresh is skipped for lack of them. This assumes the POST query uses
   the `onPost()` argument names. A resource cached by `#[DonutCache]`, or by `#[CacheableResponse]` on `onGet()`
   only, is refreshed only by a write method that carries `#[RefreshCache]` or `#[CacheableResponse]`.
-- `depends-on-tag-mismatch` — the tag the declaration expands to (its path as written, a trailing `/` read as its
-  `index`, and its query keys) is none
+- `depends-on-tag-mismatch` — the tag the declaration expands to (its path as written, and its query keys) is none
   of the tags a write purges. A write refreshes its own resource under the required `onGet()` parameters, as named
   or all in snake_case, at the resource's own path; a `#[Refresh]`/`#[Purge]` purges the URI it names.
 - `depends-on-bound-parameter` — a template variable is a parameter bound by a web-context attribute
