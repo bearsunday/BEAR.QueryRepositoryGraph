@@ -49,6 +49,7 @@ use const JSON_UNESCAPED_UNICODE;
 final class HtmlRenderer
 {
     private const NONE = ['nodes' => [], 'edges' => [], 'writes' => []];
+    private const JSON = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_THROW_ON_ERROR;
     private const NOTHING_CACHED = '<p>Nothing is cached: no resource declares #[Cacheable], #[CacheableResponse] or #[DonutCache], so there is no picture. <code>qr-graph dot | dot -Tsvg</code> draws the whole graph.</p>';
 
     /** @param non-empty-list<string> $dot the command that reads dot on stdin and writes SVG on stdout */
@@ -67,13 +68,20 @@ final class HtmlRenderer
     {
         $dot = new DotRenderer();
         $drawn = $dot->cachedUris($nodes);
-        $json = json_encode(self::glow($nodes), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_THROW_ON_ERROR);
+        $json = json_encode(self::glow($nodes), self::JSON);
+        $table = $dot->cachedTable($nodes);
+        $layout = $table->isEmpty() ? ['{{layoutCss}}' => '', '{{layoutData}}' => '', '{{layoutInit}}' => '', '{{layoutSelect}}' => ''] : [
+            '{{layoutCss}}' => self::LAYOUT_CSS,
+            '{{layoutData}}' => '<script type="application/json" id="qr-graph-layouts">' . json_encode($table->ids(), self::JSON) . "</script>\n",
+            '{{layoutInit}}' => self::LAYOUT_INIT,
+            '{{layoutSelect}}' => self::LAYOUT_SELECT,
+        ];
 
         return strtr(self::PAGE, [
             '{{svg}}' => $drawn === [] ? self::NOTHING_CACHED : $this->svg($dot->cached($nodes)),
             '{{warnings}}' => (new HtmlWarnings($nodes, $drawn, $editor))($dependsOn),
             '{{json}}' => $json,
-        ]);
+        ] + $layout);
     }
 
     /**
@@ -200,6 +208,10 @@ final class HtmlRenderer
                     $uris[$target['uri']] ??= [];
                 }
             }
+
+            foreach (Impact::layoutEmbeds($node) as $target) {
+                $uris[$target['uri']] ??= [];
+            }
         }
 
         return $uris;
@@ -262,6 +274,76 @@ final class HtmlRenderer
         return substr($svg, $start);
     }
 
+    private const LAYOUT_CSS = <<<'CSS'
+  svg.lit .node.layout-table { opacity: 1; }
+  .layout-cell { transition: opacity .15s; }
+  svg.lit .layout-cell { opacity: .22; }
+  svg.lit .layout-cell.selected, svg.lit .layout-cell.reaches, svg.lit .layout-cell.reached-by { opacity: 1; }
+  .layout-cell.reaches text { fill: var(--goes-stale); font-weight: bold; }
+  .layout-cell.reached-by text { fill: var(--makes-stale); font-weight: bold; }
+  .layout-cell.reached-by.writer text { fill: var(--write); }
+  .layout-cell.selected text { fill: var(--selected); font-weight: bold; }
+  .layout-cell:focus-visible { outline: 2px solid var(--selected); outline-offset: 2px; }
+
+CSS;
+
+    private const LAYOUT_INIT = "\n" . <<<'JS'
+  // The layout table lights cell by cell: a row is its part, a ● the arrows from that part to the pages carrying the
+  // column's layout. Graphviz names a cell's group `a_` and the cell's ID.
+  const layouts = JSON.parse(document.getElementById('qr-graph-layouts').textContent);
+  const table = nodes.get('layouts');
+  nodes.delete('layouts');
+  table.classList.add('layout-table');
+  ['tabindex', 'role', 'aria-label'].forEach((name) => table.removeAttribute(name));
+  const cell = (id) => {
+    const g = document.getElementById('a_' + id);
+    g.classList.add('layout-cell');
+    const box = g.getBBox();
+    const hit = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    Object.entries({ x: box.x - 6, y: box.y - 6, width: box.width + 12, height: box.height + 12, fill: 'transparent' })
+      .forEach(([name, value]) => hit.setAttribute(name, value));
+    g.insertBefore(hit, g.firstChild);
+    return g;
+  };
+  // A row or a ● selects the row's part; anywhere else in the table selects nothing.
+  const selects = (g, uri) => g.addEventListener('click', (event) => {
+    event.stopPropagation();
+    select(uri);
+  });
+  layouts.rows.forEach(({ id, uri }) => {
+    const g = cell(id);
+    nodes.set(uri, g);
+    selects(g, uri);
+    Object.entries({ tabindex: '0', role: 'button', 'aria-label': uri })
+      .forEach(([name, value]) => g.setAttribute(name, value));
+    g.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        event.stopPropagation();
+        select(uri);
+      }
+    });
+  });
+  layouts.cells.forEach(({ id, uri, pages }) => {
+    const g = cell(id);
+    selects(g, uri);
+    pages.forEach((page) => edges.set(uri + '->' + page, [...(edges.get(uri + '->' + page) ?? []), g]));
+  });
+  const heads = layouts.heads.map(({ id, pages }) => [cell(id), pages]);
+  // An arrow at a row is titled by the table; its id names its two ends.
+  svg.querySelectorAll('g.edge').forEach((g) => {
+    if (g.id.includes('->')) {
+      edges.set(g.id, [...(edges.get(g.id) ?? []), g]);
+    }
+  });
+
+JS;
+
+    private const LAYOUT_SELECT = <<<'JS'
+    heads.forEach(([head, pages]) => pages.includes(uri) && head.classList.add('reached-by'));
+
+JS;
+
     private const PAGE = <<<'HTML'
 <!DOCTYPE html>
 <html lang="en">
@@ -313,7 +395,7 @@ final class HtmlRenderer
   .edge.write.reaches path, .edge.write.reaches polygon { stroke: var(--write); }
   .edge.write.reached-by, .edge.write.reaches { filter: drop-shadow(0 0 3px var(--write)); }
   svg .node:focus-visible { outline: 2px solid var(--selected); outline-offset: 2px; }
-</style>
+{{layoutCss}}</style>
 </head>
 <body>
 <header>
@@ -330,7 +412,7 @@ final class HtmlRenderer
 {{warnings}}
 </section>
 <script type="application/json" id="qr-graph-data">{{json}}</script>
-<script>
+{{layoutData}}<script>
 (() => {
   const graph = JSON.parse(document.getElementById('qr-graph-data').textContent);
   const svg = document.querySelector('main svg');
@@ -361,7 +443,7 @@ final class HtmlRenderer
   svg.querySelectorAll('g.edge').forEach((g) => {
     edges.set(title(g), [...(edges.get(title(g)) ?? []), g]);
   });
-
+{{layoutInit}}
   const classes = ['selected', 'reaches', 'reached-by', 'writer', 'write'];
   let selected = null;
   const clear = () => {
@@ -393,7 +475,7 @@ final class HtmlRenderer
     light(sets.reachedBy, 'reached-by');
     sets.writers.forEach((writer) => nodes.get(writer)?.classList.add('writer'));
     nodes.get(uri).classList.add('selected');
-    status.textContent = uri;
+{{layoutSelect}}    status.textContent = uri;
     const writers = new Set(sets.writers);
     counts.reaches.textContent = `(${drawn(sets.reaches.nodes)})`;
     counts.reachedBy.textContent = `(${drawn(sets.reachedBy.nodes.filter((node) => !writers.has(node)))})`;

@@ -81,7 +81,7 @@ final class Observe
         $this->converter = new UriConverter();
         foreach ($nodes as $node) {
             $kind = isset($node['cacheableResponse']) || isset($node['donutCache']) ? 'donut' : 'embedded';
-            foreach ($node['methods']['onGet']['embed'] ?? [] as $embed) {
+            foreach ([...$node['methods']['onGet']['embed'] ?? [], ...Impact::layoutEmbeds($node)] as $embed) {
                 $this->declared[$this->converter->key($node['uri'])][$this->converter->key($embed['uri'])] = ['uri' => $embed['uri'], 'kind' => $kind];
             }
         }

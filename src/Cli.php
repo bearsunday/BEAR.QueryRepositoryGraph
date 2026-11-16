@@ -196,7 +196,7 @@ USAGE;
             'dump' => [
                 [
                     'meta' => [
-                        'version' => 5,
+                        'version' => 6,
                         'namespaces' => $graph['namespaces'],
                         'dir' => $options['dir'],
                         'counts' => self::counts($graph['nodes'], $skipped),
@@ -359,6 +359,7 @@ USAGE;
     {
         $edges = 0;
         foreach ($nodes as $node) {
+            $edges += count($node['layout']['embed'] ?? []);
             foreach ($node['methods'] ?? [] as $method) {
                 $edges += count($method['embed'] ?? []) + count($method['dependsOn'] ?? []) + count($method['refresh'] ?? []) + count($method['purge'] ?? []);
             }

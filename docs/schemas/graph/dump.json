@@ -16,7 +16,7 @@
                     "type": "object",
                     "required": ["version", "namespaces", "dir"],
                     "properties": {
-                        "version": {"const": 5},
+                        "version": {"const": 6},
                         "namespaces": {
                             "description": "URI host => PHP namespace. `page://self/html/blog-posting` is `{namespaces.self}\\Resource\\Page\\Html\\BlogPosting`.",
                             "type": "object",
@@ -76,6 +76,18 @@
                 "donutCache": {"description": "#[DonutCache] on the class.", "const": true},
                 "cacheableResponse": {"description": "#[CacheableResponse] on the class.", "const": true},
                 "httpCache": {"description": "The Cache-Control value #[HttpCache] or #[NoHttpCache] declares.", "type": "string"},
+                "layout": {
+                    "description": "The class attribute extending BEAR.Resource's AbstractResourceLayout. Its parts are embedded by onGet() as an #[Embed] is, except a `rel` an onGet() #[Embed] already declares.",
+                    "type": "object",
+                    "required": ["name", "class", "source", "embed"],
+                    "properties": {
+                        "name": {"description": "The attribute's short class name, as in `#[ContentPage]`.", "type": "string"},
+                        "class": {"type": "string"},
+                        "source": {"description": "Where the attribute class is declared.", "$ref": "#/$defs/source"},
+                        "embed": {"description": "embed() as declared, each URI resolved against this resource's.", "type": "array", "items": {"$ref": "#/$defs/embed"}}
+                    },
+                    "additionalProperties": false
+                },
                 "methods": {
                     "description": "Only methods that declare something the cache acts on, keyed by name, in declaration order.",
                     "type": "object",
@@ -93,16 +105,7 @@
                 "embed": {
                     "description": "#[Embed]: this resource depends on `uri`; invalidating `uri` invalidates this resource once the child's tags are on it.",
                     "type": "array",
-                    "items": {
-                        "type": "object",
-                        "required": ["rel", "uri"],
-                        "properties": {
-                            "rel": {"type": "string"},
-                            "uri": {"$ref": "#/$defs/uri"},
-                            "template": {"$ref": "#/$defs/template"}
-                        },
-                        "additionalProperties": false
-                    }
+                    "items": {"$ref": "#/$defs/embed"}
                 },
                 "dependsOn": {
                     "description": "#[DependsOn] on onGet(): the stored resource carries the exact tag of the URI the template expands to. A write that purges that same tag (same path as written, same query keys) invalidates this resource, and every page that took this resource's tags when it embedded it.",
@@ -119,6 +122,16 @@
                     "type": "array",
                     "items": {"$ref": "#/$defs/target"}
                 }
+            },
+            "additionalProperties": false
+        },
+        "embed": {
+            "type": "object",
+            "required": ["rel", "uri"],
+            "properties": {
+                "rel": {"type": "string"},
+                "uri": {"$ref": "#/$defs/uri"},
+                "template": {"$ref": "#/$defs/template"}
             },
             "additionalProperties": false
         },

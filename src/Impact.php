@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace BEAR\QueryRepositoryGraph;
 
+use function array_column;
+use function array_filter;
 use function array_shift;
+use function array_values;
+use function in_array;
 use function str_starts_with;
 
 /**
@@ -14,6 +18,7 @@ use function str_starts_with;
  * The shape is `docs/schemas/graph/impact.json`.
  *
  * @psalm-import-type Node from GraphBuilder
+ * @psalm-import-type EmbedTarget from GraphBuilder
  * @psalm-type ImpactLine = array{uri: string, via: string, by: string|null, depth: int, cached: bool, source: string|null}
  */
 final class Impact
@@ -43,6 +48,10 @@ final class Impact
                 foreach ($method['dependsOn'] ?? [] as $target) {
                     $this->dependedBy[$this->converter->key($target['uri'])][] = $node['uri'];
                 }
+            }
+
+            foreach (self::layoutEmbeds($node) as $embed) {
+                $this->embeddedBy[$this->converter->key($embed['uri'])][] = $node['uri'];
             }
         }
     }
@@ -120,6 +129,21 @@ final class Impact
         }
 
         return $targets;
+    }
+
+    /**
+     * The parts the resource's layout places in its body: each is embedded as an onGet() #[Embed] is, except a rel an
+     * onGet() #[Embed] already fills, which BEAR.Resource keeps
+     *
+     * @param Node $node
+     *
+     * @return list<EmbedTarget>
+     */
+    public static function layoutEmbeds(array $node): array
+    {
+        $taken = array_column($node['methods']['onGet']['embed'] ?? [], 'rel');
+
+        return array_values(array_filter($node['layout']['embed'] ?? [], static fn (array $embed): bool => ! in_array($embed['rel'], $taken, true)));
     }
 
     /**

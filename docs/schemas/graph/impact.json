@@ -8,7 +8,7 @@
     "properties": {
         "uri": {"type": "string"},
         "via": {
-            "description": "`target`: the URI asked about. `refresh`/`purge`: a target of the write method asked about. `embed`: embeds `by`. `dependsOn`: its onGet() declares #[DependsOn] on `by`; followed only from a `target`, `refresh` or `purge` line, since the declaration carries the exact tag of `by` and nothing `by` carries. Tags are not compared: a declaration that does not match what the write purges is warned on stderr and still listed.",
+            "description": "`target`: the URI asked about. `refresh`/`purge`: a target of the write method asked about. `embed`: embeds `by`, by an #[Embed] or by its resource layout. `dependsOn`: its onGet() declares #[DependsOn] on `by`; followed only from a `target`, `refresh` or `purge` line, since the declaration carries the exact tag of `by` and nothing `by` carries. Tags are not compared: a declaration that does not match what the write purges is warned on stderr and still listed.",
             "enum": ["target", "refresh", "purge", "embed", "dependsOn"]
         },
         "by": {"type": ["string", "null"]},

@@ -12,6 +12,7 @@ use BEAR\RepositoryModule\Annotation\DonutCache;
 use BEAR\RepositoryModule\Annotation\Purge;
 use BEAR\RepositoryModule\Annotation\Refresh;
 use BEAR\RepositoryModule\Annotation\RefreshCache;
+use BEAR\Resource\Annotation\AbstractResourceLayout;
 use BEAR\Resource\Annotation\Embed;
 use BEAR\Resource\ResourceObject;
 use ReflectionAttribute;
@@ -21,6 +22,7 @@ use RuntimeException;
 
 use function array_filter;
 use function array_values;
+use function count;
 use function getcwd;
 use function sprintf;
 use function str_replace;
@@ -36,8 +38,10 @@ use function usort;
  * The record's shape is the `resource` definition in `docs/schemas/graph/dump.json`.
  *
  * @psalm-type Target = array{uri: string, template?: string, implicit?: string}
- * @psalm-type Method = array{source: string, cacheableResponse?: true, embed?: list<array{rel: string, uri: string, template?: string}>, dependsOn?: list<array{uri: string, template?: string}>, refresh?: list<Target>, purge?: list<Target>}
- * @psalm-type Node = array{uri: string, source: string, cacheable?: array{expiry: string, expirySecond: int, expiryAt: string, update: bool, type: string}, donutCache?: true, cacheableResponse?: true, httpCache?: string, methods?: array<string, Method>}
+ * @psalm-type EmbedTarget = array{rel: string, uri: string, template?: string}
+ * @psalm-type Method = array{source: string, cacheableResponse?: true, embed?: list<EmbedTarget>, dependsOn?: list<array{uri: string, template?: string}>, refresh?: list<Target>, purge?: list<Target>}
+ * @psalm-type Layout = array{name: string, class: string, source: string, embed: list<EmbedTarget>}
+ * @psalm-type Node = array{uri: string, source: string, cacheable?: array{expiry: string, expirySecond: int, expiryAt: string, update: bool, type: string}, donutCache?: true, cacheableResponse?: true, httpCache?: string, layout?: Layout, methods?: array<string, Method>}
  * @SuppressWarnings("PHPMD.CouplingBetweenObjects")
  */
 final class GraphBuilder
@@ -116,6 +120,11 @@ final class GraphBuilder
     private function node(ReflectionClass $ref, string $uri): array
     {
         $node = ['uri' => $uri, 'source' => $this->source((string) $ref->getFileName(), (int) $ref->getStartLine())] + $this->classDeclarations($ref);
+        $layout = $this->layout($ref, $uri);
+        if ($layout !== null) {
+            $node['layout'] = $layout;
+        }
+
         $cacheable = isset($node['cacheable']);
         $classResponse = isset($node['cacheableResponse']);
 
@@ -171,6 +180,39 @@ final class GraphBuilder
         }
 
         return $declared;
+    }
+
+    /**
+     * @param ReflectionClass<ResourceObject> $ref
+     *
+     * @return Layout|null
+     *
+     * @throws RuntimeException when the class declares more than one layout, which BEAR.Resource rejects too.
+     */
+    private function layout(ReflectionClass $ref, string $uri): array|null
+    {
+        $attributes = $ref->getAttributes(AbstractResourceLayout::class, ReflectionAttribute::IS_INSTANCEOF);
+        if ($attributes === []) {
+            return null;
+        }
+
+        if (count($attributes) > 1) {
+            throw new RuntimeException(sprintf('%s has more than one layout', $ref->getName()));
+        }
+
+        $layout = $attributes[0]->newInstance();
+        $class = new ReflectionClass($layout);
+        $embed = [];
+        foreach ($layout->embed() as $rel => $src) {
+            $embed[] = ['rel' => $rel] + $this->target($src, $uri);
+        }
+
+        return [
+            'name' => $class->getShortName(),
+            'class' => $class->getName(),
+            'source' => $this->source((string) $class->getFileName(), (int) $class->getStartLine()),
+            'embed' => $embed,
+        ];
     }
 
     /** @return Method|null null when the method declares nothing the cache acts on */

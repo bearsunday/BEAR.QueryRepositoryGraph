@@ -22,7 +22,8 @@ use const ENT_XML1;
  *
  * Arrows point the way they are declared (a page to what it embeds, a resource to what it
  * depends on, a write to what it refreshes or purges). For the direction invalidation travels,
- * render with `edge [dir=back]`.
+ * render with `edge [dir=back]`. What resource layouts embed is one table, a layout per column and a part per row,
+ * not arrows.
  *
  * @psalm-import-type Node from GraphBuilder
  * @psalm-import-type Method from GraphBuilder
@@ -60,7 +61,19 @@ final class DotRenderer
             $uris[$uri] = true;
         }
 
-        return $uris;
+        return $uris + (new LayoutTable($drawn))->uris();
+    }
+
+    /**
+     * The layout table `cached()` draws
+     *
+     * @param list<Node> $nodes
+     *
+     * @internal
+     */
+    public function cachedTable(array $nodes): LayoutTable
+    {
+        return new LayoutTable(self::select($nodes, self::cachedAndInvalidators($nodes))[0]);
     }
 
     /**
@@ -70,19 +83,23 @@ final class DotRenderer
     private static function render(array $nodes, array|null $shown): string
     {
         [$drawn, $edges, $targets] = self::select($nodes, $shown);
+        $table = new LayoutTable($drawn);
 
         // A page nothing embeds is where a request starts: those line up in the leftmost column.
-        $entries = array_keys(array_filter($drawn, static fn (array $node): bool => self::scheme($node['uri']) === 'page' && ! isset($targets[$node['uri']])));
+        $entries = array_keys(array_filter($drawn, static fn (array $node): bool => self::scheme($node['uri']) === 'page' && ! isset($targets[$node['uri']]) && ! $table->has($node['uri'])));
         $lines = [
             'digraph qr {',
             '  rankdir=LR; nodesep=0.35; ranksep=1.1;',
             '  node [fontname="Helvetica", fontsize=13];',
             '  edge [fontname="Helvetica", fontsize=10, fontcolor="#333333", arrowhead=empty];',
-            ...self::nodeLines($drawn, array_keys($targets)),
+            ...($table->isEmpty() ? [] : ['  ' . $table->node()]),
+            ...self::nodeLines($drawn, array_keys($targets), $table),
         ];
         $edgeLines = [];
         foreach ($edges as [$from, $to, $attrs]) {
-            $edgeLines[] = sprintf('  %s -> %s [%s];', self::id($from), self::id($to), $attrs);
+            // The SVG title of an arrow at a row names the table, not the part: its id names both ends.
+            $id = $table->has($from) || $table->has($to) ? sprintf(', id="%s"', addcslashes($from . '->' . $to, '"\\')) : '';
+            $edgeLines[] = sprintf('  %s -> %s [%s%s];', self::end($from, 'e', $table), self::end($to, 'w', $table), $attrs, $id);
         }
 
         // Declarations that differ only in their query name the same resource: one arrow each.
@@ -128,29 +145,32 @@ final class DotRenderer
             }
         }
 
-        // A resource no arrow touches says nothing about cache dependencies, unless it is a cache no declared write invalidates.
-        $drawn = array_filter($drawn, static fn (array $node): bool => isset($touched[$node['uri']]) || Impact::isCached($node));
+        // A resource no arrow touches says nothing about cache dependencies, unless it is a cache no declared write
+        // invalidates, or carries a layout, which the layout table draws.
+        $drawn = array_filter($drawn, static fn (array $node): bool => isset($touched[$node['uri']]) || Impact::isCached($node) || isset($node['layout']));
 
         return [$drawn, $edges, $targets];
     }
 
     /**
-     * The scanned resources, then the URIs only an arrow names
+     * The scanned resources, then the URIs only an arrow names; a part of a layout is its table row instead
      *
      * @param array<string, Node> $drawn
      * @param list<string>        $targets
      *
      * @return list<string>
      */
-    private static function nodeLines(array $drawn, array $targets): array
+    private static function nodeLines(array $drawn, array $targets, LayoutTable $table): array
     {
         $lines = [];
         foreach ($drawn as $uri => $node) {
-            $lines[] = self::node($uri, $node);
+            if (! $table->has($uri)) {
+                $lines[] = self::node($uri, $node);
+            }
         }
 
         foreach ($targets as $uri) {
-            if (! isset($drawn[$uri])) {
+            if (! isset($drawn[$uri]) && ! $table->has($uri)) {
                 $lines[] = self::node($uri, null);
             }
         }
@@ -158,19 +178,28 @@ final class DotRenderer
         return $lines;
     }
 
+    /** @param 'e'|'w' $side */
+    private static function end(string $uri, string $side, LayoutTable $table): string
+    {
+        return $table->has($uri) ? $table->endpoint($uri, $side) : self::id($uri);
+    }
+
     /**
-     * A page is a grey box, any other resource bare text; the second row names the scheme and the cache it declares
+     * A page is a grey box, any other resource bare text; the second row names the scheme, the cache it declares and its layout
      *
      * @param Node|null $node null for a URI no scanned resource serves
      */
     private static function node(string $uri, array|null $node): string
     {
-        [$scheme, $host] = explode('://', $uri, 2) + [1 => ''];
-        $host = explode('/', $host, 2)[0];
-        $kind = $host === 'self' ? $scheme : $scheme . '://' . $host;
-        $cache = $node === null ? [] : Impact::caches($node);
-        if ($cache !== []) {
-            $kind .= ' (' . implode(', ', $cache) . ')';
+        $scheme = self::scheme($uri);
+        $kind = self::kind($uri);
+        $notes = $node === null ? [] : Impact::caches($node);
+        if (isset($node['layout'])) {
+            $notes[] = '#[' . $node['layout']['name'] . ']';
+        }
+
+        if ($notes !== []) {
+            $kind .= ' (' . implode(', ', $notes) . ')';
         }
 
         $label = sprintf(
@@ -190,7 +219,21 @@ final class DotRenderer
         return explode('://', $uri, 2)[0];
     }
 
-    private static function path(string $uri): string
+    /**
+     * The scheme, with the host when it is not `self`
+     *
+     * @internal
+     */
+    public static function kind(string $uri): string
+    {
+        [$scheme, $host] = explode('://', $uri, 2) + [1 => ''];
+        $host = explode('/', $host, 2)[0];
+
+        return $host === 'self' ? $scheme : $scheme . '://' . $host;
+    }
+
+    /** @internal */
+    public static function path(string $uri): string
     {
         return explode('/', explode('://', $uri, 2)[1] ?? '', 2)[1] ?? '';
     }
@@ -238,12 +281,15 @@ final class DotRenderer
 
         while ($pending !== []) {
             $uri = array_pop($pending);
+            $embeds = $byUri[$uri]['layout']['embed'] ?? [];
             foreach ($byUri[$uri]['methods'] ?? [] as $method) {
-                foreach ($method['embed'] ?? [] as $embed) {
-                    if (! isset($shown[$embed['uri']])) {
-                        $shown[$embed['uri']] = true;
-                        $pending[] = $embed['uri'];
-                    }
+                $embeds = [...$embeds, ...$method['embed'] ?? []];
+            }
+
+            foreach ($embeds as $embed) {
+                if (! isset($shown[$embed['uri']])) {
+                    $shown[$embed['uri']] = true;
+                    $pending[] = $embed['uri'];
                 }
             }
         }
