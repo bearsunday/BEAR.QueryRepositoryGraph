@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace BEAR\QueryRepositoryGraph;
 
 use BEAR\QueryRepositoryGraph\Fixture\Layout\Attribute\SearchPage;
+use BEAR\QueryRepositoryGraph\Fixture\Layout\Attribute\TopPage;
 use DOMDocument;
 use DOMElement;
 use DOMXPath;
@@ -679,11 +680,29 @@ class QrGraphTest extends TestCase
         $layouts = json_decode($match[1], true, 512, JSON_THROW_ON_ERROR);
         $this->assertContains(['id' => 'esi-esi-ranking', 'uri' => 'page://self/esi/ranking'], $layouts['rows']);
         $this->assertContains(['id' => 'cell-esi-footer-SearchPage', 'uri' => 'page://self/esi/footer', 'pages' => ['page://self/search']], $layouts['cells']);
-        $this->assertContains(['id' => 'layout-TopPage', 'pages' => ['page://self/index']], $layouts['heads']);
+        $this->assertContains(['id' => 'layout-TopPage', 'key' => 'layout:' . TopPage::class, 'pages' => ['page://self/index']], $layouts['heads']);
 
         $plain = self::warningsPage(self::WARNINGS);
         $this->assertStringNotContainsString('qr-graph-layouts', $plain, 'no table, no table data');
         $this->assertStringNotContainsString('{{', $plain);
+    }
+
+    public function testHtmlSelectsALayoutAsAResourceThatDependsOnItsParts(): void
+    {
+        $glow = self::glow(self::warningsPage(self::LAYOUT));
+        $topPage = 'layout:' . TopPage::class;
+        $this->assertSame(['page://self/index'], self::at($glow, $topPage, 'reaches', 'nodes'), 'it reaches the pages carrying it');
+        $this->assertSame(
+            ['app://self/ranking', 'app://self/ranking-editor', 'page://self/esi/header', 'page://self/esi/ranking'],
+            self::at($glow, $topPage, 'reachedBy', 'nodes'),
+            'its parts reach it, and what reaches them',
+        );
+        $this->assertContains(['page://self/esi/ranking', 'page://self/index'], (array) self::at($glow, $topPage, 'reachedBy', 'edges'), 'through the ● of each part');
+        $this->assertContains(['app://self/ranking-editor', 'app://self/ranking'], (array) self::at($glow, $topPage, 'reachedBy', 'writes'));
+        $this->assertSame(['app://self/ranking-editor'], self::at($glow, $topPage, 'writers'));
+
+        $searchPage = 'layout:' . SearchPage::class;
+        $this->assertNotContains('page://self/esi/header', (array) self::at($glow, $searchPage, 'reachedBy', 'nodes'), 'search fills the header rel with its own #[Embed]');
     }
 
     public function testHtmlDrawsTheTableAboveThePictureWithTheIdsItLightsBy(): void

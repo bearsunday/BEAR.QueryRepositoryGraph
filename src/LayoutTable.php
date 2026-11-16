@@ -30,7 +30,7 @@ use const ENT_XML1;
  * @internal
  * @psalm-import-type Node from GraphBuilder
  * @psalm-type Column = array{name: string, key: string, parts: array<string, true>, pages: list<string>}
- * @psalm-type Ids = array{rows: list<array{id: string, uri: string}>, cells: list<array{id: string, uri: string, pages: list<string>}>, heads: list<array{id: string, pages: list<string>}>}
+ * @psalm-type Ids = array{rows: list<array{id: string, uri: string}>, cells: list<array{id: string, uri: string, pages: list<string>}>, heads: list<array{id: string, key: string, pages: list<string>}>}
  */
 final class LayoutTable
 {
@@ -91,7 +91,12 @@ final class LayoutTable
         $corner = ($mixed ? '' : self::escape($kinds[0] ?? '')) . ($prefix === '' ? '' : '&nbsp;&nbsp;' . self::escape($prefix));
         $header = [sprintf('<TD ALIGN="LEFT" %s><FONT POINT-SIZE="10" COLOR="#999999">%s</FONT></TD>', self::line(false), $corner)];
         foreach ($this->columns as $column) {
-            $header[] = sprintf('<TD ID="layout-%s" TOOLTIP="#[%2$s]" %3$s><FONT COLOR="#3d2f7a">#[%2$s]</FONT></TD>', $column['key'], self::escape($column['name']), self::line(false));
+            $header[] = sprintf(
+                '<TD ID="layout-%s" TOOLTIP="#[%2$s]" %3$s><TABLE BORDER="0" CELLPADDING="6" BGCOLOR="#e8e8e8" STYLE="rounded"><TR><TD ALIGN="LEFT">#[%2$s]</TD></TR><TR><TD ALIGN="LEFT"><FONT POINT-SIZE="10" COLOR="#666666">layout</FONT></TD></TR></TABLE></TD>',
+                $column['key'],
+                self::escape($column['name']),
+                self::line(false),
+            );
         }
 
         $rows = ['<TR>' . implode('', $header) . '</TR>'];
@@ -113,7 +118,8 @@ final class LayoutTable
     }
 
     /**
-     * The cell IDs the page lights: each row stands for its part, each ● for the arrows from its part to the pages carrying its layout
+     * The cell IDs the page lights: each row stands for its part, each ● for the arrows from its part to the pages
+     * carrying its layout, each column head for its layout, selected by the head's `key` in the glow data
      *
      * @return Ids
      */
@@ -124,14 +130,20 @@ final class LayoutTable
             $ids['rows'][] = ['id' => 'esi-' . $key, 'uri' => $uri];
         }
 
-        foreach ($this->columns as $column) {
-            $ids['heads'][] = ['id' => 'layout-' . $column['key'], 'pages' => $column['pages']];
+        foreach ($this->columns as $class => $column) {
+            $ids['heads'][] = ['id' => 'layout-' . $column['key'], 'key' => self::key($class), 'pages' => $column['pages']];
             foreach (array_keys($column['parts']) as $uri) {
                 $ids['cells'][] = ['id' => sprintf('cell-%s-%s', $this->rows[$uri], $column['key']), 'uri' => $uri, 'pages' => $column['pages']];
             }
         }
 
         return $ids;
+    }
+
+    /** The layout's entry in the html page's glow data, next to the URIs' */
+    public static function key(string $class): string
+    {
+        return 'layout:' . $class;
     }
 
     /**

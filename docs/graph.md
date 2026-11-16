@@ -103,9 +103,10 @@ host when it is not `self`) and the cache attributes as declared: `page (cacheab
 `#[Cacheable]` expires by time, so only it shows a TTL.
 A resource no arrow touches is left out unless it is cached: then it shows a cache no declared write invalidates. A
 page carrying a layout is drawn as well.
-What layouts embed is one table rather than arrows: a column per layout (`#[ContentPage]`), a row per part, ● where
-the layout has the part. The top-left cell names the scheme the rows share and the directory they all start with,
-which the rows then leave out. A page names its layout after its cache: `page (cacheable response, #[ContentPage])`.
+What layouts embed is one table rather than arrows: a column per layout, headed like a page node (`#[ContentPage]`
+over `layout`), a row per part, ● where the layout has the part. The top-left cell names the scheme the rows share and
+the directory they all start with, which the rows then leave out. A page names its layout after its cache:
+`page (cacheable response, #[ContentPage])`.
 No arrow touches the table. A part with arrows of its own (a write that refreshes or purges it, its own `#[Embed]` or
 `#[DependsOn]`), or one cached and so drawn for itself, is also an ordinary node with those arrows; a part with none
 is its row only. The table goes in the leftmost rank, declared after every other node, which with `rankdir=LR` puts
@@ -135,7 +136,10 @@ resource and from each of its write methods that refresh or purge, with which st
 one shortest path per reached resource, as `impact` shows it; a resource's refresh of itself is not lit. The layout
 table is drawn apart, above the picture, so it is always at the top-left. A row and its ● cells select the row's part,
 and light the pages whose layout has it; a part drawn as a node too lights with its row. Selecting a page lights its
-layout's column head and the ● of the parts that reach it. The legend counts resources only, not cells.
+layout's column head and the ● of the parts that reach it. A column head selects its layout like a resource: the pages
+carrying it are what it invalidates; its parts, their ●, what reaches the parts and the writes to them are what
+invalidates it. The page's JSON holds each layout under `layout:<class>`. The legend counts resources only, not cells
+or column heads.
 
 Below the picture, Warnings lists the declarations that affect no cache, one group per kind, each item with the
 `file:line` that declares it; an empty group is left out. A declared URI ending in `/` names that path's `index`, as

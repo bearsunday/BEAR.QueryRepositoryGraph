@@ -176,9 +176,64 @@ final class HtmlRenderer
             ];
         }
 
+        $glow += self::layoutGlow($nodes, $reaches, $reachedBy, $from);
         ksort($glow);
 
         return $glow;
+    }
+
+    /**
+     * Each layout as a resource that depends on its parts: it reaches the pages carrying it and what they reach, and
+     * is reached by its parts, through their ● (`[part, page]`), and by what reaches them
+     *
+     * @param list<Node>                                                                                    $nodes
+     * @param array<string, Pending>                                                                        $reaches
+     * @param array<string, Pending>                                                                        $reachedBy
+     * @param array{plain: array<string, array<string, true>>, written: array<string, array<string, true>>} $from
+     *
+     * @return Glow
+     */
+    private static function layoutGlow(array $nodes, array $reaches, array $reachedBy, array $from): array
+    {
+        $layouts = [];
+        foreach ($nodes as $node) {
+            if (isset($node['layout'])) {
+                $layouts[$node['layout']['class']][] = $node;
+            }
+        }
+
+        $glow = [];
+        foreach ($layouts as $class => $carriers) {
+            $lit = ['reaches' => self::NONE, 'reachedBy' => self::NONE];
+            $writers = [];
+            foreach ($carriers as $node) {
+                $page = $node['uri'];
+                $lit['reaches'] = self::merge(self::add($lit['reaches'], $page, []), $reaches[$page] ?? self::NONE);
+                foreach (Impact::layoutEmbeds($node) as $embed) {
+                    $part = $embed['uri'];
+                    $lit['reachedBy'] = self::merge(self::add($lit['reachedBy'], $part, []), $reachedBy[$part] ?? self::NONE);
+                    $lit['reachedBy']['edges'][$part . ' ' . $page] = [$part, $page];
+                    $writers += array_diff_key($from['written'][$part] ?? [], $from['plain'][$part] ?? []);
+                }
+            }
+
+            $writers = array_keys($writers);
+            sort($writers);
+            $glow[LayoutTable::key($class)] = ['reaches' => self::lit($lit['reaches']), 'reachedBy' => self::lit($lit['reachedBy']), 'writers' => $writers];
+        }
+
+        return $glow;
+    }
+
+    /**
+     * @param Pending $into
+     * @param Pending $more
+     *
+     * @return Pending
+     */
+    private static function merge(array $into, array $more): array
+    {
+        return ['nodes' => $into['nodes'] + $more['nodes'], 'edges' => $into['edges'] + $more['edges'], 'writes' => $into['writes'] + $more['writes']];
     }
 
     /**
@@ -331,21 +386,28 @@ final class HtmlRenderer
   .layout-cell.reached-by text { fill: var(--makes-stale); font-weight: bold; }
   .layout-cell.reached-by.writer text { fill: var(--write); }
   .layout-cell.selected text { fill: var(--selected); font-weight: bold; }
-  .layout-cell:focus-visible { outline: 2px solid var(--selected); outline-offset: 2px; }
+  .layout-head { cursor: pointer; transition: opacity .15s; }
+  svg.lit .layout-head { opacity: .22; }
+  svg.lit .layout-head.selected, svg.lit .layout-head.reaches, svg.lit .layout-head.reached-by { opacity: 1; }
+  .layout-head.reached-by path { filter: drop-shadow(0 0 2px var(--makes-stale)) drop-shadow(0 0 6px var(--makes-stale)); }
+  .layout-head.reaches path { filter: drop-shadow(0 0 2px var(--goes-stale)) drop-shadow(0 0 6px var(--goes-stale)); }
+  .layout-head.selected path { filter: drop-shadow(0 0 2px var(--selected)) drop-shadow(0 0 8px var(--selected)); }
+  .layout-head.selected text:first-of-type { font-weight: bold; }
+  .layout-cell:focus-visible, .layout-head:focus-visible { outline: 2px solid var(--selected); outline-offset: 2px; }
 
 CSS;
 
     private const LAYOUT_INIT = "\n" . <<<'JS'
   // The layout table lights cell by cell: a row is its part, a ● the arrows from that part to the pages carrying the
-  // column's layout. Graphviz names a cell's group `a_` and the cell's ID.
+  // column's layout, a column head the layout. Graphviz names a cell's group `a_` and the cell's ID.
   const layouts = JSON.parse(document.getElementById('qr-graph-layouts').textContent);
   const table = nodes.get('layouts');
   nodes.delete('layouts');
   table.classList.add('layout-table');
   ['tabindex', 'role', 'aria-label'].forEach((name) => table.removeAttribute(name));
-  const cell = (id) => {
+  const cell = (id, kind = 'layout-cell') => {
     const g = document.getElementById('a_' + id);
-    g.classList.add('layout-cell');
+    g.classList.add(kind);
     const box = g.getBBox();
     const hit = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
     Object.entries({ x: box.x - 6, y: box.y - 6, width: box.width + 12, height: box.height + 12, fill: 'transparent' })
@@ -353,33 +415,42 @@ CSS;
     g.insertBefore(hit, g.firstChild);
     return g;
   };
-  // A row or a ● selects the row's part; anywhere else in the table selects nothing.
-  const selects = (g, uri) => g.addEventListener('click', (event) => {
+  // A row or a ● selects the row's part, a column head its layout; anywhere else in the table selects nothing.
+  const selects = (g, key) => g.addEventListener('click', (event) => {
     event.stopPropagation();
-    select(uri);
+    select(key);
   });
+  const focusable = (g, key) => {
+    Object.entries({ tabindex: '0', role: 'button', 'aria-label': key })
+      .forEach(([name, value]) => g.setAttribute(name, value));
+    g.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        event.stopPropagation();
+        select(key);
+      }
+    });
+  };
   // A part with arrows of its own is also a node: the node stands for it, and its row lights with it.
   const twins = [];
   layouts.rows.forEach(({ id, uri }) => {
     const g = cell(id);
     nodes.has(uri) ? twins.push([nodes.get(uri), g]) : nodes.set(uri, g);
     selects(g, uri);
-    Object.entries({ tabindex: '0', role: 'button', 'aria-label': uri })
-      .forEach(([name, value]) => g.setAttribute(name, value));
-    g.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        event.stopPropagation();
-        select(uri);
-      }
-    });
+    focusable(g, uri);
   });
   layouts.cells.forEach(({ id, uri, pages }) => {
     const g = cell(id);
     selects(g, uri);
     pages.forEach((page) => edges.set(uri + '->' + page, [...(edges.get(uri + '->' + page) ?? []), g]));
   });
-  const heads = layouts.heads.map(({ id, pages }) => [cell(id), pages]);
+  const heads = layouts.heads.map(({ id, key, pages }) => {
+    const g = cell(id, 'layout-head');
+    nodes.set(key, g);
+    selects(g, key);
+    focusable(g, key);
+    return [g, pages];
+  });
 
 JS;
 
