@@ -93,6 +93,7 @@ app://self/admin/article onPut
       page://self/author (embed, cacheable, ttl: medium)
     app://self/related (dependsOn, cacheable, ttl: never)
     app://self/tags (dependsOn, cacheable, ttl: never)
+      page://self/layout/pickup (embed, cacheable, ttl: short)
       page://self/tag (embed, cacheable, ttl: medium)
     page://self/article (embed, cacheable, ttl: medium)
   app://self/ranking (purge, cacheable, ttl: short)

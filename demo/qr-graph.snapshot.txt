@@ -8,6 +8,7 @@ app://self/article
   app://self/ranking (dependsOn, cacheable, ttl: short)
   app://self/related (dependsOn, cacheable, ttl: never)
   app://self/tags (dependsOn, cacheable, ttl: never)
+    page://self/layout/pickup (embed, cacheable, ttl: short)
     page://self/tag (embed, cacheable, ttl: medium)
   page://self/article (embed, cacheable, ttl: medium)
 
@@ -25,7 +26,12 @@ app://self/author
   page://self/author (embed, cacheable, ttl: medium)
 
 app://self/categories
-  page://self/index (embed, cacheable, ttl: short)
+  page://self/layout/nav (embed, cacheable, ttl: never)
+    page://self/article (embed, cacheable, ttl: medium)
+    page://self/author (embed, cacheable, ttl: medium)
+    page://self/category (embed, cacheable, ttl: medium)
+    page://self/index (embed, cacheable, ttl: short)
+    page://self/tag (embed, cacheable, ttl: medium)
 
 app://self/category
   page://self/category (embed, cacheable, ttl: medium)
@@ -43,14 +49,33 @@ app://self/tag
   page://self/tag (embed, cacheable, ttl: medium)
 
 app://self/tags
+  page://self/layout/pickup (embed, cacheable, ttl: short)
+    page://self/index (embed, cacheable, ttl: short)
+  page://self/tag (embed, cacheable, ttl: medium)
+
+page://self/layout/footer
+  page://self/article (embed, cacheable, ttl: medium)
+  page://self/author (embed, cacheable, ttl: medium)
+  page://self/category (embed, cacheable, ttl: medium)
   page://self/index (embed, cacheable, ttl: short)
   page://self/tag (embed, cacheable, ttl: medium)
+
+page://self/layout/nav
+  page://self/article (embed, cacheable, ttl: medium)
+  page://self/author (embed, cacheable, ttl: medium)
+  page://self/category (embed, cacheable, ttl: medium)
+  page://self/index (embed, cacheable, ttl: short)
+  page://self/tag (embed, cacheable, ttl: medium)
+
+page://self/layout/pickup
+  page://self/index (embed, cacheable, ttl: short)
 
 app://self/admin/article onDelete
   app://self/article (purge, cacheable, ttl: never)
     app://self/ranking (dependsOn, cacheable, ttl: short)
     app://self/related (dependsOn, cacheable, ttl: never)
     app://self/tags (dependsOn, cacheable, ttl: never)
+      page://self/layout/pickup (embed, cacheable, ttl: short)
       page://self/tag (embed, cacheable, ttl: medium)
     page://self/article (embed, cacheable, ttl: medium)
   app://self/articles (purge, cacheable, ttl: never)
@@ -68,6 +93,7 @@ app://self/admin/article onPost
     page://self/author (embed, cacheable, ttl: medium)
     page://self/index (embed, cacheable, ttl: short)
   app://self/tags (purge, cacheable, ttl: never)
+    page://self/layout/pickup (embed, cacheable, ttl: short)
     page://self/tag (embed, cacheable, ttl: medium)
 
 app://self/admin/article onPut
@@ -79,6 +105,7 @@ app://self/admin/article onPut
       page://self/author (embed, cacheable, ttl: medium)
     app://self/related (dependsOn, cacheable, ttl: never)
     app://self/tags (dependsOn, cacheable, ttl: never)
+      page://self/layout/pickup (embed, cacheable, ttl: short)
       page://self/tag (embed, cacheable, ttl: medium)
     page://self/article (embed, cacheable, ttl: medium)
   app://self/ranking (purge, cacheable, ttl: short)
