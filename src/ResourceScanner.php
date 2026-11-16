@@ -168,6 +168,7 @@ final class ResourceScanner
             }
         }
 
-        return null;
+        // Only a file that is not valid PHP ends right after a `class` token.
+        return null; // @codeCoverageIgnore
     }
 }

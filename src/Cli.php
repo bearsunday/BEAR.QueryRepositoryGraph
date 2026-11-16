@@ -10,7 +10,6 @@ use Throwable;
 
 use function array_keys;
 use function array_shift;
-use function class_exists;
 use function count;
 use function explode;
 use function fwrite;
@@ -380,17 +379,13 @@ USAGE;
         return str_starts_with($path, $root . '/') ? substr($path, strlen($root) + 1) : null;
     }
 
-    /** The installed package version, or "unknown" when this is not a composer install. */
+    /** The installed package version, or "unknown" when the autoloader in use does not list this package, as with a global install */
     private static function version(): string
     {
-        if (! class_exists('Composer\InstalledVersions')) {
-            return 'unknown';
-        }
-
         try {
             return InstalledVersions::getPrettyVersion('bear/query-repository-graph') ?? 'unknown';
-        } catch (Throwable) {
-            return 'unknown';
+        } catch (Throwable) { // @codeCoverageIgnore
+            return 'unknown'; // @codeCoverageIgnore
         }
     }
 }

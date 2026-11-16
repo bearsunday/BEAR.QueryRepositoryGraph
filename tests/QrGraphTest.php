@@ -116,6 +116,8 @@ class QrGraphTest extends TestCase
             $converter->resolve('app://self/user/friend?user_id={id}', 'app://self/user'),
         );
         $this->assertSame(['uri' => 'app://self/user/{id}'], $converter->resolve('app://self/user/{id}', 'app://self/user'));
+        $this->assertSame('typo', $converter->key('Typo'), 'an argument without a scheme is matched as written, case-insensitively');
+        $this->assertSame('app://self', $converter->key('App://Self'), 'so is one without a path');
     }
 
     public function testEveryLineMatchesItsSchema(): void
@@ -630,6 +632,30 @@ class QrGraphTest extends TestCase
         $this->assertStringContainsString('No write method onGet on page://self/dep/level-one', $err);
     }
 
+    public function testDumpRecordsTheAutoloadRelativeToTheWorkingDirectory(): void
+    {
+        foreach ([[getcwd() . '/vendor/autoload.php', 'vendor/autoload.php'], ['/elsewhere/vendor/autoload.php', null]] as [$autoload, $recorded]) {
+            $out = fopen('php://memory', 'w+');
+            $err = fopen('php://memory', 'w+');
+            $this->assertIsResource($out);
+            $this->assertIsResource($err);
+            $this->assertSame(0, (new Cli($autoload))(['dump', '--dir=tests/Fixture/Resource'], $out, $err));
+            rewind($out);
+            $this->assertSame($recorded, self::at(self::jsonl((string) stream_get_contents($out))[0], 'meta', 'autoload'), 'never a path outside the working directory');
+        }
+    }
+
+    public function testOneApplicationPerGraph(): void
+    {
+        [$code, $out, $err] = self::qrGraph(['dump', '--dir=tests/Fixture/TwoApps/Resource']);
+        $this->assertSame(0, $code, $err);
+        $this->assertSame(['page://self/index'], array_column(array_slice(self::jsonl($out), 1), 'uri'), 'a resource class directly in the Resource namespace names no scheme: no node');
+
+        [$code, , $err] = self::qrGraph(['dump', '--dir=tests/Fixture/TwoApps']);
+        $this->assertSame(1, $code);
+        $this->assertSame('One application per graph: found BEAR\QueryRepositoryGraph\Fixture\TwoApps\Other and BEAR\QueryRepositoryGraph\Fixture\TwoApps', $this->lastError($err));
+    }
+
     public function testNoResourceClassesIsAnError(): void
     {
         [$code, $out, $err] = self::qrGraph(['dump', '--dir=tests/Fixture/Orphan/Resource']);
@@ -774,6 +800,7 @@ class QrGraphTest extends TestCase
             ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/method-cached-list', 'dependsOn' => 'app://self/method-cached{?id}'],
             ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/mismatch', 'dependsOn' => 'app://self/article{?articleId}'],
             ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/mixed-keys', 'dependsOn' => 'app://self/camel-pair{?leftId,right_id}'],
+            ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/no-get-list', 'dependsOn' => 'app://self/no-get{?id}'],
             ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/no-write-list', 'dependsOn' => 'app://self/no-write{?id}'],
             ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/origin-by-id', 'dependsOn' => 'app://self/origin{?id}'],
             ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/plain-refresh-list', 'dependsOn' => 'app://self/plain-refresh{?id}'],
@@ -789,6 +816,7 @@ class QrGraphTest extends TestCase
         $this->assertStringContainsString('the writes that refresh it are onPost() whose arguments', $messages['app://self/post-only-list']);
         $this->assertStringContainsString('the writes that refresh it are onPost() whose arguments', $messages['app://self/donut-refresh-post-list'], 'its onPost() already has #[RefreshCache]');
         $this->assertStringContainsString('it is cached, but has no write method', $messages['app://self/no-write-list']);
+        $this->assertStringContainsString('it has no onGet() for a write to refresh', $messages['app://self/no-get-list'], 'its onPut() refreshes nothing');
         $this->assertStringContainsString('the writes that refresh it are onPost() whose arguments', $messages['app://self/plain-refresh-list'], 'uncached, refreshed only by a #[RefreshCache] onPost() that is skipped');
         $this->assertStringContainsString('only when the write method carries #[RefreshCache] or #[CacheableResponse]', $messages['app://self/method-cached-list'], '#[CacheableResponse] on onGet() caches it, and binds no write');
     }
@@ -910,6 +938,22 @@ class QrGraphTest extends TestCase
         [$code, , $err] = self::qrGraph(['observe', 'no/such/session.json', '--dir=tests/Fixture/Usage/Resource']);
         $this->assertSame(1, $code);
         $this->assertStringContainsString('No such session file or directory: no/such/session.json', $err);
+
+        $dir = sys_get_temp_dir() . '/qr-graph-' . bin2hex(random_bytes(4));
+        mkdir($dir);
+        try {
+            [$code, , $err] = self::qrGraph(['observe', $dir, '--dir=tests/Fixture/Usage/Resource']);
+            $this->assertSame(1, $code);
+            $this->assertSame("No session found in {$dir}", $this->lastError($err));
+
+            file_put_contents($dir . '/broken.json', '{"log":');
+            [$code, , $err] = self::qrGraph(['observe', $dir, '--dir=tests/Fixture/Usage/Resource']);
+            $this->assertSame(1, $code);
+            $this->assertStringStartsWith("{$dir}/broken.json: not JSON (", $this->lastError($err));
+        } finally {
+            @unlink($dir . '/broken.json');
+            rmdir($dir);
+        }
     }
 
     /** @return list<array{string, string, string}> page, child, verdict */
