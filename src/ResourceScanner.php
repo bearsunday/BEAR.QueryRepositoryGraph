@@ -100,11 +100,11 @@ final class ResourceScanner
             }
 
             if ($token[0] === T_NAMESPACE) {
-                $namespace = self::namespaceAfter($tokens, $i);
+                $namespace = $this->namespaceAfter($tokens, $i);
                 continue;
             }
 
-            $class = $token[0] === T_CLASS ? self::classDeclaredAt($tokens, $i) : null;
+            $class = $token[0] === T_CLASS ? $this->classDeclaredAt($tokens, $i) : null;
             if ($class !== null) {
                 $classes[] = ($namespace === '' ? '' : $namespace . '\\') . $class;
             }
@@ -114,7 +114,7 @@ final class ResourceScanner
     }
 
     /** @param list<string|array{0: int, 1: string, 2: int}> $tokens */
-    private static function namespaceAfter(array $tokens, int $i): string
+    private function namespaceAfter(array $tokens, int $i): string
     {
         $namespace = '';
         for ($j = $i + 1; isset($tokens[$j]); $j++) {
@@ -138,14 +138,14 @@ final class ResourceScanner
      *
      * @return string|null the name the `class` token at `$i` declares; null for `Foo::class` and an anonymous class
      */
-    private static function classDeclaredAt(array $tokens, int $i): string|null
+    private function classDeclaredAt(array $tokens, int $i): string|null
     {
-        $previous = self::adjacent($tokens, $i, -1);
+        $previous = $this->adjacent($tokens, $i, -1);
         if ($previous !== null && $previous[0] === T_DOUBLE_COLON) {
             return null;
         }
 
-        $next = self::adjacent($tokens, $i, 1);
+        $next = $this->adjacent($tokens, $i, 1);
 
         return $next !== null && $next[0] === T_STRING ? $next[1] : null;
     }
@@ -155,7 +155,7 @@ final class ResourceScanner
      *
      * @return array{0: int, 1: string, 2: int}|null the nearest token past whitespace in the direction of `$step`; null at a single-character token or the end
      */
-    private static function adjacent(array $tokens, int $i, int $step): array|null
+    private function adjacent(array $tokens, int $i, int $step): array|null
     {
         for ($j = $i + $step; isset($tokens[$j]); $j += $step) {
             $token = $tokens[$j];

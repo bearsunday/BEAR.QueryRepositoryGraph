@@ -56,7 +56,7 @@ final class HtmlRenderer
     private const NOTHING_CACHED = '<p>Nothing is cached: no resource declares #[Cacheable], #[CacheableResponse] or #[DonutCache], so there is no picture. <code>qr-graph dot | dot -Tsvg</code> draws the whole graph.</p>';
 
     /** @param non-empty-list<string> $dot the command that reads dot on stdin and writes SVG on stdout */
-    public function __construct(private readonly array $dot = ['dot', '-Tsvg'])
+    public function __construct(private readonly NodeDeclarationsInterface $declarations, private readonly array $dot = ['dot', '-Tsvg'])
     {
     }
 
@@ -69,10 +69,10 @@ final class HtmlRenderer
      */
     public function __invoke(array $nodes, array $dependsOn, string|null $editor = null): string
     {
-        $dot = new DotRenderer();
+        $dot = new DotRenderer($this->declarations);
         $drawn = $dot->cachedUris($nodes);
-        $json = json_encode(self::glow($nodes), self::JSON);
         $table = $dot->cachedTable($nodes);
+        $json = json_encode($this->glow($nodes, $table), self::JSON);
         $layout = $table->isEmpty() ? ['{{layoutCss}}' => '', '{{layoutData}}' => '', '{{layoutInit}}' => '', '{{layoutSelect}}' => ''] : [
             '{{layoutCss}}' => self::LAYOUT_CSS,
             '{{layoutData}}' => '<script type="application/json" id="qr-graph-layouts">' . json_encode($table->ids(), self::JSON) . "</script>\n",
@@ -82,7 +82,7 @@ final class HtmlRenderer
 
         return strtr(self::PAGE, [
             '{{svg}}' => $drawn === [] ? self::NOTHING_CACHED : $this->picture($dot, $table, $nodes),
-            '{{warnings}}' => (new HtmlWarnings($nodes, $drawn, $editor))($dependsOn),
+            '{{warnings}}' => (new HtmlWarnings($nodes, $drawn, $this->declarations, $editor))($dependsOn),
             '{{json}}' => $json,
         ] + $layout);
     }
@@ -98,15 +98,15 @@ final class HtmlRenderer
             return $this->svg($dot->cached($nodes));
         }
 
-        return self::stack($this->svg($table->graph()), $this->svg($dot->cachedGraph($nodes)));
+        return $this->stack($this->svg($table->graph()), $this->svg($dot->cachedGraph($nodes)));
     }
 
     /** The table's SVG at the top-left, the picture's below it, in one SVG: the page's script and styles act on one */
-    private static function stack(string $table, string $picture): string
+    private function stack(string $table, string $picture): string
     {
         $gap = 24.0;
-        [$tableWidth, $tableHeight, $table] = self::placed($table, 0.0);
-        [$width, $height, $picture] = self::placed($picture, $tableHeight + $gap);
+        [$tableWidth, $tableHeight, $table] = $this->placed($table, 0.0);
+        [$width, $height, $picture] = $this->placed($picture, $tableHeight + $gap);
 
         return sprintf(
             "<svg width=\"%1\$spt\" height=\"%2\$spt\" viewBox=\"0 0 %1\$s %2\$s\" xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\">\n%3\$s%4\$s</svg>\n",
@@ -122,7 +122,7 @@ final class HtmlRenderer
      *
      * @return array{float, float, string} the width and height, and the SVG placed `$top` points down
      */
-    private static function placed(string $svg, float $top): array
+    private function placed(string $svg, float $top): array
     {
         $root = '/^<svg width="([\d.]+)pt" height="([\d.]+)pt"/';
         if (preg_match($root, $svg, $size) !== 1) {
@@ -138,14 +138,15 @@ final class HtmlRenderer
      * (`writers`). Edges are `[by, uri]` of the impact lines on the way, one shortest path per reached URI and start;
      * `writes` are the edges that are a refresh or a purge.
      *
-     * @param list<Node> $nodes
+     * @param list<Node>  $nodes
+     * @param LayoutTable $table names each layout's entry in the glow data
      *
      * @return Glow
      */
-    private static function glow(array $nodes): array
+    private function glow(array $nodes, LayoutTable $table): array
     {
-        $impact = new Impact($nodes);
-        $uris = self::uris($nodes);
+        $impact = new Impact($nodes, $this->declarations);
+        $uris = $this->uris($nodes);
         $reaches = [];
         $reachedBy = [];
         // How each start reaches each URI: invalidated itself, or through one of its write methods.
@@ -157,9 +158,9 @@ final class HtmlRenderer
             }
 
             foreach ($starts as [$how, $lines]) {
-                foreach (self::paths($uri, $lines) as $reached => $path) {
-                    $reaches[$uri] = self::add($reaches[$uri] ?? self::NONE, $reached, [$path[0]]);
-                    $reachedBy[$reached] = self::add($reachedBy[$reached] ?? self::NONE, $uri, $path);
+                foreach ($this->paths($uri, $lines) as $reached => $path) {
+                    $reaches[$uri] = $this->add($reaches[$uri] ?? self::NONE, $reached, [$path[0]]);
+                    $reachedBy[$reached] = $this->add($reachedBy[$reached] ?? self::NONE, $uri, $path);
                     $from[$how][$reached][$uri] = true;
                 }
             }
@@ -170,13 +171,13 @@ final class HtmlRenderer
             $writers = array_keys(array_diff_key($from['written'][$uri] ?? [], $from['plain'][$uri] ?? []));
             sort($writers);
             $glow[$uri] = [
-                'reaches' => self::lit($reaches[$uri] ?? self::NONE),
-                'reachedBy' => self::lit($reachedBy[$uri] ?? self::NONE),
+                'reaches' => $this->lit($reaches[$uri] ?? self::NONE),
+                'reachedBy' => $this->lit($reachedBy[$uri] ?? self::NONE),
                 'writers' => $writers,
             ];
         }
 
-        $glow += self::layoutGlow($nodes, $reaches, $reachedBy, $from);
+        $glow += $this->layoutGlow($nodes, $reaches, $reachedBy, $from, $table);
         ksort($glow);
 
         return $glow;
@@ -193,7 +194,7 @@ final class HtmlRenderer
      *
      * @return Glow
      */
-    private static function layoutGlow(array $nodes, array $reaches, array $reachedBy, array $from): array
+    private function layoutGlow(array $nodes, array $reaches, array $reachedBy, array $from, LayoutTable $table): array
     {
         $layouts = [];
         foreach ($nodes as $node) {
@@ -210,10 +211,10 @@ final class HtmlRenderer
             $plain = [];
             foreach ($carriers as $node) {
                 $page = $node['uri'];
-                $lit['reaches'] = self::merge(self::add($lit['reaches'], $page, []), $reaches[$page] ?? self::NONE);
-                foreach (Impact::layoutEmbeds($node) as $embed) {
+                $lit['reaches'] = $this->merge($this->add($lit['reaches'], $page, []), $reaches[$page] ?? self::NONE);
+                foreach ($this->declarations->layoutEmbeds($node) as $embed) {
                     $part = $embed['uri'];
-                    $lit['reachedBy'] = self::merge(self::add($lit['reachedBy'], $part, []), $reachedBy[$part] ?? self::NONE);
+                    $lit['reachedBy'] = $this->merge($this->add($lit['reachedBy'], $part, []), $reachedBy[$part] ?? self::NONE);
                     $lit['reachedBy']['edges'][$part . ' ' . $page] = [$part, $page];
                     $written += $from['written'][$part] ?? [];
                     $plain += [$part => true] + ($from['plain'][$part] ?? []);
@@ -222,7 +223,7 @@ final class HtmlRenderer
 
             $writers = array_keys(array_diff_key($written, $plain));
             sort($writers);
-            $glow[LayoutTable::key($class)] = ['reaches' => self::lit($lit['reaches']), 'reachedBy' => self::lit($lit['reachedBy']), 'writers' => $writers];
+            $glow[$table->key($class)] = ['reaches' => $this->lit($lit['reaches']), 'reachedBy' => $this->lit($lit['reachedBy']), 'writers' => $writers];
         }
 
         return $glow;
@@ -234,7 +235,7 @@ final class HtmlRenderer
      *
      * @return Pending
      */
-    private static function merge(array $into, array $more): array
+    private function merge(array $into, array $more): array
     {
         return ['nodes' => $into['nodes'] + $more['nodes'], 'edges' => $into['edges'] + $more['edges'], 'writes' => $into['writes'] + $more['writes']];
     }
@@ -244,7 +245,7 @@ final class HtmlRenderer
      *
      * @return array<string, non-empty-list<ImpactLine>> each URI the lines reach, with the lines from it back to `$start`
      */
-    private static function paths(string $start, array $lines): array
+    private function paths(string $start, array $lines): array
     {
         $byUri = [];
         foreach ($lines as $line) {
@@ -274,7 +275,7 @@ final class HtmlRenderer
      *
      * @return Pending
      */
-    private static function add(array $lit, string $node, array $steps): array
+    private function add(array $lit, string $node, array $steps): array
     {
         $lit['nodes'][$node] = true;
         foreach ($steps as $step) {
@@ -296,7 +297,7 @@ final class HtmlRenderer
      *
      * @return array<string, list<string>>
      */
-    private static function uris(array $nodes): array
+    private function uris(array $nodes): array
     {
         $uris = [];
         foreach ($nodes as $node) {
@@ -315,7 +316,7 @@ final class HtmlRenderer
                 }
             }
 
-            foreach (Impact::layoutEmbeds($node) as $target) {
+            foreach ($this->declarations->layoutEmbeds($node) as $target) {
                 $uris[$target['uri']] ??= [];
             }
         }
@@ -328,7 +329,7 @@ final class HtmlRenderer
      *
      * @return Lit
      */
-    private static function lit(array $pending): array
+    private function lit(array $pending): array
     {
         ksort($pending['nodes']);
         ksort($pending['edges']);

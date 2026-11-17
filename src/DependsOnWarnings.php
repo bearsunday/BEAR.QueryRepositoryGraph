@@ -44,7 +44,7 @@ final class DependsOnWarnings
 {
     private readonly UriConverter $converter;
 
-    public function __construct()
+    public function __construct(private readonly NodeDeclarationsInterface $declarations)
     {
         $this->converter = new UriConverter();
     }
@@ -164,7 +164,7 @@ final class DependsOnWarnings
                 ...$warnings,
                 ['warning' => 'depends-on-never-invalidated'] + $where +
                 [
-                    'message' => sprintf('No write refreshes or purges %s: %s', $target['uri'], $refs[$targetKey]->hasMethod('onGet') ? self::refreshAdvice($byKey[$targetKey] ?? null) : 'it has no onGet(), so no write refreshes it; name it in a #[Purge].'),
+                    'message' => sprintf('No write refreshes or purges %s: %s', $target['uri'], $refs[$targetKey]->hasMethod('onGet') ? $this->refreshAdvice($byKey[$targetKey] ?? null) : 'it has no onGet(), so no write refreshes it; name it in a #[Purge].'),
                 ],
             ];
         }
@@ -172,7 +172,7 @@ final class DependsOnWarnings
         $declared = ['uri' => $this->tagUri($target), 'keys' => $this->queryKeys($template)];
         if (! in_array($declared, $candidates, true)) {
             $warnings[] = ['warning' => 'depends-on-tag-mismatch'] + $where + [
-                'message' => sprintf('The tag is %s, but writes purge %s.', self::describe($declared), implode(', ', array_unique(array_map(self::describe(...), $candidates)))),
+                'message' => sprintf('The tag is %s, but writes purge %s.', $this->describe($declared), implode(', ', array_unique(array_map($this->describe(...), $candidates)))),
             ];
         }
 
@@ -184,7 +184,7 @@ final class DependsOnWarnings
      *
      * @param Node|null $node
      */
-    private static function refreshAdvice(array|null $node): string
+    private function refreshAdvice(array|null $node): string
     {
         foreach ($node['methods'] ?? [] as $method) {
             foreach ($method['refresh'] ?? [] as $target) {
@@ -194,7 +194,7 @@ final class DependsOnWarnings
             }
         }
 
-        if ($node === null || ! Impact::isCached($node)) {
+        if ($node === null || ! $this->declarations->isCached($node)) {
             return 'make it #[Cacheable], or name it in a #[Purge]/#[Refresh].';
         }
 
@@ -206,7 +206,7 @@ final class DependsOnWarnings
     }
 
     /** @param Purged $tag */
-    private static function describe(array $tag): string
+    private function describe(array $tag): string
     {
         return sprintf('%s?[%s]', $tag['uri'], implode(', ', $tag['keys']));
     }

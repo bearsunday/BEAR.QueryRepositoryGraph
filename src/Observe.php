@@ -74,12 +74,12 @@ final class Observe
     public bool $sawSkipped = false;
 
     /** @param list<Node> $nodes */
-    public function __construct(array $nodes)
+    public function __construct(array $nodes, NodeDeclarationsInterface $declarations)
     {
         $this->converter = new UriConverter();
         foreach ($nodes as $node) {
             $kind = isset($node['cacheableResponse']) || isset($node['donutCache']) ? 'donut' : 'embedded';
-            foreach ([...$node['methods']['onGet']['embed'] ?? [], ...Impact::layoutEmbeds($node)] as $embed) {
+            foreach ([...$node['methods']['onGet']['embed'] ?? [], ...$declarations->layoutEmbeds($node)] as $embed) {
                 $this->declared[$this->converter->key($node['uri'])][$this->converter->key($embed['uri'])] = ['uri' => $embed['uri'], 'kind' => $kind];
             }
         }

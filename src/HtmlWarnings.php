@@ -53,9 +53,13 @@ final class HtmlWarnings
      * @param array<string, true> $drawn  the URIs the picture draws: an item naming one selects it
      * @param string|null         $editor a key of EDITORS; null keeps each `file:line` text, so the page carries no absolute path
      */
-    public function __construct(private readonly array $nodes, private readonly array $drawn, private readonly string|null $editor = null)
-    {
-        $this->impact = new Impact($nodes);
+    public function __construct(
+        private readonly array $nodes,
+        private readonly array $drawn,
+        private readonly NodeDeclarationsInterface $declarations,
+        private readonly string|null $editor = null,
+    ) {
+        $this->impact = new Impact($nodes, $declarations);
         $this->converter = new UriConverter();
         foreach ($nodes as $node) {
             $this->byKey[$this->converter->key($node['uri'])] = $node;
@@ -75,7 +79,7 @@ final class HtmlWarnings
         $count = 0;
         $warned = [];
         foreach ($groups as [$kind, $title, $about, $items]) {
-            $html .= self::group($kind, $title, $about, array_column($items, 0));
+            $html .= $this->group($kind, $title, $about, array_column($items, 0));
             $count += count($items);
             foreach (array_column($items, 1) as $uris) {
                 foreach ($uris as $uri) {
@@ -106,11 +110,11 @@ final class HtmlWarnings
                 foreach (['refresh' => $method['refresh'] ?? [], 'purge' => $method['purge'] ?? []] as $via => $targets) {
                     foreach ($targets as $target) {
                         $uri = $this->node($target['uri'])['uri'] ?? $target['uri'];
-                        if (isset($target['implicit']) || ! self::isSelf($uri) || self::reachesCache(($this->impact)($uri))) {
+                        if (isset($target['implicit']) || ! $this->isSelf($uri) || $this->reachesCache(($this->impact)($uri))) {
                             continue;
                         }
 
-                        $html = $this->uri($uri) . " {$via} by " . $this->uri($node['uri']) . ' ' . self::code($name) . ' ' . $this->source($method['source']);
+                        $html = $this->uri($uri) . " {$via} by " . $this->uri($node['uri']) . ' ' . $this->code($name) . ' ' . $this->source($method['source']);
                         $items[$html] = [$html, [$uri, $node['uri']]];
                     }
                 }
@@ -141,14 +145,14 @@ final class HtmlWarnings
         $stored = [];
         $pending = [];
         foreach ($this->nodes as $node) {
-            if (Impact::isCached($node)) {
+            if ($this->declarations->isCached($node)) {
                 $stored[$node['uri']] = true;
                 $pending[] = $node;
             }
         }
 
         while (($node = array_pop($pending)) !== null) {
-            foreach (self::embeds($node) as $embed) {
+            foreach ($this->embeds($node) as $embed) {
                 $child = $this->node($embed['uri']);
                 if ($child !== null && ! isset($stored[$child['uri']])) {
                     $stored[$child['uri']] = true;
@@ -167,9 +171,9 @@ final class HtmlWarnings
      *
      * @return list<EmbedTarget>
      */
-    private static function embeds(array $node): array
+    private function embeds(array $node): array
     {
-        $embeds = Impact::layoutEmbeds($node);
+        $embeds = $this->declarations->layoutEmbeds($node);
         foreach ($node['methods'] ?? [] as $method) {
             $embeds = [...$embeds, ...$method['embed'] ?? []];
         }
@@ -197,7 +201,7 @@ final class HtmlWarnings
                 }
             }
 
-            foreach (Impact::layoutEmbeds($node) as $embed) {
+            foreach ($this->declarations->layoutEmbeds($node) as $embed) {
                 $source = $node['layout']['source'] ?? '';
                 if ($this->node($embed['uri']) === null) {
                     $named[$embed['uri']]['layout' . $source] = 'layout ' . $this->source($source);
@@ -206,10 +210,10 @@ final class HtmlWarnings
         }
 
         $uris = array_map(strval(...), array_keys($named));
-        usort($uris, static fn (string $left, string $right): int => [! self::isSelf($left), $left] <=> [! self::isSelf($right), $right]);
+        usort($uris, fn (string $left, string $right): int => [! $this->isSelf($left), $left] <=> [! $this->isSelf($right), $right]);
         $items = [];
         foreach ($uris as $uri) {
-            $items[] = [$this->uri($uri) . (self::isSelf($uri) ? '' : ' (another application)') . ' ' . implode(', ', $named[$uri]), [$uri]];
+            $items[] = [$this->uri($uri) . ($this->isSelf($uri) ? '' : ' (another application)') . ' ' . implode(', ', $named[$uri]), [$uri]];
         }
 
         return $items;
@@ -222,10 +226,10 @@ final class HtmlWarnings
      */
     private function dependsOnItem(array $warning): array
     {
-        $html = $this->uri($warning['resource']) . ' ' . self::code($warning['warning'])
-            . (isset($warning['dependsOn']) ? ' ' . self::code($warning['dependsOn']) : '')
+        $html = $this->uri($warning['resource']) . ' ' . $this->code($warning['warning'])
+            . (isset($warning['dependsOn']) ? ' ' . $this->code($warning['dependsOn']) : '')
             . ' ' . $this->source($warning['source'])
-            . '<div class="message">' . self::escape($warning['message']) . '</div>';
+            . '<div class="message">' . $this->escape($warning['message']) . '</div>';
 
         return [$html, [$warning['resource']]];
     }
@@ -235,7 +239,7 @@ final class HtmlWarnings
     {
         $embedding = [];
         foreach ($this->nodes as $node) {
-            foreach (self::embeds($node) as $embed) {
+            foreach ($this->embeds($node) as $embed) {
                 $embedding[$node['uri']] = true;
                 $embedding[$this->node($embed['uri'])['uri'] ?? $embed['uri']] = true;
             }
@@ -256,9 +260,9 @@ final class HtmlWarnings
             $lists[$kind][] = $this->uri($uri) . ' ' . $this->source($node['source']);
         }
 
-        $html = self::group('embeds-uncached', 'Not embedded by a cache', 'Not cached, and no cached resource embeds it, directly or not.', $lists['embeds-uncached'])
-            . self::group('no-declarations', 'No declarations', 'Declares nothing the cache acts on.', $lists['no-declarations'])
-            . self::group('writes-only', 'Writes only', 'Not cached, and declares writes none of the warnings above names.', $lists['writes-only']);
+        $html = $this->group('embeds-uncached', 'Not embedded by a cache', 'Not cached, and no cached resource embeds it, directly or not.', $lists['embeds-uncached'])
+            . $this->group('no-declarations', 'No declarations', 'Declares nothing the cache acts on.', $lists['no-declarations'])
+            . $this->group('writes-only', 'Writes only', 'Not cached, and declares writes none of the warnings above names.', $lists['writes-only']);
 
         return $html === '' ? '' : "<details data-kind=\"not-drawn\">\n<summary>Not drawn</summary>\n{$html}</details>\n";
     }
@@ -274,18 +278,18 @@ final class HtmlWarnings
     }
 
     /** @param list<ImpactLine> $lines */
-    private static function reachesCache(array $lines): bool
+    private function reachesCache(array $lines): bool
     {
         return in_array(true, array_column($lines, 'cached'), true);
     }
 
-    private static function isSelf(string $uri): bool
+    private function isSelf(string $uri): bool
     {
         return explode('/', explode('://', $uri, 2)[1] ?? '', 2)[0] === 'self';
     }
 
     /** @param list<string> $items each item's HTML */
-    private static function group(string $kind, string $title, string $about, array $items): string
+    private function group(string $kind, string $title, string $about, array $items): string
     {
         if ($items === []) {
             return '';
@@ -294,29 +298,29 @@ final class HtmlWarnings
         return sprintf(
             "<section data-kind=\"%s\">\n<h3>%s (<span class=\"count\">%d</span>)</h3>\n<p>%s</p>\n<ul>\n<li>%s</li>\n</ul>\n</section>\n",
             $kind,
-            self::escape($title),
+            $this->escape($title),
             count($items),
-            self::escape($about),
+            $this->escape($about),
             implode("</li>\n<li>", $items),
         );
     }
 
     private function uri(string $uri): string
     {
-        $escaped = self::escape($uri);
+        $escaped = $this->escape($uri);
 
         return isset($this->drawn[$uri]) ? "<a class=\"uri\" href=\"#\" data-uri=\"{$escaped}\">{$escaped}</a>" : "<span class=\"uri\">{$escaped}</span>";
     }
 
-    private static function code(string $text): string
+    private function code(string $text): string
     {
-        return '<code>' . self::escape($text) . '</code>';
+        return '<code>' . $this->escape($text) . '</code>';
     }
 
     /** With an editor, a `file:line` whose file resolves from the working directory, which the scan ran from, opens in it */
     private function source(string $source): string
     {
-        $escaped = self::escape($source);
+        $escaped = $this->escape($source);
         $colon = (int) strrpos($source, ':');
         $file = substr($source, 0, $colon);
         $line = substr($source, $colon + 1);
@@ -324,17 +328,17 @@ final class HtmlWarnings
         $path = $url !== null && $colon > 0 && preg_match('/\A\d+\z/', $line) === 1 ? realpath($file) : false;
         if ($url === null || $path === false) {
             // A file outside the working directory keeps its absolute path in the graph: the page shows its name only.
-            $label = preg_match('#\A(/|[A-Za-z]:/)#', $file) === 1 ? self::escape(basename($file) . ':' . $line) : $escaped;
+            $label = preg_match('#\A(/|[A-Za-z]:/)#', $file) === 1 ? $this->escape(basename($file) . ':' . $line) : $escaped;
 
             return "<span class=\"source\">{$label}</span>";
         }
 
-        $href = self::escape(sprintf($url, rawurlencode($path), $line));
+        $href = $this->escape(sprintf($url, rawurlencode($path), $line));
 
         return "<a class=\"source\" href=\"{$href}\">{$escaped}</a>";
     }
 
-    private static function escape(string $text): string
+    private function escape(string $text): string
     {
         return htmlspecialchars($text, ENT_QUOTES | ENT_HTML5);
     }
