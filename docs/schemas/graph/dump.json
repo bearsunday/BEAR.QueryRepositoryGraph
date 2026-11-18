@@ -91,7 +91,7 @@
                 "source": {"$ref": "#/$defs/source"},
                 "cacheableResponse": {"description": "#[CacheableResponse] on the method.", "const": true},
                 "embed": {
-                    "description": "#[Embed]: this resource depends on `uri`; invalidating `uri` invalidates this resource once the child's tags are on it.",
+                    "description": "#[Embed], and on onGet() then the EMBED of each layout attribute (AbstractResourceLayout) on the class: this resource depends on `uri`; invalidating `uri` invalidates this resource once the child's tags are on it.",
                     "type": "array",
                     "items": {
                         "type": "object",

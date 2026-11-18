@@ -12,6 +12,7 @@ use BEAR\RepositoryModule\Annotation\DonutCache;
 use BEAR\RepositoryModule\Annotation\Purge;
 use BEAR\RepositoryModule\Annotation\Refresh;
 use BEAR\RepositoryModule\Annotation\RefreshCache;
+use BEAR\Resource\Annotation\AbstractResourceLayout;
 use BEAR\Resource\Annotation\Embed;
 use BEAR\Resource\ResourceObject;
 use ReflectionAttribute;
@@ -125,7 +126,7 @@ final class GraphBuilder
                 continue;
             }
 
-            $declared = $this->method($method, $uri, $cacheable, $classResponse);
+            $declared = $this->method($ref, $method, $uri, $cacheable, $classResponse);
             if ($declared !== null) {
                 $methods[$method->getName()] = $declared;
             }
@@ -173,13 +174,23 @@ final class GraphBuilder
         return $declared;
     }
 
-    /** @return Method|null null when the method declares nothing the cache acts on */
-    private function method(ReflectionMethod $method, string $uri, bool $cacheable, bool $classResponse): array|null
+    /**
+     * @param ReflectionClass<ResourceObject> $ref
+     *
+     * @return Method|null null when the method declares nothing the cache acts on
+     */
+    private function method(ReflectionClass $ref, ReflectionMethod $method, string $uri, bool $cacheable, bool $classResponse): array|null
     {
         $embed = [];
         foreach ($method->getAttributes(Embed::class) as $attribute) {
             $instance = $attribute->newInstance();
             $embed[] = ['rel' => $instance->rel] + $this->target($instance->src, $uri);
+        }
+
+        if ($method->getName() === 'onGet') {
+            foreach ($this->layoutEmbeds($ref) as $rel => $src) {
+                $embed[] = ['rel' => $rel] + $this->target($src, $uri);
+            }
         }
 
         // The command interceptors refresh the resource's own onGet before any #[Refresh]/#[Purge].
@@ -209,6 +220,25 @@ final class GraphBuilder
         }
 
         return ['source' => $this->source((string) $method->getFileName(), (int) $method->getStartLine())] + $declared;
+    }
+
+    /**
+     * The EMBED of each layout attribute on the class itself, which onGet() embeds after its own #[Embed]
+     *
+     * @param ReflectionClass<ResourceObject> $ref
+     *
+     * @return array<string, string> rel => src
+     */
+    private function layoutEmbeds(ReflectionClass $ref): array
+    {
+        $embeds = [];
+        foreach ($ref->getAttributes(AbstractResourceLayout::class, ReflectionAttribute::IS_INSTANCEOF) as $layout) {
+            /** @var array<string, string> $embed each layout declares its own EMBED */
+            $embed = $layout->getName()::EMBED;
+            $embeds += $embed;
+        }
+
+        return $embeds;
     }
 
     /**
