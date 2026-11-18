@@ -352,7 +352,7 @@ class QrGraphTest extends TestCase
         $this->assertSame(1, substr_count($html, '<svg'), 'one picture');
         $this->assertStringContainsString('<svg>' . htmlspecialchars((new DotRenderer(new NodeDeclarations()))->cached(self::nodes(self::WARNINGS))) . '</svg>', $html, 'the cached part, as dot --cached draws it');
         $this->assertSame(
-            ['app://self/editor', 'app://self/liker', 'app://self/liker', 'app://self/tally', 'app://self/digest', 'app://ads/banner', 'app://self/summary'],
+            ['app://self/editor', 'app://self/liker', 'app://self/liker', 'app://self/tally', 'app://ads/banner', 'app://self/summary', 'app://self/digest'],
             self::selectable($html),
             'only a URI the picture draws selects it',
         );
@@ -376,7 +376,7 @@ class QrGraphTest extends TestCase
         ], self::sources($html, 'invalidates-no-cache'));
     }
 
-    public function testHtmlListsADependsOnWhoseTagsAreStoredNowhere(): void
+    public function testHtmlListsADependsOnWhoseTagsAreStoredNowhereAsInformation(): void
     {
         $html = self::warningsPage(self::WARNINGS);
         // Feed is embedded by the cached index and summary is cached; digest is only depended on by summary.
@@ -385,6 +385,9 @@ class QrGraphTest extends TestCase
             ['tests/Fixture/HtmlWarnings/Resource/App/Digest.php:11', 'tests/Fixture/HtmlWarnings/Resource/App/Stats.php:12'],
             self::sources($html, 'depends-on-not-cached'),
         );
+        $page = self::xpath($html);
+        $this->assertSame([], self::elements($page, '//details[@data-kind="warnings"]//*[@data-kind="depends-on-not-cached"]'), 'not a warning');
+        $this->assertSame('Depends on, but not cached (2)', self::text($page, '//details[@data-kind="not-drawn"]/section[1][@data-kind="depends-on-not-cached"]/h3'));
     }
 
     public function testHtmlListsTheUrisNoResourceServes(): void
@@ -433,12 +436,14 @@ class QrGraphTest extends TestCase
             $page = self::xpath(self::warningsPage($dir));
             $drawn = array_keys((new DotRenderer(new NodeDeclarations()))->cachedUris($nodes));
             $warned = self::texts($page, '//section[@data-kind][not(ancestor::*[@data-kind="not-drawn"])]//*[contains(@class, "uri")]');
-            $notDrawn = self::texts($page, '//*[@data-kind="not-drawn"]//*[contains(@class, "uri")]');
+            // Listed drawn or not, warned or not; every other list in Not drawn names only what is neither.
+            $notDrawn = self::texts($page, '//*[@data-kind="not-drawn"]/section[@data-kind!="depends-on-not-cached"]//*[contains(@class, "uri")]');
+            $dependents = self::texts($page, '//*[@data-kind="depends-on-not-cached"]//*[contains(@class, "uri")]');
             $scanned = array_column($nodes, 'uri');
-            $accounted = array_values(array_unique(array_intersect([...$drawn, ...$warned, ...$notDrawn], $scanned)));
+            $accounted = array_values(array_unique(array_intersect([...$drawn, ...$warned, ...$notDrawn, ...$dependents], $scanned)));
             sort($accounted);
             $this->assertSame($scanned, $accounted, $dir);
-            $this->assertSame([], array_values(array_intersect($notDrawn, [...$drawn, ...$warned])), $dir);
+            $this->assertSame([], array_values(array_intersect($notDrawn, [...$drawn, ...$warned, ...$dependents])), $dir);
         }
     }
 
@@ -454,7 +459,7 @@ class QrGraphTest extends TestCase
     public function testHtmlWarningsStartCollapsed(): void
     {
         $page = self::xpath(self::warningsPage(self::WARNINGS));
-        $this->assertSame('Warnings (11)', self::text($page, '//*[@id="warnings"]/details[not(@open)]/summary'), 'the items the four groups list');
+        $this->assertSame('Warnings (9)', self::text($page, '//*[@id="warnings"]/details[not(@open)]/summary'), 'the items the three groups list');
     }
 
     public function testHtmlLinksSourcesOnlyForAnEditor(): void

@@ -149,15 +149,16 @@ the `#[Embed]`, `#[DependsOn]`, `#[Refresh]` and `#[Purge]` declarations.
 - Invalidates no cache — each `#[Purge]` or `#[Refresh]` target in this application whose invalidation reaches no
   cached resource, with the write method that names it. A target in another application is listed only under
   No such resource.
-- Depends on, but not cached — a resource declaring `#[DependsOn]` that is neither cached nor embedded, directly or
-  not, by a cached resource: no cache stores the tags it declares.
 - No such resource — a URI an `#[Embed]`, `#[DependsOn]`, `#[Refresh]`, `#[Purge]` or a layout names that no scanned
   resource serves: this application's (`self`) first, then other applications', which the scan cannot see.
 - `#[DependsOn]` warnings — the [warnings](#warnings-on-dependson) every command writes on stderr.
 
-After the Warnings section, a collapsed Not drawn lists every scanned resource the picture leaves out and no warning
-names: those not cached that no cached resource embeds, directly or not, those that declare nothing, and those whose
-only declarations are writes no warning names. Click a listed URI the picture draws to select it there; a click elsewhere
+After the Warnings section, a collapsed Not drawn first lists, under Depends on, but not cached, each resource declaring
+`#[DependsOn]` that is neither cached nor embedded, directly or not, by a cached resource. This is not a warning: the
+tags it declares reach a cache once a cached resource embeds it, and until then they affect nothing, as on a page left
+uncached by design. Not drawn then lists every other scanned resource the picture leaves out and no warning names:
+those not cached that no cached resource embeds, directly or not, those that declare nothing, and those whose only
+declarations are writes no warning names. Click a listed URI the picture draws to select it there; a click elsewhere
 in the Warnings keeps the selection.
 
 The Warnings section starts collapsed, its summary counting the items listed; with none, "No warnings" shows as is.

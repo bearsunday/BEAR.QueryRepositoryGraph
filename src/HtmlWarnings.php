@@ -28,7 +28,8 @@ use const ENT_HTML5;
 use const ENT_QUOTES;
 
 /**
- * The HTML page's list of the declarations that affect no cache, then, collapsed, the scanned resources it neither draws nor lists
+ * The HTML page's list of the declarations that affect no cache, then, collapsed, the #[DependsOn] no cache stores and
+ * the scanned resources it neither draws nor lists
  *
  * @internal
  * @psalm-import-type Node from GraphBuilder
@@ -71,7 +72,6 @@ final class HtmlWarnings
     {
         $groups = [
             ['invalidates-no-cache', 'Invalidates no cache', 'Invalidating what a #[Purge] or #[Refresh] names reaches no cached resource.', $this->idleTargets()],
-            ['depends-on-not-cached', 'Depends on, but not cached', 'The resource declares #[DependsOn], but it is not cached and no cached resource embeds it, so no cache stores the tags it declares.', $this->unstoredDependents()],
             ['no-such-resource', 'No such resource', 'A declaration names a URI no scanned resource serves: in this application a typo or a removed resource, in another one possibly fine.', $this->unknown()],
             ['depends-on', '#[DependsOn] warnings', 'Every command also writes these on stderr.', array_map($this->dependsOnItem(...), $dependsOn)],
         ];
@@ -237,6 +237,15 @@ final class HtmlWarnings
     /** @param array<string, true> $warned the URIs the warnings list */
     private function notDrawn(array $warned): string
     {
+        // Listed first, drawn or warned or not, and in no other list: its tags reach a cache once a cached resource embeds it.
+        $dependents = $this->unstoredDependents();
+        $listed = $warned;
+        foreach (array_column($dependents, 1) as $uris) {
+            foreach ($uris as $uri) {
+                $listed[$uri] = true;
+            }
+        }
+
         $embedding = [];
         foreach ($this->nodes as $node) {
             foreach ($this->embeds($node) as $embed) {
@@ -248,7 +257,7 @@ final class HtmlWarnings
         $lists = ['embeds-uncached' => [], 'no-declarations' => [], 'writes-only' => []];
         foreach ($this->nodes as $node) {
             $uri = $node['uri'];
-            if (isset($this->drawn[$uri]) || isset($warned[$uri])) {
+            if (isset($this->drawn[$uri]) || isset($listed[$uri])) {
                 continue;
             }
 
@@ -260,7 +269,8 @@ final class HtmlWarnings
             $lists[$kind][] = $this->uri($uri) . ' ' . $this->source($node['source']);
         }
 
-        $html = $this->group('embeds-uncached', 'Not embedded by a cache', 'Not cached, and no cached resource embeds it, directly or not.', $lists['embeds-uncached'])
+        $html = $this->group('depends-on-not-cached', 'Depends on, but not cached', 'Declares #[DependsOn], but is not cached and no cached resource embeds it, directly or not: the tags it declares reach a cache once a cached resource embeds it.', array_column($dependents, 0))
+            . $this->group('embeds-uncached', 'Not embedded by a cache', 'Not cached, and no cached resource embeds it, directly or not.', $lists['embeds-uncached'])
             . $this->group('no-declarations', 'No declarations', 'Declares nothing the cache acts on.', $lists['no-declarations'])
             . $this->group('writes-only', 'Writes only', 'Not cached, and declares writes none of the warnings above names.', $lists['writes-only']);
 
