@@ -182,6 +182,7 @@ Every `impact` as an indented tree: a block per resource whose invalidation reac
 (`cacheable, ttl: medium`, `cacheable response`); children are sorted by URI and no line
 carries a `source`, so moving code does not change the text. Like `by`, the tree shows each reached URI once,
 by one shortest path. The text is for diffs, not parsing: regenerate it after upgrading `qr-graph`.
+How to read it, with a worked diff: [reading-the-snapshot.md](reading-the-snapshot.md).
 
 To design the cache before the code, write the resource classes with their attributes and empty methods, agree on
 `dot` and `snapshot`, commit the snapshot, then write the methods: the snapshot stays the same.

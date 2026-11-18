@@ -118,6 +118,7 @@ vendor/bin/qr-graph snapshot | diff -u qr-graph.snapshot.txt -
 ```
 
 The demo keeps [its snapshot](demo/qr-graph.snapshot.txt), checked this way by [CI](.github/workflows/snapshot.yml).
+How to read it, with a worked diff: [docs/reading-the-snapshot.md](docs/reading-the-snapshot.md).
 
 The runtime acts on the declarations; people and agents read and agree on the snapshot; CI keeps the two equal, as
 `composer.lock` follows `composer.json`. A pull request that changes what a write invalidates shows it as a diff of
