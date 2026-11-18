@@ -6,7 +6,7 @@ use BEAR\Resource\ResourceObject;
 
 class Ranking extends ResourceObject
 {
-    public function onGet(int $limit): static
+    public function onGet(): static
     {
         return $this;
     }

@@ -38,8 +38,8 @@ application autoloader looks like. `impact` on a URI no scanned resource serves 
 The first line is `meta`; every other line is a resource and the declarations it makes
 ([schema](schemas/graph/dump.json)). Edges start at the resource that declares them, so a line has no `from`.
 `meta` also records `counts` (nodes, edges, skipped), `tool.name` and the installed package version, and the
-`autoload` file relative to the working directory. `meta.version` is 5: v2 added those fields, v3 the embed `usage`,
-v4 `dependsOn`, v5 dropped the source-text guesses, `dynamic` and the embed `usage`.
+`autoload` file relative to the working directory. `meta.version` is 6: v2 added those fields, v3 the embed `usage`,
+v4 `dependsOn`, v5 dropped the source-text guesses, `dynamic` and the embed `usage`, v6 added `layout`.
 
 ```json
 {"uri":"app://self/user","source":"src/Resource/App/User.php:17","cacheable":{"expiry":"never","expirySecond":0,"expiryAt":"","update":false,"type":"value"},"methods":{"onPut":{"source":"src/Resource/App/User.php:52","refresh":[{"uri":"app://self/user","implicit":"Cacheable"},{"uri":"app://self/user/profile","template":"app://self/user/profile?user_id={id}"}],"purge":[{"uri":"app://self/user/friend","template":"app://self/user/friend?user_id={id}"}]}}}
@@ -55,6 +55,11 @@ v4 `dependsOn`, v5 dropped the source-text guesses, `dynamic` and the embed `usa
   A declaration on a row class is not in the graph: see [what the graph does not know](#what-the-graph-does-not-know).
 - `implicit` marks a refresh nobody wrote: a write method of a `#[Cacheable]`/`#[CacheableResponse]` class,
   or one marked `#[RefreshCache]`, refreshes its own resource.
+- `layout` is the class attribute extending BEAR.Resource's `AbstractResourceLayout`: its `name` (`ContentPage`),
+  `class`, the `source` of the attribute class, and `embed`, its `EMBED` constant, resolved as an `#[Embed]` is.
+  Every command takes each part as an `#[Embed]` on the resource's `onGet()`. A layout that does not declare its own
+  `EMBED`, a second layout on one class, or a `rel` both the layout and an `onGet()` `#[Embed]` declare, is an error
+  (1), as it is in BEAR.Resource.
 
 Local questions are a `grep` away: `grep '"uri":"app://self/user/profile"'` finds the resource, and
 `grep 'app://self/user/profile"'` also finds every line that embeds, refreshes or purges it.
@@ -97,7 +102,16 @@ invalidation travels. Declarations that differ only in their query (`?type=news`
 host when it is not `self`) and the cache attributes as declared: `page (cacheable, ttl: medium)`,
 `app (cacheable view, ttl: never)` for `type: 'view'`, `page (cacheable response)`, `page (donut cache)`. Only
 `#[Cacheable]` expires by time, so only it shows a TTL.
-A resource no arrow touches is left out unless it is cached: then it shows a cache no declared write invalidates.
+A resource no arrow touches is left out unless it is cached: then it shows a cache no declared write invalidates. A
+page carrying a layout is drawn as well.
+What layouts embed is one table rather than arrows: a column per layout, headed by a page's grey rounded box holding
+`#[ContentPage]`, a row per part, ● where the layout has the part. The top-left cell names the scheme the rows share and
+the directory they all start with, which the rows then leave out. A page names its layout after its cache:
+`page (cacheable response, #[ContentPage])`.
+No arrow touches the table. A part with arrows of its own (a write that refreshes or purges it, its own `#[Embed]` or
+`#[DependsOn]`), or one cached and so drawn for itself, is also an ordinary node with those arrows; a part with none
+is its row only. The table goes in the leftmost rank, declared after every other node, which with `rankdir=LR` puts
+it at the top-left unless Graphviz reorders the rank to save crossings.
 Pages no drawn arrow points to (other than their own arrows to themselves), where a request starts, line up in the leftmost
 column; with `--cached`, an arrow from a resource left out does not count.
 
@@ -120,7 +134,13 @@ Click a resource: what invalidates it glows green, what it invalidates glows ora
 counts each side among the resources drawn. A resource can also be focused and selected with Enter; clicking it
 again, clicking elsewhere in the picture or Escape clears. The page embeds, as JSON, what `impact` computes from each
 resource and from each of its write methods that refresh or purge, with which starts reach it only through a write:
-one shortest path per reached resource, as `impact` shows it; a resource's refresh of itself is not lit.
+one shortest path per reached resource, as `impact` shows it; a resource's refresh of itself is not lit. The layout
+table is drawn apart, above the picture, so it is always at the top-left. A row and its ● cells select the row's part,
+and light the pages whose layout has it; a part drawn as a node too lights with its row. Selecting a page lights its
+layout's column head and the ● of the parts that reach it. A column head selects its layout like a resource: the pages
+carrying it are what it invalidates; its parts, their ●, what reaches the parts and the writes to them are what
+invalidates it. The page's JSON holds each layout under `layout:<class>`. The legend counts resources only, not cells
+or column heads.
 
 Below the picture, Warnings lists the declarations that affect no cache, one group per kind, each item with the
 `file:line` that declares it; an empty group is left out. A resource depends on what it embeds: the warnings follow
@@ -131,8 +151,8 @@ the `#[Embed]`, `#[DependsOn]`, `#[Refresh]` and `#[Purge]` declarations.
   No such resource.
 - Depends on, but not cached — a resource declaring `#[DependsOn]` that is neither cached nor embedded, directly or
   not, by a cached resource: no cache stores the tags it declares.
-- No such resource — a URI an `#[Embed]`, `#[DependsOn]`, `#[Refresh]` or `#[Purge]` names that no scanned resource
-  serves: this application's (`self`) first, then other applications', which the scan cannot see.
+- No such resource — a URI an `#[Embed]`, `#[DependsOn]`, `#[Refresh]`, `#[Purge]` or a layout names that no scanned
+  resource serves: this application's (`self`) first, then other applications', which the scan cannot see.
 - `#[DependsOn]` warnings — the [warnings](#warnings-on-dependson) every command writes on stderr.
 
 After the Warnings section, a collapsed Not drawn lists every scanned resource the picture leaves out and no warning
@@ -182,7 +202,7 @@ line per page and embedded child that a donut write classified ([schema](schemas
 `reason` says whether it had no body at write time (`no_body`, read as a hole; a run that left no body, such as a
 204, looks the same) or ran without a tag (`no_etag_or_surrogate_key`). A skip logged without a reason tells
 neither apart and is `skipped`. `declared` is `donut` when the page's class declares `#[CacheableResponse]` or
-`#[DonutCache]`, `embedded` otherwise. The verdicts that need reading:
+`#[DonutCache]`, `embedded` otherwise; a part of the page's layout is declared as an `#[Embed]` is. The verdicts that need reading:
 
 - `untagged-material` — the page read the child, but the child carried neither an ETag nor a Surrogate-Key, so a
   change to the child's data does not reach the page's template **through this child**. `observe` writes a

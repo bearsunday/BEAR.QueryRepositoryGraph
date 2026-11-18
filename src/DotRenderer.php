@@ -22,7 +22,8 @@ use const ENT_XML1;
  *
  * Arrows point the way they are declared (a page to what it embeds, a resource to what it
  * depends on, a write to what it refreshes or purges). For the direction invalidation travels,
- * render with `edge [dir=back]`.
+ * render with `edge [dir=back]`. What resource layouts embed is one table, a layout per column and a part per row,
+ * not arrows.
  *
  * @psalm-import-type Node from GraphBuilder
  * @psalm-import-type Method from GraphBuilder
@@ -46,6 +47,18 @@ final class DotRenderer
     }
 
     /**
+     * `cached()` without the layout table, which html draws apart, above the picture
+     *
+     * @param list<Node> $nodes
+     *
+     * @internal
+     */
+    public function cachedGraph(array $nodes): string
+    {
+        return self::draw(self::select($nodes, self::cachedAndInvalidators($nodes)), new LayoutTable([]));
+    }
+
+    /**
      * The URIs `cached()` draws
      *
      * @param list<Node> $nodes
@@ -60,7 +73,19 @@ final class DotRenderer
             $uris[$uri] = true;
         }
 
-        return $uris;
+        return $uris + (new LayoutTable($drawn))->uris();
+    }
+
+    /**
+     * The layout table `cached()` draws
+     *
+     * @param list<Node> $nodes
+     *
+     * @internal
+     */
+    public function cachedTable(array $nodes): LayoutTable
+    {
+        return new LayoutTable(self::select($nodes, self::cachedAndInvalidators($nodes))[0]);
     }
 
     /**
@@ -69,7 +94,15 @@ final class DotRenderer
      */
     private static function render(array $nodes, array|null $shown): string
     {
-        [$drawn, $edges, $targets] = self::select($nodes, $shown);
+        $selected = self::select($nodes, $shown);
+
+        return self::draw($selected, new LayoutTable($selected[0]));
+    }
+
+    /** @param array{array<string, Node>, list<array{string, string, string}>, array<string, true>} $selected what select() returns */
+    private static function draw(array $selected, LayoutTable $table): string
+    {
+        [$drawn, $edges, $targets] = $selected;
 
         // A page nothing embeds is where a request starts: those line up in the leftmost column.
         $entries = array_keys(array_filter($drawn, static fn (array $node): bool => self::scheme($node['uri']) === 'page' && ! isset($targets[$node['uri']])));
@@ -79,6 +112,9 @@ final class DotRenderer
             '  node [fontname="Helvetica", fontsize=13];',
             '  edge [fontname="Helvetica", fontsize=10, fontcolor="#333333", arrowhead=empty];',
             ...self::nodeLines($drawn, array_keys($targets)),
+            // With rankdir=LR, Graphviz lays a rank out bottom-up in declaration order unless crossings reorder it:
+            // the table, declared last and edge-free, lands at the top of the leftmost rank.
+            ...($table->isEmpty() ? [] : ['  ' . $table->node()]),
         ];
         $edgeLines = [];
         foreach ($edges as [$from, $to, $attrs]) {
@@ -88,8 +124,10 @@ final class DotRenderer
         // Declarations that differ only in their query name the same resource: one arrow each.
         $lines = [...$lines, ...array_unique($edgeLines)];
 
-        if ($entries !== []) {
-            $lines[] = '  {rank=min; ' . implode('; ', array_map(self::id(...), $entries)) . ';}';
+        // The table goes in the leftmost rank, with the pages where requests start.
+        $leftmost = [...($table->isEmpty() ? [] : [LayoutTable::NODE]), ...array_map(self::id(...), $entries)];
+        if ($leftmost !== []) {
+            $lines[] = '  {rank=min; ' . implode('; ', $leftmost) . ';}';
         }
 
         $lines[] = '}';
@@ -128,8 +166,9 @@ final class DotRenderer
             }
         }
 
-        // A resource no arrow touches says nothing about cache dependencies, unless it is a cache no declared write invalidates.
-        $drawn = array_filter($drawn, static fn (array $node): bool => isset($touched[$node['uri']]) || Impact::isCached($node));
+        // A resource no arrow touches says nothing about cache dependencies, unless it is a cache no declared write
+        // invalidates, or carries a layout, which the layout table draws.
+        $drawn = array_filter($drawn, static fn (array $node): bool => isset($touched[$node['uri']]) || Impact::isCached($node) || isset($node['layout']));
 
         return [$drawn, $edges, $targets];
     }
@@ -159,18 +198,21 @@ final class DotRenderer
     }
 
     /**
-     * A page is a grey box, any other resource bare text; the second row names the scheme and the cache it declares
+     * A page is a grey box, any other resource bare text; the second row names the scheme, the cache it declares and its layout
      *
      * @param Node|null $node null for a URI no scanned resource serves
      */
     private static function node(string $uri, array|null $node): string
     {
-        [$scheme, $host] = explode('://', $uri, 2) + [1 => ''];
-        $host = explode('/', $host, 2)[0];
-        $kind = $host === 'self' ? $scheme : $scheme . '://' . $host;
-        $cache = $node === null ? [] : Impact::caches($node);
-        if ($cache !== []) {
-            $kind .= ' (' . implode(', ', $cache) . ')';
+        $scheme = self::scheme($uri);
+        $kind = self::kind($uri);
+        $notes = $node === null ? [] : Impact::caches($node);
+        if (isset($node['layout'])) {
+            $notes[] = '#[' . $node['layout']['name'] . ']';
+        }
+
+        if ($notes !== []) {
+            $kind .= ' (' . implode(', ', $notes) . ')';
         }
 
         $label = sprintf(
@@ -190,7 +232,21 @@ final class DotRenderer
         return explode('://', $uri, 2)[0];
     }
 
-    private static function path(string $uri): string
+    /**
+     * The scheme, with the host when it is not `self`
+     *
+     * @internal
+     */
+    public static function kind(string $uri): string
+    {
+        [$scheme, $host] = explode('://', $uri, 2) + [1 => ''];
+        $host = explode('/', $host, 2)[0];
+
+        return $host === 'self' ? $scheme : $scheme . '://' . $host;
+    }
+
+    /** @internal */
+    public static function path(string $uri): string
     {
         return explode('/', explode('://', $uri, 2)[1] ?? '', 2)[1] ?? '';
     }
@@ -238,12 +294,15 @@ final class DotRenderer
 
         while ($pending !== []) {
             $uri = array_pop($pending);
+            $embeds = isset($byUri[$uri]) ? Impact::layoutEmbeds($byUri[$uri]) : [];
             foreach ($byUri[$uri]['methods'] ?? [] as $method) {
-                foreach ($method['embed'] ?? [] as $embed) {
-                    if (! isset($shown[$embed['uri']])) {
-                        $shown[$embed['uri']] = true;
-                        $pending[] = $embed['uri'];
-                    }
+                $embeds = [...$embeds, ...$method['embed'] ?? []];
+            }
+
+            foreach ($embeds as $embed) {
+                if (! isset($shown[$embed['uri']])) {
+                    $shown[$embed['uri']] = true;
+                    $pending[] = $embed['uri'];
                 }
             }
         }

@@ -33,6 +33,7 @@ use const ENT_QUOTES;
  * @internal
  * @psalm-import-type Node from GraphBuilder
  * @psalm-import-type ImpactLine from Impact
+ * @psalm-import-type EmbedTarget from GraphBuilder
  * @psalm-import-type Warning from DependsOnWarnings
  * @psalm-type Item = array{string, list<string>}
  */
@@ -146,19 +147,34 @@ final class HtmlWarnings
             }
         }
 
-        while ($pending !== []) {
-            foreach (array_pop($pending)['methods'] ?? [] as $method) {
-                foreach ($method['embed'] ?? [] as $embed) {
-                    $child = $this->node($embed['uri']);
-                    if ($child !== null && ! isset($stored[$child['uri']])) {
-                        $stored[$child['uri']] = true;
-                        $pending[] = $child;
-                    }
+        while (($node = array_pop($pending)) !== null) {
+            foreach (self::embeds($node) as $embed) {
+                $child = $this->node($embed['uri']);
+                if ($child !== null && ! isset($stored[$child['uri']])) {
+                    $stored[$child['uri']] = true;
+                    $pending[] = $child;
                 }
             }
         }
 
         return $stored;
+    }
+
+    /**
+     * What the resource embeds, by #[Embed] or by its layout
+     *
+     * @param Node $node
+     *
+     * @return list<EmbedTarget>
+     */
+    private static function embeds(array $node): array
+    {
+        $embeds = Impact::layoutEmbeds($node);
+        foreach ($node['methods'] ?? [] as $method) {
+            $embeds = [...$embeds, ...$method['embed'] ?? []];
+        }
+
+        return $embeds;
     }
 
     /**
@@ -178,6 +194,13 @@ final class HtmlWarnings
                             $named[$target['uri']][$via . $method['source']] = $via . ' ' . $this->source($method['source']);
                         }
                     }
+                }
+            }
+
+            foreach (Impact::layoutEmbeds($node) as $embed) {
+                $source = $node['layout']['source'] ?? '';
+                if ($this->node($embed['uri']) === null) {
+                    $named[$embed['uri']]['layout' . $source] = 'layout ' . $this->source($source);
                 }
             }
         }
@@ -212,11 +235,9 @@ final class HtmlWarnings
     {
         $embedding = [];
         foreach ($this->nodes as $node) {
-            foreach ($node['methods'] ?? [] as $method) {
-                foreach ($method['embed'] ?? [] as $embed) {
-                    $embedding[$node['uri']] = true;
-                    $embedding[$this->node($embed['uri'])['uri'] ?? $embed['uri']] = true;
-                }
+            foreach (self::embeds($node) as $embed) {
+                $embedding[$node['uri']] = true;
+                $embedding[$this->node($embed['uri'])['uri'] ?? $embed['uri']] = true;
             }
         }
 

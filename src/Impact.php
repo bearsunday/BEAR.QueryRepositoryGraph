@@ -14,6 +14,7 @@ use function str_starts_with;
  * The shape is `docs/schemas/graph/impact.json`.
  *
  * @psalm-import-type Node from GraphBuilder
+ * @psalm-import-type EmbedTarget from GraphBuilder
  * @psalm-type ImpactLine = array{uri: string, via: string, by: string|null, depth: int, cached: bool, source: string|null}
  */
 final class Impact
@@ -43,6 +44,10 @@ final class Impact
                 foreach ($method['dependsOn'] ?? [] as $target) {
                     $this->dependedBy[$this->converter->key($target['uri'])][] = $node['uri'];
                 }
+            }
+
+            foreach (self::layoutEmbeds($node) as $embed) {
+                $this->embeddedBy[$this->converter->key($embed['uri'])][] = $node['uri'];
             }
         }
     }
@@ -120,6 +125,18 @@ final class Impact
         }
 
         return $targets;
+    }
+
+    /**
+     * The parts the resource's layout places in its body, each embedded as an onGet() #[Embed] is
+     *
+     * @param Node $node
+     *
+     * @return list<EmbedTarget>
+     */
+    public static function layoutEmbeds(array $node): array
+    {
+        return $node['layout']['embed'] ?? [];
     }
 
     /**

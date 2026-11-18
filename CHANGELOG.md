@@ -8,12 +8,13 @@ All notable changes to this project are documented in this file.
 
 - `html` draws only the cached part of the picture, as `dot --cached` does, so the whole graph is no longer clickable; draw it with `qr-graph dot | dot -Tsvg`. `--cached` is still accepted and changes nothing.
 - A URI ending in `/` is an error, in `#[Embed]`, `#[DependsOn]`, `#[Refresh]`, `#[Purge]` and as a command argument: write the `index` it names (`page://self/index` for `page://self/`).
+- Requires bear/resource 1.36.0 or later.
 
 ### Added
 
 - `html` lists, below the picture in a section that starts collapsed, the declarations that affect no cache, each with its `file:line`: `#[Purge]`/`#[Refresh]` targets that reach no cached resource, `#[DependsOn]` on resources no cache stores, URIs no scanned resource serves, and the `#[DependsOn]` warnings. A collapsed "Not drawn" lists the resources the picture leaves out.
 - `html --editor=phpstorm` links each `file:line` to the file in PhpStorm; without it the page holds no absolute path, so it can be shared.
-- The `EMBED` of a resource layout attribute (a class attribute extending `AbstractResourceLayout`) is read as embeds of the page's `onGet()`, after its own `#[Embed]`, so `impact`, `snapshot`, `dot`, `html` and `observe` show them. Requires bear/resource 1.36 or later.
+- Resource layouts (BEAR.Resource's `AbstractResourceLayout`, such as `#[ContentPage]`): every command takes each part as an `#[Embed]` of the pages carrying the layout, `dump` records it as `layout` (`meta.version` 6), and `dot`/`html` draw the layouts as one table of layouts × parts at the top-left instead of arrows.
 
 ## [0.1.0] - 2026-11-15
 

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace BEAR\QueryRepositoryGraph;
 
+use BEAR\QueryRepositoryGraph\Fixture\Layout\Attribute\SearchPage;
+use BEAR\QueryRepositoryGraph\Fixture\Layout\Attribute\TopPage;
 use DOMDocument;
 use DOMElement;
 use DOMXPath;
@@ -33,6 +35,7 @@ use function json_decode;
 use function json_encode;
 use function mkdir;
 use function preg_match;
+use function preg_match_all;
 use function preg_replace;
 use function random_bytes;
 use function rawurlencode;
@@ -65,6 +68,7 @@ class QrGraphTest extends TestCase
     private const DIR = 'tests/Fake/fake-app/src/Resource';
     private const SESSIONS = 'tests/Fixture/Sessions';
     private const WARNINGS = 'tests/Fixture/HtmlWarnings/Resource';
+    private const LAYOUT = 'tests/Fixture/Layout/Resource';
 
     /** @var array<string, array<string, mixed>> */
     private static array $nodes = [];
@@ -78,7 +82,7 @@ class QrGraphTest extends TestCase
         self::assertSame(0, $code, $err);
         $lines = self::jsonl($out);
         $meta = $lines[0];
-        self::assertSame(5, self::at($meta, 'meta', 'version'));
+        self::assertSame(6, self::at($meta, 'meta', 'version'));
         self::assertSame(['self' => 'FakeVendor\HelloWorld'], self::at($meta, 'meta', 'namespaces'));
         self::assertSame(self::DIR, self::at($meta, 'meta', 'dir'));
         self::assertSame(['nodes' => 115, 'edges' => 123, 'skipped' => 2], self::at($meta, 'meta', 'counts'));
@@ -295,39 +299,6 @@ class QrGraphTest extends TestCase
 
         [$code] = self::qrGraph(['dump', '--json', $dir]);
         $this->assertSame(2, $code);
-    }
-
-    public function testALayoutAttributeEmbedsItsPartsInOnGetAfterTheMethodEmbeds(): void
-    {
-        $dir = '--dir=tests/Fixture/Layout/Resource';
-        [$code, $out, $err] = self::qrGraph(['dump', $dir]);
-        $this->assertSame(0, $code, $err);
-        $nodes = [];
-        foreach (array_slice(self::jsonl($out), 1) as $line) {
-            /** @var string $uri */
-            $uri = $line['uri'];
-            $nodes[$uri] = $line;
-        }
-
-        $layout = [
-            ['rel' => 'menu', 'uri' => 'app://self/menu'],
-            ['rel' => 'ranking', 'uri' => 'app://self/ranking', 'template' => 'app://self/ranking?limit=5'],
-        ];
-        $this->assertSame(
-            [['rel' => 'article', 'uri' => 'app://self/article', 'template' => 'app://self/article?id={id}'], ...$layout],
-            self::at($nodes['page://self/index'], 'methods', 'onGet', 'embed'),
-        );
-        $this->assertNull(self::at($nodes['page://self/index'], 'methods', 'onDelete', 'embed'), 'only onGet() embeds the layout');
-        $this->assertSame($layout, self::at($nodes['page://self/about'], 'methods', 'onGet', 'embed'), 'an onGet() without #[Embed] embeds the layout');
-
-        [, $out] = self::qrGraph(['dot', $dir]);
-        $this->assertStringContainsString('"page://self/index" -> "app://self/ranking" [label="ranking"];', $out);
-
-        [, $snapshot] = self::qrGraph(['snapshot', $dir]);
-        [$code, $out, $err] = self::qrGraph(['impact', 'app://self/ranking', $dir]);
-        $this->assertSame(0, $code, $err);
-        $this->assertSame("app://self/ranking\n  page://self/about (embed)\n  page://self/index (embed, cacheable, ttl: never)\n", $out);
-        $this->assertStringContainsString($out, $snapshot);
     }
 
     public function testHtmlLightsWhatImpactReachesAndWhatReachesIt(): void
@@ -630,6 +601,224 @@ class QrGraphTest extends TestCase
         $this->assertSame(2, $code);
     }
 
+    public function testDumpRecordsTheLayoutWithItsPartsResolved(): void
+    {
+        [$code, $out, $err] = self::qrGraph(['dump', '--dir=' . self::LAYOUT]);
+        $this->assertSame(0, $code, $err);
+        foreach (explode("\n", trim($out)) as $line) {
+            $this->assertSchema('dump.json', $line);
+        }
+
+        $nodes = [];
+        foreach (array_slice(self::jsonl($out), 1) as $node) {
+            /** @var string $uri */
+            $uri = $node['uri'];
+            $nodes[$uri] = $node;
+        }
+
+        $this->assertSame([
+            'name' => 'SearchPage',
+            'class' => SearchPage::class,
+            'source' => 'tests/Fixture/Layout/Attribute/SearchPage.php:9',
+            'embed' => [
+                ['rel' => 'footer', 'uri' => 'page://self/esi/footer'],
+                ['rel' => 'search', 'uri' => 'page://self/esi/search', 'template' => 'page://self/esi/search{?q}'],
+            ],
+        ], $nodes['page://self/search']['layout'] ?? null, 'a relative part resolves against the page');
+        $this->assertArrayNotHasKey('layout', $nodes['page://self/esi/footer']);
+    }
+
+    public function testALayoutWithoutAnEmbedOfItsOwnIsAnError(): void
+    {
+        [$code, , $err] = self::qrGraph(['dump', '--dir=tests/Fixture/LayoutWithoutEmbed/Resource']);
+        $this->assertSame(1, $code);
+        $this->assertSame(
+            'BEAR\QueryRepositoryGraph\Fixture\LayoutWithoutEmbed\Attribute\Bare, the layout of BEAR\QueryRepositoryGraph\Fixture\LayoutWithoutEmbed\Resource\Page\Index, declares no EMBED of its own',
+            $this->lastError($err),
+        );
+    }
+
+    public function testTwoLayoutsOnOneClassAreAnError(): void
+    {
+        [$code, , $err] = self::qrGraph(['dump', '--dir=tests/Fixture/LayoutTwice/Resource']);
+        $this->assertSame(1, $code);
+        $this->assertSame('BEAR\QueryRepositoryGraph\Fixture\LayoutTwice\Resource\Page\Home has more than one layout', $this->lastError($err));
+    }
+
+    public function testARelBothTheLayoutAndAnOnGetEmbedDeclareIsAnError(): void
+    {
+        [$code, , $err] = self::qrGraph(['dump', '--dir=tests/Fixture/LayoutClash/Resource']);
+        $this->assertSame(1, $code);
+        $this->assertSame('BEAR\QueryRepositoryGraph\Fixture\LayoutClash\Resource\Page\Home declares rel "header" in both its layout and a method #[Embed]', $this->lastError($err));
+    }
+
+    public function testLayoutRowsKeepTheirOwnIds(): void
+    {
+        [, $out] = self::qrGraph(['dot', '--dir=tests/Fixture/LayoutEdge/Resource']);
+        preg_match_all('/ID="(esi-[^"]+)"[^>]*>([^<]*)<\/TD>/', $out, $rows);
+        $this->assertSame(['esi-part-index', 'esi-part-a-b', 'esi-part-a-b-2'], $rows[1], 'part/a-b and part/a/b read the same as an id: the second takes a suffix');
+        $this->assertSame(['index', 'a-b', 'a/b'], $rows[2], 'the rows leave out the directory they share');
+        $this->assertStringContainsString('COLOR="#999999">page&nbsp;&nbsp;part/</FONT>', $out);
+
+        $this->assertSame(
+            ['page://self/part/a-b layout', 'page://self/part/a/b layout', 'page://self/part/index layout'],
+            self::listed(self::warningsPage('tests/Fixture/LayoutEdge/Resource'), 'no-such-resource'),
+            'a part no scanned resource serves is listed with the layout that names it',
+        );
+    }
+
+    public function testHtmlDrawsLayoutPartsOfMixedSchemes(): void
+    {
+        $dir = '--dir=tests/Fixture/LayoutMixed/Resource';
+        [, $out] = self::qrGraph(['dot', $dir]);
+        preg_match_all('/ID="esi-[^"]+"[^>]*>([^<]*)<\/TD>/', $out, $rows);
+        $this->assertSame(['page://self/layout/nav', 'app://self/own'], $rows[1], 'rows of more than one scheme show their whole URI');
+
+        [, $out] = self::qrGraph(['impact', 'page://self/layout/nav', '--allow-unknown', $dir]);
+        $this->assertSame("page://self/layout/nav\n  page://self/home (embed, cacheable, ttl: never)\n", $out, 'a class without onGet() embeds nothing through its layout');
+
+        if ((string) shell_exec('command -v dot') === '') {
+            $this->markTestSkipped('Graphviz dot is not installed');
+        }
+
+        [$code, , $err] = self::qrGraph(['html', $dir]);
+        $this->assertSame(0, $code, $err);
+    }
+
+    public function testALayoutPartReachesEveryPageCarryingTheLayout(): void
+    {
+        $dir = '--dir=' . self::LAYOUT;
+        [, $out] = self::qrGraph(['impact', 'app://self/footer-editor', '--method=onPut', $dir]);
+        $this->assertSame("app://self/footer-editor onPut\n  page://self/esi/footer (purge)\n    page://self/article (embed, cacheable response)\n    page://self/search (embed, cacheable response)\n", $out);
+
+        [, $out] = self::qrGraph(['impact', 'app://self/ranking-editor', '--method=onPut', $dir]);
+        $this->assertStringContainsString("  app://self/ranking (purge)\n    page://self/esi/ranking (embed)\n      page://self/index (embed, cacheable, ttl: never)\n", $out, 'through the part\'s own child');
+
+        [, $out] = self::qrGraph(['impact', 'page://self/esi/header', $dir]);
+        $this->assertSame("page://self/esi/header\n  page://self/article (embed, cacheable response)\n  page://self/index (embed, cacheable, ttl: never)\n", $out, 'the search layout has no header part: search embeds its own');
+    }
+
+    public function testHtmlWarnsNoWriteToALayoutPartAsReachingNoCache(): void
+    {
+        // Neither the purged footer nor the ranking under the ranking part is cached: only the pages carrying them are.
+        $this->assertSame([], self::listed(self::warningsPage(self::LAYOUT), 'invalidates-no-cache'));
+    }
+
+    public function testDotDrawsLayoutsAsOneTableInsteadOfArrows(): void
+    {
+        foreach ([['dot'], ['dot', '--cached']] as $command) {
+            [$code, $out, $err] = self::qrGraph([...$command, '--dir=' . self::LAYOUT]);
+            $this->assertSame(0, $code, $err);
+            preg_match_all('/ID="cell-([^"]+)"/', $out, $cells);
+            $this->assertSame(
+                ['esi-header-ContentPage', 'esi-header-TopPage', 'esi-footer-ContentPage', 'esi-footer-SearchPage', 'esi-ranking-TopPage', 'esi-search-SearchPage'],
+                $cells[1],
+                'a ● where the layout has the part; a row per part in declaration order',
+            );
+            $this->assertStringContainsString('COLOR="#999999">page&nbsp;&nbsp;esi/</FONT>', $out, 'the scheme and directory the rows share go to the corner');
+            $this->assertMatchesRegularExpression('#ID="esi-esi-footer" TOOLTIP="page://self/esi/footer"[^>]*>footer</TD>#', $out);
+            $this->assertDoesNotMatchRegularExpression('#(-> layouts|layouts:|layouts ->)#', $out, 'no arrow touches the table');
+            $this->assertStringContainsString('"app://self/footer-editor" -> "page://self/esi/footer" [label="onPut purge"', $out, 'a part with arrows of its own is also a node');
+            $this->assertStringContainsString('"page://self/esi/ranking" -> "app://self/ranking" [label="ranking"', $out);
+            $this->assertStringNotContainsString('"page://self/esi/search" [', $out, 'a part with no arrow is its row only');
+            $this->assertStringContainsString('>page (cacheable response, #[ContentPage])<', $out);
+            $this->assertDoesNotMatchRegularExpression('#"page://self/(article|index|search)" -> "page://self/esi/#', $out, 'no arrow from a page to a part');
+            $this->assertStringContainsString('{rank=min; layouts;', $out, 'the table goes in the leftmost rank');
+        }
+    }
+
+    public function testHtmlLightsTheLayoutTableCellByCell(): void
+    {
+        $html = self::warningsPage(self::LAYOUT);
+        $glow = self::glow($html);
+        $this->assertSame(['page://self/article', 'page://self/search'], self::at($glow, 'page://self/esi/footer', 'reaches', 'nodes'));
+        $this->assertSame(
+            ['app://self/article', 'app://self/footer-editor', 'page://self/esi/footer', 'page://self/esi/header'],
+            self::at($glow, 'page://self/article', 'reachedBy', 'nodes'),
+            'the parts its layout embeds reach the page',
+        );
+        $this->assertContains(['page://self/esi/footer', 'page://self/article'], (array) self::at($glow, 'page://self/article', 'reachedBy', 'edges'));
+        $this->assertSame(['app://self/footer-editor'], self::at($glow, 'page://self/article', 'writers'));
+
+        if (preg_match('#<script type="application/json" id="qr-graph-layouts">(.*?)</script>#s', $html, $match) !== 1) {
+            $this->fail('no layout JSON');
+        }
+
+        /** @var array{rows: list<mixed>, cells: list<mixed>, heads: list<mixed>} $layouts */
+        $layouts = json_decode($match[1], true, 512, JSON_THROW_ON_ERROR);
+        $this->assertContains(['id' => 'esi-esi-ranking', 'uri' => 'page://self/esi/ranking'], $layouts['rows']);
+        $this->assertContains(['id' => 'cell-esi-footer-SearchPage', 'uri' => 'page://self/esi/footer', 'pages' => ['page://self/search']], $layouts['cells']);
+        $this->assertContains(['id' => 'layout-TopPage', 'key' => 'layout:' . TopPage::class, 'label' => '#[TopPage]', 'pages' => ['page://self/index']], $layouts['heads'], 'a head selects its layout by key, and the status line names it by its label');
+
+        $plain = self::warningsPage(self::WARNINGS);
+        $this->assertStringNotContainsString('qr-graph-layouts', $plain, 'no table, no table data');
+        $this->assertStringNotContainsString('{{', $plain);
+    }
+
+    public function testHtmlSelectsALayoutAsAResourceThatDependsOnItsParts(): void
+    {
+        $glow = self::glow(self::warningsPage(self::LAYOUT));
+        $topPage = 'layout:' . TopPage::class;
+        $this->assertSame(['page://self/index'], self::at($glow, $topPage, 'reaches', 'nodes'), 'it reaches the pages carrying it');
+        $this->assertSame(
+            ['app://self/ranking', 'app://self/ranking-editor', 'page://self/esi/header', 'page://self/esi/ranking'],
+            self::at($glow, $topPage, 'reachedBy', 'nodes'),
+            'its parts reach it, and what reaches them',
+        );
+        $this->assertContains(['page://self/esi/ranking', 'page://self/index'], (array) self::at($glow, $topPage, 'reachedBy', 'edges'), 'through the ● of each part');
+        $this->assertContains(['app://self/ranking-editor', 'app://self/ranking'], (array) self::at($glow, $topPage, 'reachedBy', 'writes'));
+        $this->assertSame(['app://self/ranking-editor'], self::at($glow, $topPage, 'writers'));
+
+        $searchPage = 'layout:' . SearchPage::class;
+        $this->assertNotContains('page://self/esi/header', (array) self::at($glow, $searchPage, 'reachedBy', 'nodes'), 'the search layout has no header part');
+    }
+
+    public function testALayoutsWritersReachItThroughAWriteOnly(): void
+    {
+        $cacheable = ['expiry' => 'never', 'expirySecond' => 0, 'expiryAt' => '', 'update' => false, 'type' => 'value'];
+        $layout = ['name' => 'L', 'class' => 'L', 'source' => 'l.php:1', 'embed' => [['rel' => 'a', 'uri' => 'page://self/a'], ['rel' => 'b', 'uri' => 'page://self/b']]];
+        $nodes = [
+            ['uri' => 'page://self/p', 'source' => 'p.php:1', 'cacheable' => $cacheable, 'layout' => $layout],
+            ['uri' => 'page://self/a', 'source' => 'a.php:1', 'methods' => ['onGet' => ['source' => 'a.php:2', 'dependsOn' => [['uri' => 'app://self/w']]]]],
+            ['uri' => 'page://self/b', 'source' => 'b.php:1'],
+            ['uri' => 'app://self/w', 'source' => 'w.php:1', 'methods' => ['onPost' => ['source' => 'w.php:2', 'refresh' => [['uri' => 'page://self/b']]]]],
+        ];
+        $glow = self::glow((new HtmlRenderer([PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo "<svg></svg>";']))($nodes, []));
+
+        $this->assertSame(['app://self/w'], self::at($glow, 'page://self/b', 'writers'), 'w reaches part b through its write only');
+        $this->assertSame([], self::at($glow, 'layout:L', 'writers'), 'w also reaches part a, so the layout, as a plain origin');
+    }
+
+    public function testTheTableTakesItsOwnHeightAboveThePicture(): void
+    {
+        $layout = ['name' => 'L', 'class' => 'L', 'source' => 'l.php:1', 'embed' => [['rel' => 'a', 'uri' => 'page://self/a']]];
+        $nodes = [['uri' => 'page://self/p', 'source' => 'p.php:1', 'cacheable' => ['expiry' => 'never', 'expirySecond' => 0, 'expiryAt' => '', 'update' => false, 'type' => 'value'], 'layout' => $layout]];
+        $html = (new HtmlRenderer([PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo \'<svg width="100pt" height="50pt"><g/></svg>\';']))($nodes, []);
+
+        $this->assertStringContainsString('<svg width="100pt" height="124pt" viewBox="0 0 100 124"', $html, 'both heights and the gap between them');
+        $this->assertStringContainsString('<svg x="0" y="0" width="100" height="50"><g/></svg><svg x="0" y="74" width="100" height="50"><g/></svg>', $html, 'the picture starts below the table, in the outer viewBox units');
+    }
+
+    public function testHtmlDrawsTheTableAboveThePictureWithTheIdsItLightsBy(): void
+    {
+        if ((string) shell_exec('command -v dot') === '') {
+            $this->markTestSkipped('Graphviz dot is not installed');
+        }
+
+        [$code, $out, $err] = self::qrGraph(['html', '--dir=' . self::LAYOUT]);
+        $this->assertSame(0, $code, $err);
+        $page = self::xpath($out);
+        $svgs = self::elements($page, '//main/*[local-name()="svg"]/*[local-name()="svg"]');
+        $this->assertCount(2, $svgs, 'one SVG holding the table and the picture');
+        $this->assertSame('0', $svgs[0]->getAttribute('y'), 'the table first, at the top');
+        $this->assertGreaterThan(0, (float) $svgs[1]->getAttribute('y'));
+        foreach (['a_esi-esi-footer', 'a_cell-esi-footer-ContentPage', 'a_layout-ContentPage'] as $id) {
+            $this->assertCount(1, self::elements($page, sprintf('.//*[@id="%s"]', $id), $svgs[0]), $id);
+        }
+
+        $this->assertSame('page://self/esi/footer', self::text($page, './/*[@class="node"][*[local-name()="title"]="page://self/esi/footer"]/*[local-name()="title"]', $svgs[1]), 'the part with a write to it is a node of the picture too');
+    }
+
     public function testTokensFindOneLineDeclarationsAndBracedNamespaces(): void
     {
         [$code, $out, $err] = self::qrGraph(['dump', '--dir=tests/Fixture/Resource']);
@@ -697,6 +886,18 @@ class QrGraphTest extends TestCase
         $this->assertSame('', $out);
         $this->assertSame('skipped', array_key_first(self::jsonl($err)[0]));
         $this->assertStringContainsString('No resource classes found in tests/Fixture/Orphan/Resource', $this->lastError($err));
+
+        $dir = sys_get_temp_dir() . '/qr-graph-' . bin2hex(random_bytes(4));
+        mkdir($dir);
+        try {
+            file_put_contents($dir . '/Broken.php', '<?php class');
+            [$code, , $err] = self::qrGraph(['dump', '--dir=' . $dir]);
+            $this->assertSame(1, $code);
+            $this->assertSame("No resource classes found in {$dir}", $this->lastError($err), 'a file that ends at its class keyword declares nothing');
+        } finally {
+            @unlink($dir . '/Broken.php');
+            rmdir($dir);
+        }
     }
 
     public function testUnknownTargetUriIsAnErrorUnlessAllowed(): void
@@ -850,7 +1051,7 @@ class QrGraphTest extends TestCase
         $this->assertStringContainsString('the writes that refresh it are onPost() whose arguments', $messages['app://self/post-only-list']);
         $this->assertStringContainsString('the writes that refresh it are onPost() whose arguments', $messages['app://self/donut-refresh-post-list'], 'its onPost() already has #[RefreshCache]');
         $this->assertStringContainsString('it is cached, but has no write method', $messages['app://self/no-write-list']);
-        $this->assertStringContainsString('it has no onGet() for a write to refresh', $messages['app://self/no-get-list'], 'its onPut() refreshes nothing');
+        $this->assertStringEndsWith('it has no onGet(), so no write refreshes it; name it in a #[Purge].', $messages['app://self/no-get-list'], 'its onPut() refreshes nothing, and a #[Refresh] of it fails at run time');
         $this->assertStringContainsString('the writes that refresh it are onPost() whose arguments', $messages['app://self/plain-refresh-list'], 'uncached, refreshed only by a #[RefreshCache] onPost() that is skipped');
         $this->assertStringContainsString('only when the write method carries #[RefreshCache] or #[CacheableResponse]', $messages['app://self/method-cached-list'], '#[CacheableResponse] on onGet() caches it, and binds no write');
     }
@@ -914,6 +1115,16 @@ class QrGraphTest extends TestCase
             ['page://self/donut-page', 'app://self/ignored-child', 'unclassified'],
             ['page://self/donut-page', 'app://self/read-child', 'material'],
         ], $this->verdicts(self::SESSIONS . '/written.json'));
+    }
+
+    public function testObserveTakesALayoutPartAsDeclared(): void
+    {
+        $this->assertSame([
+            ['page://self/article', 'app://self/article', 'material'],
+            ['page://self/article', 'page://self/esi/footer', 'material'],
+            ['page://self/article', 'page://self/esi/header', 'material'],
+            ['page://self/search', 'page://self/esi/search', 'hole'],
+        ], $this->verdicts(self::SESSIONS . '/layout.json', self::LAYOUT));
     }
 
     public function testObserveWarnsWhenTheLogPredatesDependencySkipped(): void
@@ -991,9 +1202,9 @@ class QrGraphTest extends TestCase
     }
 
     /** @return list<array{string, string, string}> page, child, verdict */
-    private function verdicts(string $path): array
+    private function verdicts(string $path, string $dir = 'tests/Fixture/Usage/Resource'): array
     {
-        [$code, $out, $err] = self::qrGraph(['observe', $path, '--dir=tests/Fixture/Usage/Resource']);
+        [$code, $out, $err] = self::qrGraph(['observe', $path, '--dir=' . $dir]);
         $this->assertSame(0, $code, $err);
         $verdicts = [];
         foreach (explode("\n", trim($out)) as $line) {

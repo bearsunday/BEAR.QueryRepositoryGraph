@@ -30,7 +30,8 @@ vendor/bin/qr-graph observe var/log/query-repository              # the semantic
 People read the picture, `impact` and `snapshot`. Tools and AI agents read `dump`, `impact --json` and `observe`:
 JSONL, described by the [JSON Schemas](docs/schemas/graph). Each command and its limits are in
 [docs/graph.md](docs/graph.md). The picture above is `php bin/qr-graph dot --dir=demo/src/Resource`, run on
-[demo](demo/src/Resource): resource classes that carry their attributes and nothing else.
+[demo](demo/src/Resource): resource classes that carry their attributes and nothing else. One `#[DependsOn]` in it,
+on `app://self/related`, names the wrong query key on purpose, so the warnings have something to show.
 
 ## Reading the picture
 
@@ -52,6 +53,34 @@ what it invalidates orange, each side counted; the rest dims. Below the picture,
 the declarations that affect no cache, each with its `file:line` (a PhpStorm link with `--editor=phpstorm`), and a
 collapsed Not drawn after it lists the resources left out.
 
+### Resource layouts
+
+```php
+#[Attribute(Attribute::TARGET_CLASS)]
+final class ContentPage extends AbstractResourceLayout
+{
+    /** @var array<string, string> */
+    public const EMBED = ['header' => 'page://self/esi/header', 'footer' => 'page://self/esi/footer'];
+}
+
+#[Attribute(Attribute::TARGET_CLASS)]
+final class SearchPage extends AbstractResourceLayout
+{
+    /** @var array<string, string> */
+    public const EMBED = [...ContentPage::EMBED, 'search' => '/esi/search{?q}'];
+}
+```
+
+A resource layout, a class attribute extending BEAR.Resource's `AbstractResourceLayout` such as `#[ContentPage]`, is
+drawn as one table at the top-left instead of arrows: a column per layout, a row per part it embeds, ● where the layout
+has the part. A column head is the grey rounded box of a page holding `#[ContentPage]`: a layout depends on its parts
+as a page does. The top-left cell holds the scheme and the directory the rows share. Each page names its layout after its
+cache, `page (cacheable response, #[ContentPage])`. No arrow touches the table: a part with arrows of its own, or a
+cached one, is also drawn as a node. In `html`, a column head selects like a resource: the pages carrying the layout
+light as invalidated by it, its parts and their writers as invalidating it. Clicking a row lights the pages whose
+layout has the part, with its ●; clicking a page lights its layout's column. `impact`, `snapshot` and the warnings
+take each part as an `#[Embed]` of every page carrying the layout.
+
 ## What a change reaches
 
 ```
@@ -65,6 +94,7 @@ app://self/admin/article onPut
       page://self/author (embed, cacheable, ttl: medium)
     app://self/related (dependsOn, cacheable, ttl: never)
     app://self/tags (dependsOn, cacheable, ttl: never)
+      page://self/layout/pickup (embed, cacheable, ttl: short)
       page://self/tag (embed, cacheable, ttl: medium)
     page://self/article (embed, cacheable, ttl: medium)
   app://self/ranking (purge, cacheable, ttl: short)

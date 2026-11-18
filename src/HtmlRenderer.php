@@ -14,6 +14,9 @@ use function fwrite;
 use function implode;
 use function json_encode;
 use function ksort;
+use function max;
+use function preg_match;
+use function preg_replace;
 use function proc_close;
 use function proc_open;
 use function restore_error_handler;
@@ -49,6 +52,7 @@ use const JSON_UNESCAPED_UNICODE;
 final class HtmlRenderer
 {
     private const NONE = ['nodes' => [], 'edges' => [], 'writes' => []];
+    private const JSON = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_THROW_ON_ERROR;
     private const NOTHING_CACHED = '<p>Nothing is cached: no resource declares #[Cacheable], #[CacheableResponse] or #[DonutCache], so there is no picture. <code>qr-graph dot | dot -Tsvg</code> draws the whole graph.</p>';
 
     /** @param non-empty-list<string> $dot the command that reads dot on stdin and writes SVG on stdout */
@@ -67,13 +71,65 @@ final class HtmlRenderer
     {
         $dot = new DotRenderer();
         $drawn = $dot->cachedUris($nodes);
-        $json = json_encode(self::glow($nodes), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_THROW_ON_ERROR);
+        $json = json_encode(self::glow($nodes), self::JSON);
+        $table = $dot->cachedTable($nodes);
+        $layout = $table->isEmpty() ? ['{{layoutCss}}' => '', '{{layoutData}}' => '', '{{layoutInit}}' => '', '{{layoutSelect}}' => ''] : [
+            '{{layoutCss}}' => self::LAYOUT_CSS,
+            '{{layoutData}}' => '<script type="application/json" id="qr-graph-layouts">' . json_encode($table->ids(), self::JSON) . "</script>\n",
+            '{{layoutInit}}' => self::LAYOUT_INIT,
+            '{{layoutSelect}}' => self::LAYOUT_SELECT,
+        ];
 
         return strtr(self::PAGE, [
-            '{{svg}}' => $drawn === [] ? self::NOTHING_CACHED : $this->svg($dot->cached($nodes)),
+            '{{svg}}' => $drawn === [] ? self::NOTHING_CACHED : $this->picture($dot, $table, $nodes),
             '{{warnings}}' => (new HtmlWarnings($nodes, $drawn, $editor))($dependsOn),
             '{{json}}' => $json,
-        ]);
+        ] + $layout);
+    }
+
+    /**
+     * @param list<Node> $nodes
+     *
+     * @throws RuntimeException
+     */
+    private function picture(DotRenderer $dot, LayoutTable $table, array $nodes): string
+    {
+        if ($table->isEmpty()) {
+            return $this->svg($dot->cached($nodes));
+        }
+
+        return self::stack($this->svg($table->graph()), $this->svg($dot->cachedGraph($nodes)));
+    }
+
+    /** The table's SVG at the top-left, the picture's below it, in one SVG: the page's script and styles act on one */
+    private static function stack(string $table, string $picture): string
+    {
+        $gap = 24.0;
+        [$tableWidth, $tableHeight, $table] = self::placed($table, 0.0);
+        [$width, $height, $picture] = self::placed($picture, $tableHeight + $gap);
+
+        return sprintf(
+            "<svg width=\"%1\$spt\" height=\"%2\$spt\" viewBox=\"0 0 %1\$s %2\$s\" xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\">\n%3\$s%4\$s</svg>\n",
+            max($width, $tableWidth),
+            $tableHeight + $gap + $height,
+            $table,
+            $picture,
+        );
+    }
+
+    /**
+     * Graphviz sizes its SVG in points; nested, the SVG takes the outer one's units, which are points too
+     *
+     * @return array{float, float, string} the width and height, and the SVG placed `$top` points down
+     */
+    private static function placed(string $svg, float $top): array
+    {
+        $root = '/^<svg width="([\d.]+)pt" height="([\d.]+)pt"/';
+        if (preg_match($root, $svg, $size) !== 1) {
+            return [0.0, 0.0, $svg];
+        }
+
+        return [(float) $size[1], (float) $size[2], (string) preg_replace($root, sprintf('<svg x="0" y="%s" width="$1" height="$2"', $top), $svg, 1)];
     }
 
     /**
@@ -120,9 +176,67 @@ final class HtmlRenderer
             ];
         }
 
+        $glow += self::layoutGlow($nodes, $reaches, $reachedBy, $from);
         ksort($glow);
 
         return $glow;
+    }
+
+    /**
+     * Each layout as a resource that depends on its parts: it reaches the pages carrying it and what they reach, and
+     * is reached by its parts, through their ● (`[part, page]`), and by what reaches them
+     *
+     * @param list<Node>                                                                                    $nodes
+     * @param array<string, Pending>                                                                        $reaches
+     * @param array<string, Pending>                                                                        $reachedBy
+     * @param array{plain: array<string, array<string, true>>, written: array<string, array<string, true>>} $from
+     *
+     * @return Glow
+     */
+    private static function layoutGlow(array $nodes, array $reaches, array $reachedBy, array $from): array
+    {
+        $layouts = [];
+        foreach ($nodes as $node) {
+            if (isset($node['layout'])) {
+                $layouts[$node['layout']['class']][] = $node;
+            }
+        }
+
+        $glow = [];
+        foreach ($layouts as $class => $carriers) {
+            $lit = ['reaches' => self::NONE, 'reachedBy' => self::NONE];
+            // As for a page: a writer reaches the layout through a write only, never through a part or what reaches one.
+            $written = [];
+            $plain = [];
+            foreach ($carriers as $node) {
+                $page = $node['uri'];
+                $lit['reaches'] = self::merge(self::add($lit['reaches'], $page, []), $reaches[$page] ?? self::NONE);
+                foreach (Impact::layoutEmbeds($node) as $embed) {
+                    $part = $embed['uri'];
+                    $lit['reachedBy'] = self::merge(self::add($lit['reachedBy'], $part, []), $reachedBy[$part] ?? self::NONE);
+                    $lit['reachedBy']['edges'][$part . ' ' . $page] = [$part, $page];
+                    $written += $from['written'][$part] ?? [];
+                    $plain += [$part => true] + ($from['plain'][$part] ?? []);
+                }
+            }
+
+            $writers = array_keys(array_diff_key($written, $plain));
+            sort($writers);
+            $glow[LayoutTable::key($class)] = ['reaches' => self::lit($lit['reaches']), 'reachedBy' => self::lit($lit['reachedBy']), 'writers' => $writers];
+        }
+
+        return $glow;
+    }
+
+    /**
+     * @param Pending $into
+     * @param Pending $more
+     *
+     * @return Pending
+     */
+    private static function merge(array $into, array $more): array
+    {
+        return ['nodes' => $into['nodes'] + $more['nodes'], 'edges' => $into['edges'] + $more['edges'], 'writes' => $into['writes'] + $more['writes']];
     }
 
     /**
@@ -200,6 +314,10 @@ final class HtmlRenderer
                     $uris[$target['uri']] ??= [];
                 }
             }
+
+            foreach (Impact::layoutEmbeds($node) as $target) {
+                $uris[$target['uri']] ??= [];
+            }
         }
 
         return $uris;
@@ -262,6 +380,104 @@ final class HtmlRenderer
         return substr($svg, $start);
     }
 
+    private const LAYOUT_CSS = <<<'CSS'
+  svg.lit .node.layout-table { opacity: 1; }
+  .layout-cell { transition: opacity .15s; }
+  svg.lit .layout-cell { opacity: .22; }
+  svg.lit .layout-cell.selected, svg.lit .layout-cell.reaches, svg.lit .layout-cell.reached-by { opacity: 1; }
+  svg.lit.layout-lit .layout-row { opacity: 1; }
+  .layout-cell.reaches text { fill: var(--goes-stale); font-weight: bold; }
+  .layout-cell.reached-by text { fill: var(--makes-stale); font-weight: bold; }
+  .layout-cell.reached-by.writer text { fill: var(--write); }
+  .layout-cell.selected text { fill: var(--selected); font-weight: bold; }
+  .layout-head { cursor: pointer; transition: opacity .15s; }
+  svg.lit .layout-head { opacity: .22; }
+  svg.lit .layout-head.selected, svg.lit .layout-head.reaches, svg.lit .layout-head.reached-by { opacity: 1; }
+  .layout-head.reached-by path { filter: drop-shadow(0 0 2px var(--makes-stale)) drop-shadow(0 0 6px var(--makes-stale)); }
+  .layout-head.reaches path { filter: drop-shadow(0 0 2px var(--goes-stale)) drop-shadow(0 0 6px var(--goes-stale)); }
+  .layout-head.selected path { filter: drop-shadow(0 0 2px var(--selected)) drop-shadow(0 0 8px var(--selected)); }
+  .layout-head.selected text:first-of-type { font-weight: bold; }
+  /* A click focuses what it selects: no focus ring frames the table or a cell, the glow shows the selection. */
+  .layout-table:focus, .layout-table :focus { outline: none; }
+
+CSS;
+
+    private const LAYOUT_INIT = "\n" . <<<'JS'
+  // The layout table lights cell by cell: a row is its part, a ● the arrows from that part to the pages carrying the
+  // column's layout, a column head the layout. Graphviz names a cell's group `a_` and the cell's ID.
+  const layouts = JSON.parse(document.getElementById('qr-graph-layouts').textContent);
+  const table = nodes.get('layouts');
+  nodes.delete('layouts');
+  table.classList.add('layout-table');
+  ['tabindex', 'role', 'aria-label'].forEach((name) => table.removeAttribute(name));
+  const cell = (id, kind = 'layout-cell') => {
+    const g = document.getElementById('a_' + id);
+    g.classList.add(kind);
+    const box = g.getBBox();
+    const hit = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    Object.entries({ x: box.x - 6, y: box.y - 6, width: box.width + 12, height: box.height + 12, fill: 'transparent' })
+      .forEach(([name, value]) => hit.setAttribute(name, value));
+    g.insertBefore(hit, g.firstChild);
+    return g;
+  };
+  // A row or a ● selects the row's part, a column head its layout; anywhere else in the table selects nothing.
+  const selects = (g, key) => g.addEventListener('click', (event) => {
+    event.stopPropagation();
+    select(key);
+  });
+  const focusable = (g, key, label = key) => {
+    Object.entries({ tabindex: '0', role: 'button', 'aria-label': label })
+      .forEach(([name, value]) => g.setAttribute(name, value));
+    g.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        event.stopPropagation();
+        select(key);
+      }
+    });
+  };
+  // A part with arrows of its own is also a node: the node stands for it, and its row lights with it.
+  const twins = [];
+  const rowCells = [];
+  layouts.rows.forEach(({ id, uri }) => {
+    const g = cell(id);
+    nodes.has(uri) ? twins.push([nodes.get(uri), g]) : nodes.set(uri, g);
+    g.classList.add('layout-row');
+    rowCells.push(g);
+    selects(g, uri);
+    focusable(g, uri);
+  });
+  layouts.cells.forEach(({ id, uri, pages }) => {
+    const g = cell(id);
+    selects(g, uri);
+    pages.forEach((page) => edges.set(uri + '->' + page, [...(edges.get(uri + '->' + page) ?? []), g]));
+  });
+  // The status line names a layout as it is written, `#[ContentPage]`.
+  const labels = new Map();
+  const heads = layouts.heads.map(({ id, key, label, pages }) => {
+    const g = cell(id, 'layout-head');
+    nodes.set(key, g);
+    labels.set(key, label);
+    selects(g, key);
+    focusable(g, key, label);
+    return [g, pages];
+  });
+
+JS;
+
+    private const LAYOUT_SELECT = <<<'JS'
+    twins.forEach(([node, row]) => ['selected', 'reaches', 'reached-by', 'writer']
+      .forEach((name) => node.classList.contains(name) && row.classList.add(name)));
+    heads.forEach(([head, pages]) => pages.includes(uri) && head.classList.add('reached-by'));
+    // A selected layout lights its column; the rows, its parts, stay as they are, neither lit nor dimmed.
+    svg.classList.toggle('layout-lit', labels.has(uri));
+    if (labels.has(uri)) {
+      rowCells.forEach((row) => row.classList.remove('reaches', 'reached-by', 'writer'));
+    }
+    status.textContent = labels.get(uri) ?? uri;
+
+JS;
+
     private const PAGE = <<<'HTML'
 <!DOCTYPE html>
 <html lang="en">
@@ -313,7 +529,7 @@ final class HtmlRenderer
   .edge.write.reaches path, .edge.write.reaches polygon { stroke: var(--write); }
   .edge.write.reached-by, .edge.write.reaches { filter: drop-shadow(0 0 3px var(--write)); }
   svg .node:focus-visible { outline: 2px solid var(--selected); outline-offset: 2px; }
-</style>
+{{layoutCss}}</style>
 </head>
 <body>
 <header>
@@ -330,7 +546,7 @@ final class HtmlRenderer
 {{warnings}}
 </section>
 <script type="application/json" id="qr-graph-data">{{json}}</script>
-<script>
+{{layoutData}}<script>
 (() => {
   const graph = JSON.parse(document.getElementById('qr-graph-data').textContent);
   const svg = document.querySelector('main svg');
@@ -361,7 +577,7 @@ final class HtmlRenderer
   svg.querySelectorAll('g.edge').forEach((g) => {
     edges.set(title(g), [...(edges.get(title(g)) ?? []), g]);
   });
-
+{{layoutInit}}
   const classes = ['selected', 'reaches', 'reached-by', 'writer', 'write'];
   let selected = null;
   const clear = () => {
@@ -394,7 +610,7 @@ final class HtmlRenderer
     sets.writers.forEach((writer) => nodes.get(writer)?.classList.add('writer'));
     nodes.get(uri)?.classList.add('selected');
     status.textContent = uri;
-    const writers = new Set(sets.writers);
+{{layoutSelect}}    const writers = new Set(sets.writers);
     counts.reaches.textContent = `(${drawn(sets.reaches.nodes)})`;
     counts.reachedBy.textContent = `(${drawn(sets.reachedBy.nodes.filter((node) => !writers.has(node)))})`;
     counts.writer.textContent = `(${drawn(sets.writers)})`;

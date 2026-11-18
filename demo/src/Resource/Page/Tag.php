@@ -7,8 +7,10 @@ namespace QrGraphDemo\Resource\Page;
 use BEAR\RepositoryModule\Annotation\Cacheable;
 use BEAR\Resource\Annotation\Embed;
 use BEAR\Resource\ResourceObject;
+use QrGraphDemo\Attribute\BlogPage;
 
 #[Cacheable(expiry: 'medium')]
+#[BlogPage]
 class Tag extends ResourceObject
 {
     #[Embed(rel: 'tag', src: 'app://self/tag{?id}')]

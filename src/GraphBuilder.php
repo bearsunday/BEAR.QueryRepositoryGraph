@@ -21,8 +21,11 @@ use ReflectionMethod;
 use RuntimeException;
 
 use function array_filter;
+use function array_map;
 use function array_values;
+use function count;
 use function getcwd;
+use function in_array;
 use function sprintf;
 use function str_replace;
 use function str_starts_with;
@@ -37,8 +40,10 @@ use function usort;
  * The record's shape is the `resource` definition in `docs/schemas/graph/dump.json`.
  *
  * @psalm-type Target = array{uri: string, template?: string, implicit?: string}
- * @psalm-type Method = array{source: string, cacheableResponse?: true, embed?: list<array{rel: string, uri: string, template?: string}>, dependsOn?: list<array{uri: string, template?: string}>, refresh?: list<Target>, purge?: list<Target>}
- * @psalm-type Node = array{uri: string, source: string, cacheable?: array{expiry: string, expirySecond: int, expiryAt: string, update: bool, type: string}, donutCache?: true, cacheableResponse?: true, httpCache?: string, methods?: array<string, Method>}
+ * @psalm-type EmbedTarget = array{rel: string, uri: string, template?: string}
+ * @psalm-type Method = array{source: string, cacheableResponse?: true, embed?: list<EmbedTarget>, dependsOn?: list<array{uri: string, template?: string}>, refresh?: list<Target>, purge?: list<Target>}
+ * @psalm-type Layout = array{name: string, class: string, source: string, embed: list<EmbedTarget>}
+ * @psalm-type Node = array{uri: string, source: string, cacheable?: array{expiry: string, expirySecond: int, expiryAt: string, update: bool, type: string}, donutCache?: true, cacheableResponse?: true, httpCache?: string, layout?: Layout, methods?: array<string, Method>}
  * @SuppressWarnings("PHPMD.CouplingBetweenObjects")
  */
 final class GraphBuilder
@@ -117,6 +122,11 @@ final class GraphBuilder
     private function node(ReflectionClass $ref, string $uri): array
     {
         $node = ['uri' => $uri, 'source' => $this->source((string) $ref->getFileName(), (int) $ref->getStartLine())] + $this->classDeclarations($ref);
+        $layout = $this->layout($ref, $uri);
+        if ($layout !== null) {
+            $node['layout'] = $layout;
+        }
+
         $cacheable = isset($node['cacheable']);
         $classResponse = isset($node['cacheableResponse']);
 
@@ -126,7 +136,7 @@ final class GraphBuilder
                 continue;
             }
 
-            $declared = $this->method($ref, $method, $uri, $cacheable, $classResponse);
+            $declared = $this->method($method, $uri, $cacheable, $classResponse);
             if ($declared !== null) {
                 $methods[$method->getName()] = $declared;
             }
@@ -177,20 +187,58 @@ final class GraphBuilder
     /**
      * @param ReflectionClass<ResourceObject> $ref
      *
-     * @return Method|null null when the method declares nothing the cache acts on
+     * @return Layout|null
+     *
+     * @throws RuntimeException when the class declares more than one layout, a layout without an EMBED of its own, or a rel
+     *                          both its layout and an onGet() #[Embed] declare, all of which BEAR.Resource rejects too.
      */
-    private function method(ReflectionClass $ref, ReflectionMethod $method, string $uri, bool $cacheable, bool $classResponse): array|null
+    private function layout(ReflectionClass $ref, string $uri): array|null
+    {
+        $attributes = $ref->getAttributes(AbstractResourceLayout::class, ReflectionAttribute::IS_INSTANCEOF);
+        // BEAR.Resource binds a layout to onGet(): a class without one embeds nothing through it.
+        if ($attributes === [] || ! $ref->hasMethod('onGet')) {
+            return null;
+        }
+
+        if (count($attributes) > 1) {
+            throw new RuntimeException(sprintf('%s has more than one layout', $ref->getName()));
+        }
+
+        /** @var class-string<AbstractResourceLayout> $name IS_INSTANCEOF matched it */
+        $name = $attributes[0]->getName();
+        $layout = new ReflectionClass($name);
+        $constant = $layout->getReflectionConstant('EMBED');
+        if ($constant === false || $constant->getDeclaringClass()->getName() === AbstractResourceLayout::class) {
+            throw new RuntimeException(sprintf('%s, the layout of %s, declares no EMBED of its own', $layout->getName(), $ref->getName()));
+        }
+
+        /** @var array<string, string> $parts */
+        $parts = $constant->getValue();
+        $methodRels = array_map(static fn (ReflectionAttribute $embed): string => $embed->newInstance()->rel, $ref->getMethod('onGet')->getAttributes(Embed::class));
+        $embed = [];
+        foreach ($parts as $rel => $src) {
+            if (in_array($rel, $methodRels, true)) {
+                throw new RuntimeException(sprintf('%s declares rel "%s" in both its layout and a method #[Embed]', $ref->getName(), $rel));
+            }
+
+            $embed[] = ['rel' => $rel] + $this->target($src, $uri);
+        }
+
+        return [
+            'name' => $layout->getShortName(),
+            'class' => $layout->getName(),
+            'source' => $this->source((string) $layout->getFileName(), (int) $layout->getStartLine()),
+            'embed' => $embed,
+        ];
+    }
+
+    /** @return Method|null null when the method declares nothing the cache acts on */
+    private function method(ReflectionMethod $method, string $uri, bool $cacheable, bool $classResponse): array|null
     {
         $embed = [];
         foreach ($method->getAttributes(Embed::class) as $attribute) {
             $instance = $attribute->newInstance();
             $embed[] = ['rel' => $instance->rel] + $this->target($instance->src, $uri);
-        }
-
-        if ($method->getName() === 'onGet') {
-            foreach ($this->layoutEmbeds($ref) as $rel => $src) {
-                $embed[] = ['rel' => $rel] + $this->target($src, $uri);
-            }
         }
 
         // The command interceptors refresh the resource's own onGet before any #[Refresh]/#[Purge].
@@ -220,25 +268,6 @@ final class GraphBuilder
         }
 
         return ['source' => $this->source((string) $method->getFileName(), (int) $method->getStartLine())] + $declared;
-    }
-
-    /**
-     * The EMBED of each layout attribute on the class itself, which onGet() embeds after its own #[Embed]
-     *
-     * @param ReflectionClass<ResourceObject> $ref
-     *
-     * @return array<string, string> rel => src
-     */
-    private function layoutEmbeds(ReflectionClass $ref): array
-    {
-        $embeds = [];
-        foreach ($ref->getAttributes(AbstractResourceLayout::class, ReflectionAttribute::IS_INSTANCEOF) as $layout) {
-            /** @var array<string, string> $embed each layout declares its own EMBED */
-            $embed = $layout->getName()::EMBED;
-            $embeds += $embed;
-        }
-
-        return $embeds;
     }
 
     /**

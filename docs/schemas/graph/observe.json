@@ -15,7 +15,7 @@
             "uniqueItems": true
         },
         "declared": {
-            "description": "How the page's onGet declares the child: `donut` when the page's class declares #[CacheableResponse] or #[DonutCache], `embedded` otherwise, null when neither an `#[Embed]` of the page nor its layout names the child.",
+            "description": "How the page's onGet declares the child: `donut` when the page's class declares #[CacheableResponse] or #[DonutCache], `embedded` otherwise, null when no `#[Embed]` of the page, nor its resource layout, names the child.",
             "enum": ["donut", "embedded", null]
         },
         "verdict": {
