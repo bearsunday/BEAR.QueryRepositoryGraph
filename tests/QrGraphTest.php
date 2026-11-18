@@ -297,6 +297,39 @@ class QrGraphTest extends TestCase
         $this->assertSame(2, $code);
     }
 
+    public function testALayoutAttributeEmbedsItsPartsInOnGetAfterTheMethodEmbeds(): void
+    {
+        $dir = '--dir=tests/Fixture/Layout/Resource';
+        [$code, $out, $err] = self::qrGraph(['dump', $dir]);
+        $this->assertSame(0, $code, $err);
+        $nodes = [];
+        foreach (array_slice(self::jsonl($out), 1) as $line) {
+            /** @var string $uri */
+            $uri = $line['uri'];
+            $nodes[$uri] = $line;
+        }
+
+        $layout = [
+            ['rel' => 'menu', 'uri' => 'app://self/menu'],
+            ['rel' => 'ranking', 'uri' => 'app://self/ranking', 'template' => 'app://self/ranking?limit=5'],
+        ];
+        $this->assertSame(
+            [['rel' => 'article', 'uri' => 'app://self/article', 'template' => 'app://self/article?id={id}'], ...$layout],
+            self::at($nodes['page://self/index'], 'methods', 'onGet', 'embed'),
+        );
+        $this->assertNull(self::at($nodes['page://self/index'], 'methods', 'onDelete', 'embed'), 'only onGet() embeds the layout');
+        $this->assertSame($layout, self::at($nodes['page://self/about'], 'methods', 'onGet', 'embed'), 'an onGet() without #[Embed] embeds the layout');
+
+        [, $out] = self::qrGraph(['dot', $dir]);
+        $this->assertStringContainsString('"page://self/index" -> "app://self/ranking" [label="ranking"];', $out);
+
+        [, $snapshot] = self::qrGraph(['snapshot', $dir]);
+        [$code, $out, $err] = self::qrGraph(['impact', 'app://self/ranking', $dir]);
+        $this->assertSame(0, $code, $err);
+        $this->assertSame("app://self/ranking\n  page://self/about (embed)\n  page://self/index (embed, cacheable, ttl: never)\n", $out);
+        $this->assertStringContainsString($out, $snapshot);
+    }
+
     public function testHtmlLightsWhatImpactReachesAndWhatReachesIt(): void
     {
         $dir = 'tests/Fixture/DependsOn/Resource';
