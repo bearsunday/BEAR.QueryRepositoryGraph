@@ -30,8 +30,7 @@ vendor/bin/qr-graph observe var/log/query-repository              # the semantic
 People read the picture, `impact` and `snapshot`. Tools and AI agents read `dump`, `impact --json` and `observe`:
 JSONL, described by the [JSON Schemas](docs/schemas/graph). Each command and its limits are in
 [docs/graph.md](docs/graph.md). The picture above is `php bin/qr-graph dot --dir=demo/src/Resource`, run on
-[demo](demo/src/Resource): resource classes that carry their attributes and nothing else. One `#[DependsOn]` in it,
-on `app://self/related`, names the wrong query key on purpose, so the warnings have something to show.
+[demo](demo/src/Resource): resource classes that carry their attributes and nothing else.
 
 ## Reading the picture
 
