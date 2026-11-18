@@ -305,7 +305,7 @@ class QrGraphTest extends TestCase
     {
         $dir = 'tests/Fixture/DependsOn/Resource';
         $nodes = (new GraphBuilder(new UriConverter(), (string) getcwd()))->build((new ResourceScanner())->scan($dir))['nodes'];
-        $html = (new HtmlRenderer([PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo "<?xml version=\"1.0\"?>\n<svg></svg>\n";']))($nodes, []);
+        $html = (new HtmlRenderer(new NodeDeclarations(), [PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo "<?xml version=\"1.0\"?>\n<svg></svg>\n";']))($nodes, []);
         $this->assertStringContainsString("<main>\n<svg></svg>", $html, 'the SVG goes in without its XML prolog');
         $glow = self::glow($html);
 
@@ -326,7 +326,7 @@ class QrGraphTest extends TestCase
     public function testHtmlTellsAWriteFromWhatAResourceShows(): void
     {
         $nodes = (new GraphBuilder(new UriConverter(), (string) getcwd()))->build((new ResourceScanner())->scan('tests/Fixture/Html/Resource'))['nodes'];
-        $html = (new HtmlRenderer([PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo "<svg></svg>";']))($nodes, []);
+        $html = (new HtmlRenderer(new NodeDeclarations(), [PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo "<svg></svg>";']))($nodes, []);
         $glow = self::glow($html);
 
         $this->assertSame(['app://self/admin', 'app://self/banner'], self::at($glow, 'page://self/front', 'reachedBy', 'nodes'));
@@ -350,7 +350,7 @@ class QrGraphTest extends TestCase
     {
         $html = self::warningsPage(self::WARNINGS);
         $this->assertSame(1, substr_count($html, '<svg'), 'one picture');
-        $this->assertStringContainsString('<svg>' . htmlspecialchars((new DotRenderer())->cached(self::nodes(self::WARNINGS))) . '</svg>', $html, 'the cached part, as dot --cached draws it');
+        $this->assertStringContainsString('<svg>' . htmlspecialchars((new DotRenderer(new NodeDeclarations()))->cached(self::nodes(self::WARNINGS))) . '</svg>', $html, 'the cached part, as dot --cached draws it');
         $this->assertSame(
             ['app://self/editor', 'app://self/liker', 'app://self/liker', 'app://self/tally', 'app://self/digest', 'app://ads/banner', 'app://self/summary'],
             self::selectable($html),
@@ -431,7 +431,7 @@ class QrGraphTest extends TestCase
         foreach ([self::WARNINGS, 'tests/Fixture/DependsOnWarn/Resource'] as $dir) {
             $nodes = self::nodes($dir);
             $page = self::xpath(self::warningsPage($dir));
-            $drawn = array_keys((new DotRenderer())->cachedUris($nodes));
+            $drawn = array_keys((new DotRenderer(new NodeDeclarations()))->cachedUris($nodes));
             $warned = self::texts($page, '//section[@data-kind][not(ancestor::*[@data-kind="not-drawn"])]//*[contains(@class, "uri")]');
             $notDrawn = self::texts($page, '//*[@data-kind="not-drawn"]//*[contains(@class, "uri")]');
             $scanned = array_column($nodes, 'uri');
@@ -444,8 +444,9 @@ class QrGraphTest extends TestCase
 
     public function testHtmlExplainsAPictureWithNothingCached(): void
     {
-        $nodes = array_values(array_filter(self::nodes(self::WARNINGS), static fn (array $node): bool => ! Impact::isCached($node)));
-        $html = (new HtmlRenderer([PHP_BINARY, '-r', 'exit(1);']))($nodes, []);
+        $declarations = new NodeDeclarations();
+        $nodes = array_values(array_filter(self::nodes(self::WARNINGS), static fn (array $node): bool => ! $declarations->isCached($node)));
+        $html = (new HtmlRenderer($declarations, [PHP_BINARY, '-r', 'exit(1);']))($nodes, []);
         $this->assertSame(0, substr_count($html, '<svg'));
         $this->assertStringContainsString('Nothing is cached', $html);
     }
@@ -529,7 +530,7 @@ class QrGraphTest extends TestCase
                     ['uri' => 'app://self/odd', 'source' => $source],
                     ['uri' => 'app://self/gone', 'source' => 'no/such/file.php:3'],
                 ];
-                $html = (new HtmlRenderer([PHP_BINARY, '-r', 'exit(1);']))($nodes, [], 'phpstorm');
+                $html = (new HtmlRenderer(new NodeDeclarations(), [PHP_BINARY, '-r', 'exit(1);']))($nodes, [], 'phpstorm');
                 $this->assertStringNotContainsString($name, $html, 'escaped');
                 $sources = self::elements(self::xpath($html), '//*[@class="source"]');
                 $this->assertSame([$source, 'no/such/file.php:3'], array_map(static fn (DOMElement $element): string => $element->textContent, $sources), $name);
@@ -546,7 +547,7 @@ class QrGraphTest extends TestCase
     {
         // A resource file outside the working directory keeps its absolute path in the graph.
         $nodes = [['uri' => 'app://self/external', 'source' => '/opt/shared/External.php:7']];
-        $html = (new HtmlRenderer([PHP_BINARY, '-r', 'exit(1);']))($nodes, []);
+        $html = (new HtmlRenderer(new NodeDeclarations(), [PHP_BINARY, '-r', 'exit(1);']))($nodes, []);
         $this->assertSame(['External.php:7'], self::texts(self::xpath($html), '//*[@class="source"]'));
         $this->assertStringNotContainsString('/opt/shared', $html);
     }
@@ -590,7 +591,7 @@ class QrGraphTest extends TestCase
     {
         foreach ([['/no/such/dot'], [PHP_BINARY, '-r', 'stream_get_contents(STDIN); fwrite(STDERR, "syntax error"); exit(1);'], [PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo "no picture";']] as $dot) {
             try {
-                (new HtmlRenderer($dot))(self::nodes('tests/Fixture/Html/Resource'), []);
+                (new HtmlRenderer(new NodeDeclarations(), $dot))(self::nodes('tests/Fixture/Html/Resource'), []);
                 $this->fail('no exception');
             } catch (RuntimeException $e) {
                 $this->assertStringContainsString($dot[0], $e->getMessage());
@@ -783,7 +784,7 @@ class QrGraphTest extends TestCase
             ['uri' => 'page://self/b', 'source' => 'b.php:1'],
             ['uri' => 'app://self/w', 'source' => 'w.php:1', 'methods' => ['onPost' => ['source' => 'w.php:2', 'refresh' => [['uri' => 'page://self/b']]]]],
         ];
-        $glow = self::glow((new HtmlRenderer([PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo "<svg></svg>";']))($nodes, []));
+        $glow = self::glow((new HtmlRenderer(new NodeDeclarations(), [PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo "<svg></svg>";']))($nodes, []));
 
         $this->assertSame(['app://self/w'], self::at($glow, 'page://self/b', 'writers'), 'w reaches part b through its write only');
         $this->assertSame([], self::at($glow, 'layout:L', 'writers'), 'w also reaches part a, so the layout, as a plain origin');
@@ -793,7 +794,7 @@ class QrGraphTest extends TestCase
     {
         $layout = ['name' => 'L', 'class' => 'L', 'source' => 'l.php:1', 'embed' => [['rel' => 'a', 'uri' => 'page://self/a']]];
         $nodes = [['uri' => 'page://self/p', 'source' => 'p.php:1', 'cacheable' => ['expiry' => 'never', 'expirySecond' => 0, 'expiryAt' => '', 'update' => false, 'type' => 'value'], 'layout' => $layout]];
-        $html = (new HtmlRenderer([PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo \'<svg width="100pt" height="50pt"><g/></svg>\';']))($nodes, []);
+        $html = (new HtmlRenderer(new NodeDeclarations(), [PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo \'<svg width="100pt" height="50pt"><g/></svg>\';']))($nodes, []);
 
         $this->assertStringContainsString('<svg width="100pt" height="124pt" viewBox="0 0 100 124"', $html, 'both heights and the gap between them');
         $this->assertStringContainsString('<svg x="0" y="0" width="100" height="50"><g/></svg><svg x="0" y="74" width="100" height="50"><g/></svg>', $html, 'the picture starts below the table, in the outer viewBox units');
@@ -1269,8 +1270,9 @@ class QrGraphTest extends TestCase
         $classes = (new ResourceScanner())->scan($dir);
         $nodes = (new GraphBuilder(new UriConverter(), (string) getcwd()))->build($classes)['nodes'];
         $echo = [PHP_BINARY, '-r', 'echo "<svg>", htmlspecialchars(stream_get_contents(STDIN)), "</svg>";'];
+        $declarations = new NodeDeclarations();
 
-        return (new HtmlRenderer($echo))($nodes, (new DependsOnWarnings())($classes, $nodes), $editor);
+        return (new HtmlRenderer($declarations, $echo))($nodes, (new DependsOnWarnings($declarations))($classes, $nodes), $editor);
     }
 
     /** @return list<Node> */

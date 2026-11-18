@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace BEAR\QueryRepositoryGraph;
 
 use function array_shift;
-use function str_starts_with;
 
 /**
  * What a write or an invalidation reaches, transitively, through the declared graph
@@ -14,7 +13,6 @@ use function str_starts_with;
  * The shape is `docs/schemas/graph/impact.json`.
  *
  * @psalm-import-type Node from GraphBuilder
- * @psalm-import-type EmbedTarget from GraphBuilder
  * @psalm-type ImpactLine = array{uri: string, via: string, by: string|null, depth: int, cached: bool, source: string|null}
  */
 final class Impact
@@ -31,7 +29,7 @@ final class Impact
     private array $dependedBy = [];
 
     /** @param list<Node> $nodes */
-    public function __construct(array $nodes)
+    public function __construct(array $nodes, private readonly NodeDeclarationsInterface $declarations)
     {
         $this->converter = new UriConverter();
         foreach ($nodes as $node) {
@@ -46,7 +44,7 @@ final class Impact
                 }
             }
 
-            foreach (self::layoutEmbeds($node) as $embed) {
+            foreach ($this->declarations->layoutEmbeds($node) as $embed) {
                 $this->embeddedBy[$this->converter->key($embed['uri'])][] = $node['uri'];
             }
         }
@@ -90,7 +88,7 @@ final class Impact
                 'via' => $next['via'],
                 'by' => $next['by'],
                 'depth' => $next['depth'],
-                'cached' => $node !== null && self::isCached($node),
+                'cached' => $node !== null && $this->declarations->isCached($node),
                 'source' => $node['source'] ?? null,
             ];
             $lines[] = $line;
@@ -125,75 +123,5 @@ final class Impact
         }
 
         return $targets;
-    }
-
-    /**
-     * The parts the resource's layout places in its body, each embedded as an onGet() #[Embed] is
-     *
-     * @param Node $node
-     *
-     * @return list<EmbedTarget>
-     */
-    public static function layoutEmbeds(array $node): array
-    {
-        return $node['layout']['embed'] ?? [];
-    }
-
-    /**
-     * Whether the resource declares a cache at all, on the class or on onGet()
-     *
-     * @param Node $node
-     */
-    public static function isCached(array $node): bool
-    {
-        return self::caches($node) !== [];
-    }
-
-    /**
-     * The cache attributes the resource declares, as named in the code; only #[Cacheable] expires by time, so only it carries a TTL
-     *
-     * @param Node $node
-     *
-     * @return list<string> `cacheable, ttl: medium`, `cacheable view, ttl: medium`, `cacheable response`, `donut cache`
-     */
-    public static function caches(array $node): array
-    {
-        $caches = [];
-        $cacheable = $node['cacheable'] ?? null;
-        if ($cacheable !== null) {
-            $caches[] = ($cacheable['type'] === 'view' ? 'cacheable view' : 'cacheable') . ', ttl: ' . self::ttl($cacheable);
-        }
-
-        if (isset($node['cacheableResponse']) || self::onGetCacheableResponse($node)) {
-            $caches[] = 'cacheable response';
-        }
-
-        if (isset($node['donutCache'])) {
-            $caches[] = 'donut cache';
-        }
-
-        return $caches;
-    }
-
-    /** @param array{expiry: string, expirySecond: int, expiryAt: string, update: bool, type: string} $cacheable */
-    private static function ttl(array $cacheable): string
-    {
-        if ($cacheable['expirySecond'] > 0) {
-            return $cacheable['expirySecond'] . 's';
-        }
-
-        return $cacheable['expiryAt'] !== '' ? 'until ' . $cacheable['expiryAt'] : $cacheable['expiry'];
-    }
-
-    /** @param Node $node */
-    private static function onGetCacheableResponse(array $node): bool
-    {
-        foreach ($node['methods'] ?? [] as $name => $method) {
-            if (str_starts_with($name, 'onGet') && isset($method['cacheableResponse'])) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }

@@ -44,7 +44,7 @@ final class LayoutTable
     private array $rows = [];
 
     /** @param array<string, Node> $drawn */
-    public function __construct(array $drawn)
+    public function __construct(array $drawn, private readonly DotRenderer $dot)
     {
         $keys = [];
         $rowKeys = [];
@@ -55,11 +55,11 @@ final class LayoutTable
             }
 
             $class = $layout['class'];
-            $this->columns[$class] ??= ['name' => $layout['name'], 'key' => self::unique(self::id($layout['name']), $keys), 'parts' => [], 'pages' => []];
+            $this->columns[$class] ??= ['name' => $layout['name'], 'key' => $this->unique($this->id($layout['name']), $keys), 'parts' => [], 'pages' => []];
             $this->columns[$class]['pages'][] = $uri;
             foreach ($layout['embed'] as $embed) {
                 $this->columns[$class]['parts'][$embed['uri']] = true;
-                $this->rows[$embed['uri']] ??= self::unique(self::id(DotRenderer::path($embed['uri'])), $rowKeys);
+                $this->rows[$embed['uri']] ??= $this->unique($this->id($this->dot->path($embed['uri'])), $rowKeys);
             }
         }
     }
@@ -85,19 +85,19 @@ final class LayoutTable
     public function node(): string
     {
         $uris = array_keys($this->rows);
-        $kinds = array_values(array_unique(array_map(DotRenderer::kind(...), $uris)));
+        $kinds = array_values(array_unique(array_map($this->dot->kind(...), $uris)));
         $mixed = count($kinds) > 1;
-        $prefix = $mixed ? '' : self::prefix(array_map(DotRenderer::path(...), $uris));
-        $corner = ($mixed ? '' : self::escape($kinds[0] ?? '')) . ($prefix === '' ? '' : '&nbsp;&nbsp;' . self::escape($prefix));
+        $prefix = $mixed ? '' : $this->prefix(array_map($this->dot->path(...), $uris));
+        $corner = ($mixed ? '' : $this->escape($kinds[0] ?? '')) . ($prefix === '' ? '' : '&nbsp;&nbsp;' . $this->escape($prefix));
         $rows = ['<TR>' . $this->header($corner) . '</TR>'];
         foreach ($uris as $i => $uri) {
-            $line = self::line($i === count($uris) - 1);
+            $line = $this->line($i === count($uris) - 1);
             $key = $this->rows[$uri];
-            $label = $mixed ? $uri : substr(DotRenderer::path($uri), strlen($prefix));
-            $cells = [sprintf('<TD ALIGN="LEFT" ID="esi-%s" TOOLTIP="%s" %s>%s</TD>', $key, self::escape($uri), $line, self::escape($label))];
+            $label = $mixed ? $uri : substr($this->dot->path($uri), strlen($prefix));
+            $cells = [sprintf('<TD ALIGN="LEFT" ID="esi-%s" TOOLTIP="%s" %s>%s</TD>', $key, $this->escape($uri), $line, $this->escape($label))];
             foreach ($this->columns as $column) {
                 $cells[] = isset($column['parts'][$uri])
-                    ? sprintf('<TD ID="cell-%s-%s" TOOLTIP="#[%s] %s" %s><FONT POINT-SIZE="9" COLOR="#5b4a9e">●</FONT></TD>', $key, $column['key'], self::escape($column['name']), self::escape($uri), $line)
+                    ? sprintf('<TD ID="cell-%s-%s" TOOLTIP="#[%s] %s" %s><FONT POINT-SIZE="9" COLOR="#5b4a9e">●</FONT></TD>', $key, $column['key'], $this->escape($column['name']), $this->escape($uri), $line)
                     : sprintf('<TD %s> </TD>', $line);
             }
 
@@ -111,13 +111,13 @@ final class LayoutTable
     private function header(string $corner): string
     {
         // Graphviz rejects an empty FONT: with nothing shared, the corner is an empty cell.
-        $cells = [sprintf('<TD ALIGN="LEFT" %s>%s</TD>', self::line(false), $corner === '' ? '' : '<FONT POINT-SIZE="10" COLOR="#999999">' . $corner . '</FONT>')];
+        $cells = [sprintf('<TD ALIGN="LEFT" %s>%s</TD>', $this->line(false), $corner === '' ? '' : '<FONT POINT-SIZE="10" COLOR="#999999">' . $corner . '</FONT>')];
         foreach ($this->columns as $column) {
             $cells[] = sprintf(
                 '<TD ID="layout-%s" TOOLTIP="#[%2$s]" %3$s><TABLE BORDER="0" CELLPADDING="6" BGCOLOR="#e8e8e8" STYLE="rounded"><TR><TD>#[%2$s]</TD></TR></TABLE></TD>',
                 $column['key'],
-                self::escape($column['name']),
-                self::line(false),
+                $this->escape($column['name']),
+                $this->line(false),
             );
         }
 
@@ -138,7 +138,7 @@ final class LayoutTable
         }
 
         foreach ($this->columns as $class => $column) {
-            $ids['heads'][] = ['id' => 'layout-' . $column['key'], 'key' => self::key($class), 'label' => '#[' . $column['name'] . ']', 'pages' => $column['pages']];
+            $ids['heads'][] = ['id' => 'layout-' . $column['key'], 'key' => $this->key($class), 'label' => '#[' . $column['name'] . ']', 'pages' => $column['pages']];
             foreach (array_keys($column['parts']) as $uri) {
                 $ids['cells'][] = ['id' => sprintf('cell-%s-%s', $this->rows[$uri], $column['key']), 'uri' => $uri, 'pages' => $column['pages']];
             }
@@ -148,7 +148,7 @@ final class LayoutTable
     }
 
     /** The layout's entry in the html page's glow data, next to the URIs' */
-    public static function key(string $class): string
+    public function key(string $class): string
     {
         return 'layout:' . $class;
     }
@@ -158,7 +158,7 @@ final class LayoutTable
      *
      * @param list<string> $paths
      */
-    private static function prefix(array $paths): string
+    private function prefix(array $paths): string
     {
         $prefix = $paths[0] ?? '';
         foreach ($paths as $path) {
@@ -172,20 +172,20 @@ final class LayoutTable
         return $slash === false ? '' : substr($prefix, 0, $slash + 1);
     }
 
-    private static function line(bool $last): string
+    private function line(bool $last): string
     {
         // The last row's line is white rather than absent, so its text lines up with the rows above.
         return sprintf('BORDER="1" SIDES="B" COLOR="%s"', $last ? 'white' : self::LINE);
     }
 
     /** A Graphviz port and SVG id: anything but a letter, digit, `_` or `-` becomes `-` */
-    private static function id(string $text): string
+    private function id(string $text): string
     {
         return (string) preg_replace('/[^A-Za-z0-9_-]/', '-', $text);
     }
 
     /** @param array<string, true> $taken */
-    private static function unique(string $id, array &$taken): string
+    private function unique(string $id, array &$taken): string
     {
         $unique = $id;
         for ($n = 2; isset($taken[$unique]); $n++) {
@@ -197,7 +197,7 @@ final class LayoutTable
         return $unique;
     }
 
-    private static function escape(string $text): string
+    private function escape(string $text): string
     {
         return htmlspecialchars($text, ENT_QUOTES | ENT_XML1);
     }

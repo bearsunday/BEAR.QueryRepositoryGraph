@@ -57,7 +57,7 @@ final class GraphBuilder
     private array $nodeUris = [];
 
     public function __construct(
-        private readonly UriConverter $uriConverter = new UriConverter(),
+        private readonly UriConverter $uriConverter,
         string|null $cwd = null,
     ) {
         $this->cwd = str_replace('\\', '/', $cwd ?? (string) getcwd());

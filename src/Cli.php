@@ -55,8 +55,11 @@ Usage:
 Exit codes: 0 ok, 1 error, 2 usage, 3 observe printed a line matching --fail-on.
 USAGE;
 
+    private readonly NodeDeclarations $declarations;
+
     public function __construct(private readonly string|null $autoload = null)
     {
+        $this->declarations = new NodeDeclarations();
     }
 
     /**
@@ -67,7 +70,7 @@ USAGE;
     public function __invoke(array $argv, $stdout, $stderr): int
     {
         $command = (string) array_shift($argv);
-        $parsed = self::parse($command, $argv);
+        $parsed = $this->parse($command, $argv);
         if (is_string($parsed)) {
             fwrite($stderr, $parsed . self::USAGE);
 
@@ -88,7 +91,7 @@ USAGE;
      *
      * @return array{Options, list<string>}|string the options and arguments, or the line to print before the usage
      */
-    private static function parse(string $command, array $argv): array|string
+    private function parse(string $command, array $argv): array|string
     {
         $options = ['dir' => 'src/Resource', 'method' => null, 'allowUnknown' => false, 'failOn' => [], 'cached' => false, 'json' => false, 'editor' => null];
         $args = [];
@@ -129,7 +132,7 @@ USAGE;
             $args[] = $arg;
         }
 
-        return self::invalid($command, $options, $args) ?? [$options, $args];
+        return $this->invalid($command, $options, $args) ?? [$options, $args];
     }
 
     /**
@@ -138,7 +141,7 @@ USAGE;
      *
      * @return string|null the line to print before the usage; null when the command line is valid
      */
-    private static function invalid(string $command, array $options, array $args): string|null
+    private function invalid(string $command, array $options, array $args): string|null
     {
         foreach ($options['failOn'] as $verdict) {
             if (! in_array($verdict, Observe::ALL_VERDICTS, true)) {
@@ -177,14 +180,14 @@ USAGE;
     private function run(string $command, array $options, array $args, $stdout, $stderr): int
     {
         $cwd = (string) getcwd();
-        $graph = self::graph($options['dir'], $cwd, $stderr);
+        $graph = $this->graph($options['dir'], $cwd, $stderr);
         $skipped = $graph['skipped'];
 
         if ($command === 'impact') {
-            self::assertTarget($graph['nodes'], $args[0], $options['method'], $options['allowUnknown']);
+            $this->assertTarget($graph['nodes'], $args[0], $options['method'], $options['allowUnknown']);
         }
 
-        $text = self::text($command, $options, $args, $graph['nodes'], $graph['warnings']);
+        $text = $this->text($command, $options, $args, $graph['nodes'], $graph['warnings']);
         if ($text !== null) {
             fwrite($stdout, $text);
 
@@ -198,21 +201,21 @@ USAGE;
                         'version' => 6,
                         'namespaces' => $graph['namespaces'],
                         'dir' => $options['dir'],
-                        'counts' => self::counts($graph['nodes'], $skipped),
-                        'tool' => ['name' => 'qr-graph', 'version' => self::version()],
-                        'autoload' => self::relativeAutoload($this->autoload, $cwd),
+                        'counts' => $this->counts($graph['nodes'], $skipped),
+                        'tool' => ['name' => 'qr-graph', 'version' => $this->version()],
+                        'autoload' => $this->relativeAutoload($this->autoload, $cwd),
                     ],
                 ],
                 ...$graph['nodes'],
             ],
             'observe' => $this->observe($graph['nodes'], $args, $stderr),
-            default => (new Impact($graph['nodes']))($args[0], $options['method']),
+            default => (new Impact($graph['nodes'], $this->declarations))($args[0], $options['method']),
         };
         foreach ($lines as $line) {
             fwrite($stdout, json_encode($line, self::JSON) . "\n");
         }
 
-        return $command === 'observe' && self::carries($lines, $options['failOn']) ? 3 : 0;
+        return $command === 'observe' && $this->carries($lines, $options['failOn']) ? 3 : 0;
     }
 
     /**
@@ -223,15 +226,15 @@ USAGE;
      *
      * @return string|null what the command prints as text; null for a command that prints JSONL
      */
-    private static function text(string $command, array $options, array $args, array $nodes, array $warnings): string|null
+    private function text(string $command, array $options, array $args, array $nodes, array $warnings): string|null
     {
-        $dot = new DotRenderer();
+        $dot = new DotRenderer($this->declarations);
 
         return match (true) {
             $command === 'dot' => $options['cached'] ? $dot->cached($nodes) : $dot($nodes),
-            $command === 'html' => (new HtmlRenderer())($nodes, $warnings, $options['editor']),
-            $command === 'snapshot' => (new SnapshotRenderer())($nodes),
-            $command === 'impact' && ! $options['json'] => (new SnapshotRenderer())->impact($nodes, $args[0], $options['method']),
+            $command === 'html' => (new HtmlRenderer($this->declarations))($nodes, $warnings, $options['editor']),
+            $command === 'snapshot' => (new SnapshotRenderer($this->declarations))($nodes),
+            $command === 'impact' && ! $options['json'] => (new SnapshotRenderer($this->declarations))->impact($nodes, $args[0], $options['method']),
             default => null,
         };
     }
@@ -245,7 +248,7 @@ USAGE;
      *
      * @throws RuntimeException when no resource class is found.
      */
-    private static function graph(string $dir, string $cwd, $stderr): array
+    private function graph(string $dir, string $cwd, $stderr): array
     {
         $scanner = new ResourceScanner();
         $classes = $scanner->scan($dir);
@@ -263,7 +266,7 @@ USAGE;
             ));
         }
 
-        $warnings = (new DependsOnWarnings())($classes, $graph['nodes']);
+        $warnings = (new DependsOnWarnings($this->declarations))($classes, $graph['nodes']);
         foreach ($warnings as $warning) {
             fwrite($stderr, json_encode($warning, self::JSON) . "\n");
         }
@@ -275,7 +278,7 @@ USAGE;
      * @param list<array<string, mixed>> $lines
      * @param list<string>               $verdicts
      */
-    private static function carries(array $lines, array $verdicts): bool
+    private function carries(array $lines, array $verdicts): bool
     {
         foreach ($lines as $line) {
             if (in_array($line['verdict'] ?? null, $verdicts, true)) {
@@ -295,7 +298,7 @@ USAGE;
      */
     private function observe(array $nodes, array $paths, $stderr): array
     {
-        $observe = new Observe($nodes);
+        $observe = new Observe($nodes, $this->declarations);
         $lines = $observe($paths);
         if (! $observe->sawSkipped) {
             fwrite($stderr, json_encode(['warning' => 'No dependency_skipped in the sessions read. BEAR.QueryRepository before 1.19 does not record it, and then holes and untagged children read as unclassified.'], self::JSON) . "\n");
@@ -320,7 +323,7 @@ USAGE;
      *
      * @throws RuntimeException when the target URI or its write method is not in the graph.
      */
-    private static function assertTarget(array $nodes, string $uri, string|null $method, bool $allowUnknown): void
+    private function assertTarget(array $nodes, string $uri, string|null $method, bool $allowUnknown): void
     {
         $converter = new UriConverter();
         $uri = $converter->resolve($uri, $uri)['uri'];
@@ -354,7 +357,7 @@ USAGE;
      *
      * @return array{nodes: int, edges: int, skipped: int}
      */
-    private static function counts(array $nodes, int $skipped): array
+    private function counts(array $nodes, int $skipped): array
     {
         $edges = 0;
         foreach ($nodes as $node) {
@@ -368,7 +371,7 @@ USAGE;
     }
 
     /** The autoloader as the application refers to it: relative to the working directory, never a machine path. */
-    private static function relativeAutoload(string|null $autoload, string $cwd): string|null
+    private function relativeAutoload(string|null $autoload, string $cwd): string|null
     {
         if ($autoload === null) {
             return null;
@@ -381,7 +384,7 @@ USAGE;
     }
 
     /** The installed package version, or "unknown" when the autoloader in use does not list this package */
-    private static function version(): string
+    private function version(): string
     {
         try {
             return InstalledVersions::getPrettyVersion('bear/query-repository-graph') ?? 'unknown';
