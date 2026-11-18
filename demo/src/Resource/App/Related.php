@@ -11,8 +11,8 @@ use BEAR\Resource\ResourceObject;
 #[Cacheable]
 class Related extends ResourceObject
 {
-    #[DependsOn(uri: 'app://self/article?id={articleId}')]
-    public function onGet(string $articleId): static
+    #[DependsOn(uri: 'app://self/article{?id}')]
+    public function onGet(string $id): static
     {
         return $this;
     }
