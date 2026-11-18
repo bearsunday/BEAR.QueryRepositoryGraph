@@ -9,7 +9,7 @@ All notable changes to this project are documented in this file.
 - `html` draws only the cached part of the picture, as `dot --cached` does, so the whole graph is no longer clickable; draw it with `qr-graph dot | dot -Tsvg`. `--cached` is still accepted and changes nothing.
 - A URI ending in `/` is an error, in `#[Embed]`, `#[DependsOn]`, `#[Refresh]`, `#[Purge]` and as a command argument: write the `index` it names (`page://self/index` for `page://self/`).
 - Requires bear/resource 1.36.0 or later.
-- `html` lists a `#[DependsOn]` on a resource no cache stores in "Not drawn", no longer as a warning: its tags reach a cache once a cached page embeds it, and a page left uncached by design is fine.
+- `html` lists a `#[DependsOn]` on a resource no cache stores in its own group of "Not drawn", no longer as a warning: its tags reach a cache once a cached page embeds it, and a page left uncached by design is fine. A resource in that group can also be drawn, or carry another `#[DependsOn]` warning.
 
 ### Added
 

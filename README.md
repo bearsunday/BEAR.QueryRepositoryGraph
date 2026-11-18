@@ -51,7 +51,8 @@ through its grey arrow, and `index` through the black one.
 what it invalidates orange, each side counted; the rest dims. Below the picture, a collapsed Warnings section lists
 the declarations that affect no cache, each with its `file:line` (a PhpStorm link with `--editor=phpstorm`), and a
 collapsed Not drawn after it lists the resources left out. A `#[DependsOn]` on a resource no cache stores is listed in
-Not drawn, not as a warning: its tags reach a cache once a cached page embeds it.
+its own group of Not drawn, not as a warning: its tags reach a cache once a cached page embeds it. A resource in that
+group can also be drawn, or carry another `#[DependsOn]` warning.
 
 ### Resource layouts
 
