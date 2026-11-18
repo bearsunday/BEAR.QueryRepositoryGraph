@@ -30,8 +30,7 @@ vendor/bin/qr-graph observe var/log/query-repository              # the semantic
 People read the picture, `impact` and `snapshot`. Tools and AI agents read `dump`, `impact --json` and `observe`:
 JSONL, described by the [JSON Schemas](docs/schemas/graph). Each command and its limits are in
 [docs/graph.md](docs/graph.md). The picture above is `php bin/qr-graph dot --dir=demo/src/Resource`, run on
-[demo](demo/src/Resource): resource classes that carry their attributes and nothing else. One `#[DependsOn]` in it,
-on `app://self/related`, names the wrong query key on purpose, so the warnings have something to show.
+[demo](demo/src/Resource): resource classes that carry their attributes and nothing else.
 
 ## Reading the picture
 
@@ -51,7 +50,9 @@ through its grey arrow, and `index` through the black one.
 `qr-graph dot | dot -Tsvg`. Click a resource: what invalidates it glows green, the writes that invalidate it blue, and
 what it invalidates orange, each side counted; the rest dims. Below the picture, a collapsed Warnings section lists
 the declarations that affect no cache, each with its `file:line` (a PhpStorm link with `--editor=phpstorm`), and a
-collapsed Not drawn after it lists the resources left out.
+collapsed Not drawn after it lists the resources left out. A `#[DependsOn]` on a resource no cache stores is listed in
+its own group of Not drawn, not as a warning: its tags reach a cache once a cached page embeds it. A resource in that
+group can also be drawn, or carry another `#[DependsOn]` warning.
 
 ### Resource layouts
 

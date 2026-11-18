@@ -9,10 +9,11 @@ All notable changes to this project are documented in this file.
 - `html` draws only the cached part of the picture, as `dot --cached` does, so the whole graph is no longer clickable; draw it with `qr-graph dot | dot -Tsvg`. `--cached` is still accepted and changes nothing.
 - A URI ending in `/` is an error, in `#[Embed]`, `#[DependsOn]`, `#[Refresh]`, `#[Purge]` and as a command argument: write the `index` it names (`page://self/index` for `page://self/`).
 - Requires bear/resource 1.36.0 or later.
+- `html` lists a `#[DependsOn]` on a resource no cache stores in its own group of "Not drawn", no longer as a warning: its tags reach a cache once a cached page embeds it, and a page left uncached by design is fine. A resource in that group can also be drawn, or carry another `#[DependsOn]` warning.
 
 ### Added
 
-- `html` lists, below the picture in a section that starts collapsed, the declarations that affect no cache, each with its `file:line`: `#[Purge]`/`#[Refresh]` targets that reach no cached resource, `#[DependsOn]` on resources no cache stores, URIs no scanned resource serves, and the `#[DependsOn]` warnings. A collapsed "Not drawn" lists the resources the picture leaves out.
+- `html` lists, below the picture in a section that starts collapsed, the declarations that affect no cache, each with its `file:line`: `#[Purge]`/`#[Refresh]` targets that reach no cached resource, URIs no scanned resource serves, and the `#[DependsOn]` warnings. A collapsed "Not drawn" lists the resources the picture leaves out.
 - `html --editor=phpstorm` links each `file:line` to the file in PhpStorm; without it the page holds no absolute path, so it can be shared.
 - Resource layouts (BEAR.Resource's `AbstractResourceLayout`, such as `#[ContentPage]`): every command takes each part as an `#[Embed]` of the pages carrying the layout, `dump` records it as `layout` (`meta.version` 6), and `dot`/`html` draw the layouts as one table of layouts × parts at the top-left instead of arrows.
 
