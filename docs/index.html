@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>qr-graph</title>
+<style>
+  :root { --goes-stale: #ff8c1a; --makes-stale: #2eb85c; --write: #3b73b9; --selected: #8e44ad; }
+  body { margin: 0; font: 13px/1.4 Helvetica, Arial, sans-serif; color: #222; background: #fff; }
+  header { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; gap: 6px 20px; align-items: center;
+    padding: 8px 16px; background: rgba(255, 255, 255, .94); border-bottom: 1px solid #e4e4e4; }
+  .key { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 11px; height: 11px; border-radius: 2px; }
+  .swatch.reached-by { background: var(--makes-stale); box-shadow: 0 0 6px 1px var(--makes-stale); }
+  .swatch.reaches { background: var(--goes-stale); box-shadow: 0 0 6px 1px var(--goes-stale); }
+  .swatch.writer { background: var(--write); box-shadow: 0 0 6px 1px var(--write); }
+  .swatch.selected { background: var(--selected); box-shadow: 0 0 6px 1px var(--selected); }
+  .count { font-weight: bold; }
+  #status { color: #666; }
+  main { padding: 16px; overflow: auto; }
+  #warnings { padding: 4px 16px 24px; border-top: 1px solid #e4e4e4; }
+  #warnings > details > summary, #warnings h2 { font-size: 15px; margin: 8px 0; }
+  #warnings h3 { font-size: 13px; margin: 14px 0 2px; }
+  #warnings p { margin: 0 0 4px; color: #666; }
+  #warnings ul { margin: 0; padding-left: 18px; }
+  #warnings li { margin: 3px 0; }
+  #warnings a.uri { color: var(--selected); }
+  #warnings .source { color: #666; font-size: 11px; }
+  #warnings a.source { text-decoration: none; }
+  #warnings a.source:hover { text-decoration: underline; }
+  #warnings .message { color: #444; }
+  #warnings summary { margin-top: 14px; font-weight: bold; cursor: pointer; }
+  svg .node { cursor: pointer; }
+  svg .node, svg .edge { transition: opacity .15s; }
+  svg.lit .node, svg.lit .edge { opacity: .22; }
+  svg.lit .selected, svg.lit .reaches, svg.lit .reached-by { opacity: 1; }
+  .node.reached-by { filter: drop-shadow(0 0 2px var(--makes-stale)) drop-shadow(0 0 6px var(--makes-stale)); }
+  .node.reaches { filter: drop-shadow(0 0 2px var(--goes-stale)) drop-shadow(0 0 6px var(--goes-stale)); }
+  .node.reaches.reached-by { filter: drop-shadow(0 0 2px var(--goes-stale)) drop-shadow(0 0 6px var(--makes-stale)); }
+  .node.reached-by.writer { filter: drop-shadow(0 0 2px var(--write)) drop-shadow(0 0 6px var(--write)); }
+  .node.selected { filter: drop-shadow(0 0 2px var(--selected)) drop-shadow(0 0 8px var(--selected)); }
+  .node.selected text:first-of-type { font-weight: bold; }
+  .edge.reached-by path, .edge.reached-by polygon { stroke: var(--makes-stale); stroke-width: 2; }
+  .edge.reaches path, .edge.reaches polygon { stroke: var(--goes-stale); stroke-width: 2; }
+  .edge.reached-by { filter: drop-shadow(0 0 3px var(--makes-stale)); }
+  .edge.reaches { filter: drop-shadow(0 0 3px var(--goes-stale)); }
+  /* A lit write keeps its blue, so a refresh or purge never reads as an embed. */
+  .edge.write.reached-by path, .edge.write.reached-by polygon,
+  .edge.write.reaches path, .edge.write.reaches polygon { stroke: var(--write); }
+  .edge.write.reached-by, .edge.write.reaches { filter: drop-shadow(0 0 3px var(--write)); }
+  svg .node:focus-visible { outline: 2px solid var(--selected); outline-offset: 2px; }
+  svg.lit .node.layout-table { opacity: 1; }
+  .layout-cell { transition: opacity .15s; }
+  svg.lit .layout-cell { opacity: .22; }
+  svg.lit .layout-cell.selected, svg.lit .layout-cell.reaches, svg.lit .layout-cell.reached-by { opacity: 1; }
+  svg.lit.layout-lit .layout-row { opacity: 1; }
+  .layout-cell.reaches text { fill: var(--goes-stale); font-weight: bold; }
+  .layout-cell.reached-by text { fill: var(--makes-stale); font-weight: bold; }
+  .layout-cell.reached-by.writer text { fill: var(--write); }
+  .layout-cell.selected text { fill: var(--selected); font-weight: bold; }
+  .layout-head { cursor: pointer; transition: opacity .15s; }
+  svg.lit .layout-head { opacity: .22; }
+  svg.lit .layout-head.selected, svg.lit .layout-head.reaches, svg.lit .layout-head.reached-by { opacity: 1; }
+  .layout-head.reached-by path { filter: drop-shadow(0 0 2px var(--makes-stale)) drop-shadow(0 0 6px var(--makes-stale)); }
+  .layout-head.reaches path { filter: drop-shadow(0 0 2px var(--goes-stale)) drop-shadow(0 0 6px var(--goes-stale)); }
+  .layout-head.selected path { filter: drop-shadow(0 0 2px var(--selected)) drop-shadow(0 0 8px var(--selected)); }
+  .layout-head.selected text:first-of-type { font-weight: bold; }
+  /* A click focuses what it selects: no focus ring frames the table or a cell, the glow shows the selection. */
+  .layout-table:focus, .layout-table :focus { outline: none; }
+</style>
+</head>
+<body>
+<header>
+  <span class="key"><span class="swatch writer"></span>writes that invalidate this <span class="count" id="count-writer"></span></span>
+  <span class="key"><span class="swatch reached-by"></span>invalidates this <span class="count" id="count-reached-by"></span></span>
+  <span class="key"><span class="swatch selected"></span>clicked</span>
+  <span class="key"><span class="swatch reaches"></span>invalidated by this <span class="count" id="count-reaches"></span></span>
+  <span id="status">Click a resource, or focus it and press Enter; click it again, elsewhere, or press Escape to clear.</span>
+</header>
+<main>
+<svg width="1327pt" height="1060pt" viewBox="0 0 1327 1060" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<svg x="0" y="0" width="297" height="142"
+ viewBox="0.00 0.00 297.00 142.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="layouts" class="graph" transform="scale(1 1) rotate(0) translate(4 138)">
+<title>layouts</title>
+<polygon fill="white" stroke="none" points="-4,4 -4,-138 293.25,-138 293.25,4 -4,4"/>
+<!-- layouts -->
+<g id="layouts_node1" class="node">
+<title>layouts</title>
+<polyline fill="none" stroke="#e6e2f2" points="0,-88.5 72.25,-88.5"/>
+<text xml:space="preserve" text-anchor="start" x="8" y="-108.62" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#999999">page  layout/</text>
+<g id="a_layout&#45;BlogPage"><a xlink:title="#[BlogPage]">
+<polyline fill="none" stroke="#e6e2f2" points="72.25,-88.5 177.75,-88.5"/>
+<path fill="#e8e8e8" stroke="none" d="M90.08,-96.5C90.08,-96.5 159.92,-96.5 159.92,-96.5 164.83,-96.5 169.75,-101.42 169.75,-106.33 169.75,-106.33 169.75,-116.17 169.75,-116.17 169.75,-121.08 164.83,-126 159.92,-126 159.92,-126 90.08,-126 90.08,-126 85.17,-126 80.25,-121.08 80.25,-116.17 80.25,-116.17 80.25,-106.33 80.25,-106.33 80.25,-101.42 85.17,-96.5 90.08,-96.5"/>
+<text xml:space="preserve" text-anchor="start" x="88.25" y="-107.5" font-family="Helvetica,sans-Serif" font-size="13.00">#[BlogPage]</text>
+</a>
+</g>
+<g id="a_layout&#45;IndexPage"><a xlink:title="#[IndexPage]">
+<polyline fill="none" stroke="#e6e2f2" points="177.75,-88.5 289.25,-88.5"/>
+<path fill="#e8e8e8" stroke="none" d="M195.58,-96.5C195.58,-96.5 271.42,-96.5 271.42,-96.5 276.33,-96.5 281.25,-101.42 281.25,-106.33 281.25,-106.33 281.25,-116.17 281.25,-116.17 281.25,-121.08 276.33,-126 271.42,-126 271.42,-126 195.58,-126 195.58,-126 190.67,-126 185.75,-121.08 185.75,-116.17 185.75,-116.17 185.75,-106.33 185.75,-106.33 185.75,-101.42 190.67,-96.5 195.58,-96.5"/>
+<text xml:space="preserve" text-anchor="start" x="193.75" y="-107.5" font-family="Helvetica,sans-Serif" font-size="13.00">#[IndexPage]</text>
+</a>
+</g>
+<g id="a_esi&#45;layout&#45;nav"><a xlink:title="page://self/layout/nav">
+<polyline fill="none" stroke="#e6e2f2" points="0,-59 72.25,-59"/>
+<text xml:space="preserve" text-anchor="start" x="8" y="-70" font-family="Helvetica,sans-Serif" font-size="13.00">nav</text>
+</a>
+</g>
+<g id="a_cell&#45;layout&#45;nav&#45;BlogPage"><a xlink:title="#[BlogPage] page://self/layout/nav">
+<polyline fill="none" stroke="#e6e2f2" points="72.25,-59 177.75,-59"/>
+<text xml:space="preserve" text-anchor="start" x="122.38" y="-71.12" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#5b4a9e">●</text>
+</a>
+</g>
+<g id="a_cell&#45;layout&#45;nav&#45;IndexPage"><a xlink:title="#[IndexPage] page://self/layout/nav">
+<polyline fill="none" stroke="#e6e2f2" points="177.75,-59 289.25,-59"/>
+<text xml:space="preserve" text-anchor="start" x="230.88" y="-71.12" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#5b4a9e">●</text>
+</a>
+</g>
+<g id="a_esi&#45;layout&#45;footer"><a xlink:title="page://self/layout/footer">
+<polyline fill="none" stroke="#e6e2f2" points="0,-29.5 72.25,-29.5"/>
+<text xml:space="preserve" text-anchor="start" x="8" y="-40.5" font-family="Helvetica,sans-Serif" font-size="13.00">footer</text>
+</a>
+</g>
+<g id="a_cell&#45;layout&#45;footer&#45;BlogPage"><a xlink:title="#[BlogPage] page://self/layout/footer">
+<polyline fill="none" stroke="#e6e2f2" points="72.25,-29.5 177.75,-29.5"/>
+<text xml:space="preserve" text-anchor="start" x="122.38" y="-41.62" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#5b4a9e">●</text>
+</a>
+</g>
+<g id="a_cell&#45;layout&#45;footer&#45;IndexPage"><a xlink:title="#[IndexPage] page://self/layout/footer">
+<polyline fill="none" stroke="#e6e2f2" points="177.75,-29.5 289.25,-29.5"/>
+<text xml:space="preserve" text-anchor="start" x="230.88" y="-41.62" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#5b4a9e">●</text>
+</a>
+</g>
+<g id="a_esi&#45;layout&#45;pickup"><a xlink:title="page://self/layout/pickup">
+<polyline fill="none" stroke="white" points="0,0 72.25,0"/>
+<text xml:space="preserve" text-anchor="start" x="8" y="-11" font-family="Helvetica,sans-Serif" font-size="13.00">pickup</text>
+</a>
+</g>
+<polyline fill="none" stroke="white" points="72.25,0 177.75,0"/>
+<text xml:space="preserve" text-anchor="start" x="123.12" y="-11" font-family="Helvetica,sans-Serif" font-size="13.00"> </text>
+<g id="a_cell&#45;layout&#45;pickup&#45;IndexPage"><a xlink:title="#[IndexPage] page://self/layout/pickup">
+<polyline fill="none" stroke="white" points="177.75,0 289.25,0"/>
+<text xml:space="preserve" text-anchor="start" x="230.88" y="-12.12" font-family="Helvetica,sans-Serif" font-size="9.00" fill="#5b4a9e">●</text>
+</a>
+</g>
+</g>
+</g>
+</svg>
+<svg x="0" y="166" width="1327" height="894"
+ viewBox="0.00 0.00 1327.00 894.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 889.76)">
+<title>qr</title>
+<polygon fill="white" stroke="none" points="-4,4 -4,-889.76 1323.15,-889.76 1323.15,4 -4,4"/>
+<!-- app://self/admin/article -->
+<g id="node1" class="node">
+<title>app://self/admin/article</title>
+<text xml:space="preserve" text-anchor="start" x="356.87" y="-340.66" font-family="Helvetica,sans-Serif" font-size="13.00">admin/article</text>
+<text xml:space="preserve" text-anchor="start" x="356.87" y="-323.41" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#666666">app</text>
+</g>
+<!-- app://self/article -->
+<g id="node2" class="node">
+<title>app://self/article</title>
+<text xml:space="preserve" text-anchor="start" x="952.89" y="-350.66" font-family="Helvetica,sans-Serif" font-size="13.00">article</text>
+<text xml:space="preserve" text-anchor="start" x="952.89" y="-333.41" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#666666">app (cacheable, ttl: never)</text>
+</g>
+<!-- app://self/admin/article&#45;&gt;app://self/article -->
+<g id="edge3" class="edge">
+<title>app://self/admin/article&#45;&gt;app://self/article</title>
+<path fill="none" stroke="#3b73b9" d="M443.47,-333.61C461.85,-332.88 483.04,-332.15 502.29,-331.79 640.13,-329.2 674.7,-328.55 812.47,-333.54 851.52,-334.95 894.9,-337.55 930.9,-340"/>
+<polygon fill="none" stroke="#3b73b9" points="930.59,-343.48 940.8,-340.68 931.07,-336.5 930.59,-343.48"/>
+<text xml:space="preserve" text-anchor="middle" x="744.92" y="-335.29" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#2f5f9e">onPut refresh</text>
+</g>
+<!-- app://self/admin/article&#45;&gt;app://self/article -->
+<g id="edge5" class="edge">
+<title>app://self/admin/article&#45;&gt;app://self/article</title>
+<path fill="none" stroke="#3b73b9" d="M443.21,-340.39C532.87,-348.49 733.28,-363.69 901.97,-355.79 911.31,-355.35 921.09,-354.7 930.78,-353.93"/>
+<polygon fill="none" stroke="#3b73b9" points="930.9,-357.44 940.58,-353.12 930.32,-350.46 930.9,-357.44"/>
+<text xml:space="preserve" text-anchor="middle" x="744.92" y="-359.75" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#2f5f9e">onDelete purge</text>
+</g>
+<!-- app://self/articles -->
+<g id="node3" class="node">
+<title>app://self/articles</title>
+<text xml:space="preserve" text-anchor="start" x="688.3" y="-516.66" font-family="Helvetica,sans-Serif" font-size="13.00">articles</text>
+<text xml:space="preserve" text-anchor="start" x="688.3" y="-499.41" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#666666">app (cacheable, ttl: never)</text>
+</g>
+<!-- app://self/admin/article&#45;&gt;app://self/articles -->
+<g id="edge1" class="edge">
+<title>app://self/admin/article&#45;&gt;app://self/articles</title>
+<path fill="none" stroke="#3b73b9" d="M440.33,-357.98C447.78,-362.04 455.34,-366.39 462.29,-370.79 481.07,-382.66 482.03,-391.66 502.29,-400.79 558.18,-425.95 583.64,-399.06 637.38,-428.54 659.77,-440.82 657.55,-453.69 677.38,-469.79 683.15,-474.47 689.48,-479.06 695.86,-483.39"/>
+<polygon fill="none" stroke="#3b73b9" points="693.65,-486.13 703.93,-488.69 697.49,-480.27 693.65,-486.13"/>
+<text xml:space="preserve" text-anchor="middle" x="569.83" y="-430.29" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#2f5f9e">onPost purge</text>
+</g>
+<!-- app://self/admin/article&#45;&gt;app://self/articles -->
+<g id="edge6" class="edge">
+<title>app://self/admin/article&#45;&gt;app://self/articles</title>
+<path fill="none" stroke="#3b73b9" d="M443.5,-356.53C450.25,-360.67 456.77,-365.42 462.29,-370.79 488.27,-396.03 473.03,-420.44 502.29,-441.79 551.81,-477.91 578.65,-452.01 637.38,-469.54 652.26,-473.98 667.98,-479.64 682.63,-485.36"/>
+<polygon fill="none" stroke="#3b73b9" points="681.09,-488.52 691.68,-488.97 683.68,-482.02 681.09,-488.52"/>
+<text xml:space="preserve" text-anchor="middle" x="569.83" y="-471.29" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#2f5f9e">onDelete purge</text>
+</g>
+<!-- app://self/ranking -->
+<g id="node8" class="node">
+<title>app://self/ranking</title>
+<text xml:space="preserve" text-anchor="start" x="689.42" y="-439.66" font-family="Helvetica,sans-Serif" font-size="13.00">ranking</text>
+<text xml:space="preserve" text-anchor="start" x="689.42" y="-422.41" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#666666">app (cacheable, ttl: short)</text>
+</g>
+<!-- app://self/admin/article&#45;&gt;app://self/ranking -->
+<g id="edge4" class="edge">
+<title>app://self/admin/article&#45;&gt;app://self/ranking</title>
+<path fill="none" stroke="#3b73b9" d="M443.44,-346.73C461.81,-350.9 483.01,-355.64 502.29,-359.79 562.21,-372.69 579.01,-368.84 637.38,-387.54 654.53,-393.03 672.64,-400.42 688.96,-407.71"/>
+<polygon fill="none" stroke="#3b73b9" points="687.47,-410.88 698.02,-411.85 690.37,-404.51 687.47,-410.88"/>
+<text xml:space="preserve" text-anchor="middle" x="569.83" y="-389.29" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#2f5f9e">onPut purge</text>
+</g>
+<!-- app://self/tags -->
+<g id="node11" class="node">
+<title>app://self/tags</title>
+<text xml:space="preserve" text-anchor="start" x="688.3" y="-247.66" font-family="Helvetica,sans-Serif" font-size="13.00">tags</text>
+<text xml:space="preserve" text-anchor="start" x="688.3" y="-230.41" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#666666">app (cacheable, ttl: never)</text>
+</g>
+<!-- app://self/admin/article&#45;&gt;app://self/tags -->
+<g id="edge2" class="edge">
+<title>app://self/admin/article&#45;&gt;app://self/tags</title>
+<path fill="none" stroke="#3b73b9" d="M435.39,-313.47C454.99,-303.29 479.32,-291.89 502.29,-284.54 532.14,-274.98 607.61,-262.61 666.33,-253.81"/>
+<polygon fill="none" stroke="#3b73b9" points="666.58,-257.32 675.96,-252.38 665.55,-250.39 666.58,-257.32"/>
+<text xml:space="preserve" text-anchor="middle" x="569.83" y="-286.29" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#2f5f9e">onPost purge</text>
+</g>
+<!-- app://self/article&#45;&gt;app://self/article -->
+<g id="edge8" class="edge">
+<title>app://self/article&#45;&gt;app://self/article</title>
+<path fill="none" stroke="#3b73b9" d="M988.24,-367.7C983.51,-380.8 990.6,-393.12 1009.51,-393.12 1022.67,-393.12 1030.1,-387.16 1031.82,-379.13"/>
+<polygon fill="none" stroke="#3b73b9" points="1035.31,-378.85 1030.93,-369.21 1028.34,-379.48 1035.31,-378.85"/>
+<text xml:space="preserve" text-anchor="middle" x="1009.51" y="-394.87" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#2f5f9e">onPut refresh</text>
+</g>
+<!-- app://self/author -->
+<g id="node4" class="node">
+<title>app://self/author</title>
+<text xml:space="preserve" text-anchor="start" x="1194.98" y="-538.66" font-family="Helvetica,sans-Serif" font-size="13.00">author</text>
+<text xml:space="preserve" text-anchor="start" x="1194.98" y="-521.41" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#666666">app (cacheable, ttl: never)</text>
+</g>
+<!-- app://self/article&#45;&gt;app://self/author -->
+<g id="edge7" class="edge">
+<title>app://self/article&#45;&gt;app://self/author</title>
+<path fill="none" stroke="black" d="M1039,-368.09C1082.41,-402.08 1165.15,-466.87 1213.3,-504.57"/>
+<polygon fill="none" stroke="black" points="1210.93,-507.17 1220.97,-510.58 1215.25,-501.66 1210.93,-507.17"/>
+<text xml:space="preserve" text-anchor="middle" x="1130.56" y="-447.17" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#333333">author</text>
+</g>
+<!-- app://self/articles&#45;&gt;app://self/article -->
+<g id="edge9" class="edge">
+<title>app://self/articles&#45;&gt;app://self/article</title>
+<path fill="none" stroke="#9a9a9a" stroke-width="1.6" d="M791.01,-489.53C822.75,-473.31 865.84,-450.17 901.97,-426.79 926.17,-411.13 951.93,-391.63 972.06,-375.68"/>
+<polygon fill="none" stroke="#9a9a9a" stroke-width="1.6" points="974.23,-378.43 979.85,-369.45 969.86,-372.96 974.23,-378.43"/>
+<text xml:space="preserve" text-anchor="middle" x="877.22" y="-456.3" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#777777">dependsOn</text>
+</g>
+<!-- app://self/categories -->
+<g id="node5" class="node">
+<title>app://self/categories</title>
+<text xml:space="preserve" text-anchor="start" x="338.12" y="-799.66" font-family="Helvetica,sans-Serif" font-size="13.00">categories</text>
+<text xml:space="preserve" text-anchor="start" x="338.12" y="-782.41" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#666666">app (cacheable, ttl: never)</text>
+</g>
+<!-- app://self/category -->
+<g id="node6" class="node">
+<title>app://self/category</title>
+<text xml:space="preserve" text-anchor="start" x="338.12" y="-480.66" font-family="Helvetica,sans-Serif" font-size="13.00">category</text>
+<text xml:space="preserve" text-anchor="start" x="338.12" y="-463.41" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#666666">app (cacheable, ttl: never)</text>
+</g>
+<!-- app://self/category&#45;&gt;app://self/articles -->
+<g id="edge10" class="edge">
+<title>app://self/category&#45;&gt;app://self/articles</title>
+<path fill="none" stroke="black" d="M430.18,-498.03C450.33,-509.69 476.75,-522.78 502.29,-528.79 556.11,-541.43 618.37,-536.61 666.22,-528.92"/>
+<polygon fill="none" stroke="black" points="666.67,-532.4 675.94,-527.28 665.5,-525.49 666.67,-532.4"/>
+<text xml:space="preserve" text-anchor="middle" x="569.83" y="-538.32" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#333333">articles</text>
+</g>
+<!-- app://self/comments -->
+<g id="node7" class="node">
+<title>app://self/comments</title>
+<text xml:space="preserve" text-anchor="start" x="338.12" y="-48.66" font-family="Helvetica,sans-Serif" font-size="13.00">comments</text>
+<text xml:space="preserve" text-anchor="start" x="338.12" y="-31.41" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#666666">app (cacheable, ttl: never)</text>
+</g>
+<!-- app://self/comments&#45;&gt;app://self/comments -->
+<g id="edge11" class="edge">
+<title>app://self/comments&#45;&gt;app://self/comments</title>
+<path fill="none" stroke="#3b73b9" d="M371.82,-65.7C366.73,-78.8 374.37,-91.12 394.74,-91.12 408.91,-91.12 416.93,-85.16 418.78,-77.13"/>
+<polygon fill="none" stroke="#3b73b9" points="422.27,-76.82 417.82,-67.2 415.3,-77.5 422.27,-76.82"/>
+<text xml:space="preserve" text-anchor="middle" x="394.74" y="-92.87" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#2f5f9e">onPost refresh</text>
+</g>
+<!-- app://self/ranking&#45;&gt;app://self/article -->
+<g id="edge12" class="edge">
+<title>app://self/ranking&#45;&gt;app://self/article</title>
+<path fill="none" stroke="#9a9a9a" stroke-width="1.6" d="M811.24,-420.82C839.49,-414.07 872.71,-405.17 901.97,-394.79 919.12,-388.7 937.28,-380.89 953.66,-373.31"/>
+<polygon fill="none" stroke="#9a9a9a" stroke-width="1.6" points="954.93,-376.57 962.48,-369.15 951.95,-370.24 954.93,-376.57"/>
+<text xml:space="preserve" text-anchor="middle" x="877.22" y="-411.11" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#777777">dependsOn</text>
+</g>
+<!-- app://self/related -->
+<g id="node9" class="node">
+<title>app://self/related</title>
+<text xml:space="preserve" text-anchor="start" x="513.21" y="-149.66" font-family="Helvetica,sans-Serif" font-size="13.00">related</text>
+<text xml:space="preserve" text-anchor="start" x="513.21" y="-132.41" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#666666">app (cacheable, ttl: never)</text>
+</g>
+<!-- app://self/related&#45;&gt;app://self/article -->
+<g id="edge13" class="edge">
+<title>app://self/related&#45;&gt;app://self/article</title>
+<path fill="none" stroke="#9a9a9a" stroke-width="1.6" d="M637.31,-151.31C687.23,-158.01 756.36,-171.2 812.47,-196.54 877.88,-226.07 941.76,-281 978.02,-315.35"/>
+<polygon fill="none" stroke="#9a9a9a" stroke-width="1.6" points="975.24,-317.54 984.88,-321.94 980.09,-312.49 975.24,-317.54"/>
+<text xml:space="preserve" text-anchor="middle" x="744.92" y="-198.29" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#777777">dependsOn</text>
+</g>
+<!-- app://self/tag -->
+<g id="node10" class="node">
+<title>app://self/tag</title>
+<text xml:space="preserve" text-anchor="start" x="338.12" y="-410.66" font-family="Helvetica,sans-Serif" font-size="13.00">tag</text>
+<text xml:space="preserve" text-anchor="start" x="338.12" y="-393.41" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#666666">app (cacheable, ttl: never)</text>
+</g>
+<!-- app://self/tag&#45;&gt;app://self/articles -->
+<g id="edge14" class="edge">
+<title>app://self/tag&#45;&gt;app://self/articles</title>
+<path fill="none" stroke="black" d="M442.75,-428.02C449.53,-431.93 456.25,-436.22 462.29,-440.79 482.86,-456.33 479.24,-471.24 502.29,-482.79 530.28,-496.82 606.84,-504.32 666.36,-508.15"/>
+<polygon fill="none" stroke="black" points="665.93,-511.63 676.12,-508.76 666.36,-504.65 665.93,-511.63"/>
+<text xml:space="preserve" text-anchor="middle" x="569.83" y="-507.6" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#333333">articles</text>
+</g>
+<!-- app://self/tags&#45;&gt;app://self/article -->
+<g id="edge15" class="edge">
+<title>app://self/tags&#45;&gt;app://self/article</title>
+<path fill="none" stroke="#9a9a9a" stroke-width="1.6" d="M812.09,-256.45C840.34,-263.31 873.33,-272.71 901.97,-284.54 923.4,-293.39 945.84,-305.76 964.56,-317.07"/>
+<polygon fill="none" stroke="#9a9a9a" stroke-width="1.6" points="962.71,-320.04 973.06,-322.3 966.38,-314.08 962.71,-320.04"/>
+<text xml:space="preserve" text-anchor="middle" x="877.22" y="-286.29" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#777777">dependsOn</text>
+</g>
+<!-- page://self/article -->
+<g id="node12" class="node">
+<title>page://self/article</title>
+<path fill="#e8e8e8" stroke="#e8e8e8" d="M189.45,-65.76C189.45,-65.76 12,-65.76 12,-65.76 6,-65.76 0,-59.76 0,-53.76 0,-53.76 0,-33.81 0,-33.81 0,-27.81 6,-21.81 12,-21.81 12,-21.81 189.45,-21.81 189.45,-21.81 195.45,-21.81 201.45,-27.81 201.45,-33.81 201.45,-33.81 201.45,-53.76 201.45,-53.76 201.45,-59.76 195.45,-65.76 189.45,-65.76"/>
+<text xml:space="preserve" text-anchor="start" x="6.6" y="-48.66" font-family="Helvetica,sans-Serif" font-size="13.00">article</text>
+<text xml:space="preserve" text-anchor="start" x="6.6" y="-31.41" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#666666">page (cacheable, ttl: medium, #[BlogPage])</text>
+</g>
+<!-- page://self/article&#45;&gt;app://self/article -->
+<g id="edge16" class="edge">
+<title>page://self/article&#45;&gt;app://self/article</title>
+<path fill="none" stroke="black" d="M188.74,-21.33C262.2,-5.7 369.87,9.36 462.29,-8.79 673.68,-50.28 743.88,-66.45 901.97,-212.79 935.57,-243.89 967.48,-285.99 987.47,-314.43"/>
+<polygon fill="none" stroke="black" points="984.58,-316.41 993.16,-322.63 990.34,-312.42 984.58,-316.41"/>
+<text xml:space="preserve" text-anchor="middle" x="569.83" y="-50" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#333333">article</text>
+</g>
+<!-- page://self/article&#45;&gt;app://self/comments -->
+<g id="edge17" class="edge">
+<title>page://self/article&#45;&gt;app://self/comments</title>
+<path fill="none" stroke="black" d="M201.81,-43.79C239.21,-43.79 281.08,-43.79 316.14,-43.79"/>
+<polygon fill="none" stroke="black" points="315.76,-47.29 325.76,-43.79 315.76,-40.29 315.76,-47.29"/>
+<text xml:space="preserve" text-anchor="middle" x="264.32" y="-45.54" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#333333">comments</text>
+</g>
+<!-- page://self/article&#45;&gt;app://self/related -->
+<g id="edge18" class="edge">
+<title>page://self/article&#45;&gt;app://self/related</title>
+<path fill="none" stroke="black" d="M172.24,-66.25C216.41,-79.71 274.72,-96.37 327.2,-107.79 381.62,-119.63 443.74,-129.05 491.37,-135.43"/>
+<polygon fill="none" stroke="black" points="490.66,-138.86 501.03,-136.7 491.58,-131.92 490.66,-138.86"/>
+<text xml:space="preserve" text-anchor="middle" x="264.32" y="-100.15" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#333333">related</text>
+</g>
+<!-- page://self/author -->
+<g id="node13" class="node">
+<title>page://self/author</title>
+<path fill="#e8e8e8" stroke="#e8e8e8" d="M189.45,-731.76C189.45,-731.76 12,-731.76 12,-731.76 6,-731.76 0,-725.76 0,-719.76 0,-719.76 0,-699.81 0,-699.81 0,-693.81 6,-687.81 12,-687.81 12,-687.81 189.45,-687.81 189.45,-687.81 195.45,-687.81 201.45,-693.81 201.45,-699.81 201.45,-699.81 201.45,-719.76 201.45,-719.76 201.45,-725.76 195.45,-731.76 189.45,-731.76"/>
+<text xml:space="preserve" text-anchor="start" x="6.6" y="-714.66" font-family="Helvetica,sans-Serif" font-size="13.00">author</text>
+<text xml:space="preserve" text-anchor="start" x="6.6" y="-697.41" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#666666">page (cacheable, ttl: medium, #[BlogPage])</text>
+</g>
+<!-- page://self/author&#45;&gt;app://self/articles -->
+<g id="edge20" class="edge">
+<title>page://self/author&#45;&gt;app://self/articles</title>
+<path fill="none" stroke="black" d="M201.92,-697.31C312.2,-681.07 492.98,-647 637.38,-583.79 662.63,-572.73 688.3,-555.6 708.12,-540.82"/>
+<polygon fill="none" stroke="black" points="710.03,-543.76 715.86,-534.92 705.79,-538.19 710.03,-543.76"/>
+<text xml:space="preserve" text-anchor="middle" x="394.74" y="-676.96" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#333333">articles</text>
+</g>
+<!-- page://self/author&#45;&gt;app://self/author -->
+<g id="edge19" class="edge">
+<title>page://self/author&#45;&gt;app://self/author</title>
+<path fill="none" stroke="black" d="M201.69,-716.44C258.06,-719.64 329.8,-722.79 393.74,-722.79 393.74,-722.79 393.74,-722.79 1010.51,-722.79 1111.14,-722.79 1194.47,-619.01 1230.88,-565.26"/>
+<polygon fill="none" stroke="black" points="1233.68,-567.37 1236.29,-557.1 1227.85,-563.5 1233.68,-567.37"/>
+<text xml:space="preserve" text-anchor="middle" x="744.92" y="-724.54" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#333333">author</text>
+</g>
+<!-- page://self/category -->
+<g id="node14" class="node">
+<title>page://self/category</title>
+<path fill="#e8e8e8" stroke="#e8e8e8" d="M189.45,-497.76C189.45,-497.76 12,-497.76 12,-497.76 6,-497.76 0,-491.76 0,-485.76 0,-485.76 0,-465.81 0,-465.81 0,-459.81 6,-453.81 12,-453.81 12,-453.81 189.45,-453.81 189.45,-453.81 195.45,-453.81 201.45,-459.81 201.45,-465.81 201.45,-465.81 201.45,-485.76 201.45,-485.76 201.45,-491.76 195.45,-497.76 189.45,-497.76"/>
+<text xml:space="preserve" text-anchor="start" x="6.6" y="-480.66" font-family="Helvetica,sans-Serif" font-size="13.00">category</text>
+<text xml:space="preserve" text-anchor="start" x="6.6" y="-463.41" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#666666">page (cacheable, ttl: medium, #[BlogPage])</text>
+</g>
+<!-- page://self/category&#45;&gt;app://self/category -->
+<g id="edge21" class="edge">
+<title>page://self/category&#45;&gt;app://self/category</title>
+<path fill="none" stroke="black" d="M201.81,-475.79C239.21,-475.79 281.08,-475.79 316.14,-475.79"/>
+<polygon fill="none" stroke="black" points="315.76,-479.29 325.76,-475.79 315.76,-472.29 315.76,-479.29"/>
+<text xml:space="preserve" text-anchor="middle" x="264.32" y="-477.54" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#333333">category</text>
+</g>
+<!-- page://self/index -->
+<g id="node15" class="node">
+<title>page://self/index</title>
+<path fill="#e8e8e8" stroke="#e8e8e8" d="M185.32,-604.76C185.32,-604.76 16.12,-604.76 16.12,-604.76 10.12,-604.76 4.12,-598.76 4.12,-592.76 4.12,-592.76 4.12,-572.81 4.12,-572.81 4.12,-566.81 10.12,-560.81 16.12,-560.81 16.12,-560.81 185.32,-560.81 185.32,-560.81 191.32,-560.81 197.32,-566.81 197.32,-572.81 197.32,-572.81 197.32,-592.76 197.32,-592.76 197.32,-598.76 191.32,-604.76 185.32,-604.76"/>
+<text xml:space="preserve" text-anchor="start" x="10.72" y="-587.66" font-family="Helvetica,sans-Serif" font-size="13.00">index</text>
+<text xml:space="preserve" text-anchor="start" x="10.72" y="-570.41" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#666666">page (cacheable, ttl: short, #[IndexPage])</text>
+</g>
+<!-- page://self/index&#45;&gt;app://self/articles -->
+<g id="edge22" class="edge">
+<title>page://self/index&#45;&gt;app://self/articles</title>
+<path fill="none" stroke="black" d="M197.35,-587C305.51,-589.62 486.25,-587.44 637.38,-553.79 653.62,-550.17 670.63,-544.43 686.17,-538.34"/>
+<polygon fill="none" stroke="black" points="687.31,-541.66 695.26,-534.66 684.68,-535.17 687.31,-541.66"/>
+<text xml:space="preserve" text-anchor="middle" x="394.74" y="-588.59" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#333333">articles</text>
+</g>
+<!-- page://self/index&#45;&gt;app://self/ranking -->
+<g id="edge23" class="edge">
+<title>page://self/index&#45;&gt;app://self/ranking</title>
+<path fill="none" stroke="black" d="M197.75,-573.85C346.65,-559.74 618.21,-532.85 637.38,-522.79 661.37,-510.2 656.82,-494.43 677.38,-476.79 682.95,-472.01 689.12,-467.38 695.38,-463.06"/>
+<polygon fill="none" stroke="black" points="696.92,-466.24 703.32,-457.79 693.05,-460.41 696.92,-466.24"/>
+<text xml:space="preserve" text-anchor="middle" x="394.74" y="-562.38" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#333333">ranking</text>
+</g>
+<!-- page://self/layout/footer -->
+<g id="node16" class="node">
+<title>page://self/layout/footer</title>
+<path fill="#e8e8e8" stroke="#e8e8e8" d="M151.57,-885.76C151.57,-885.76 49.87,-885.76 49.87,-885.76 43.87,-885.76 37.87,-879.76 37.87,-873.76 37.87,-873.76 37.87,-853.81 37.87,-853.81 37.87,-847.81 43.87,-841.81 49.87,-841.81 49.87,-841.81 151.57,-841.81 151.57,-841.81 157.57,-841.81 163.57,-847.81 163.57,-853.81 163.57,-853.81 163.57,-873.76 163.57,-873.76 163.57,-879.76 157.57,-885.76 151.57,-885.76"/>
+<text xml:space="preserve" text-anchor="start" x="44.47" y="-868.66" font-family="Helvetica,sans-Serif" font-size="13.00">layout/footer</text>
+<text xml:space="preserve" text-anchor="start" x="44.47" y="-851.41" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#666666">page (cacheable, ttl: long)</text>
+</g>
+<!-- page://self/layout/nav -->
+<g id="node17" class="node">
+<title>page://self/layout/nav</title>
+<path fill="#e8e8e8" stroke="#e8e8e8" d="M154.57,-816.76C154.57,-816.76 46.87,-816.76 46.87,-816.76 40.87,-816.76 34.87,-810.76 34.87,-804.76 34.87,-804.76 34.87,-784.81 34.87,-784.81 34.87,-778.81 40.87,-772.81 46.87,-772.81 46.87,-772.81 154.57,-772.81 154.57,-772.81 160.57,-772.81 166.57,-778.81 166.57,-784.81 166.57,-784.81 166.57,-804.76 166.57,-804.76 166.57,-810.76 160.57,-816.76 154.57,-816.76"/>
+<text xml:space="preserve" text-anchor="start" x="41.47" y="-799.66" font-family="Helvetica,sans-Serif" font-size="13.00">layout/nav</text>
+<text xml:space="preserve" text-anchor="start" x="41.47" y="-782.41" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#666666">page (cacheable, ttl: never)</text>
+</g>
+<!-- page://self/layout/nav&#45;&gt;app://self/categories -->
+<g id="edge24" class="edge">
+<title>page://self/layout/nav&#45;&gt;app://self/categories</title>
+<path fill="none" stroke="black" d="M166.9,-794.79C211,-794.79 269.47,-794.79 316,-794.79"/>
+<polygon fill="none" stroke="black" points="315.74,-798.29 325.74,-794.79 315.74,-791.29 315.74,-798.29"/>
+<text xml:space="preserve" text-anchor="middle" x="264.32" y="-796.54" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#333333">categories</text>
+</g>
+<!-- page://self/layout/pickup -->
+<g id="node18" class="node">
+<title>page://self/layout/pickup</title>
+<path fill="#e8e8e8" stroke="#e8e8e8" d="M153.45,-218.76C153.45,-218.76 48,-218.76 48,-218.76 42,-218.76 36,-212.76 36,-206.76 36,-206.76 36,-186.81 36,-186.81 36,-180.81 42,-174.81 48,-174.81 48,-174.81 153.45,-174.81 153.45,-174.81 159.45,-174.81 165.45,-180.81 165.45,-186.81 165.45,-186.81 165.45,-206.76 165.45,-206.76 165.45,-212.76 159.45,-218.76 153.45,-218.76"/>
+<text xml:space="preserve" text-anchor="start" x="42.6" y="-201.66" font-family="Helvetica,sans-Serif" font-size="13.00">layout/pickup</text>
+<text xml:space="preserve" text-anchor="start" x="42.6" y="-184.41" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#666666">page (cacheable, ttl: short)</text>
+</g>
+<!-- page://self/layout/pickup&#45;&gt;app://self/tags -->
+<g id="edge25" class="edge">
+<title>page://self/layout/pickup&#45;&gt;app://self/tags</title>
+<path fill="none" stroke="black" d="M165.84,-197.41C266.55,-198.98 467.85,-204.48 637.38,-223.79 646.77,-224.86 656.59,-226.24 666.3,-227.77"/>
+<polygon fill="none" stroke="black" points="665.69,-231.22 676.12,-229.38 666.82,-224.31 665.69,-231.22"/>
+<text xml:space="preserve" text-anchor="middle" x="394.74" y="-210.19" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#333333">tags</text>
+</g>
+<!-- page://self/tag -->
+<g id="node19" class="node">
+<title>page://self/tag</title>
+<path fill="#e8e8e8" stroke="#e8e8e8" d="M189.45,-339.76C189.45,-339.76 12,-339.76 12,-339.76 6,-339.76 0,-333.76 0,-327.76 0,-327.76 0,-307.81 0,-307.81 0,-301.81 6,-295.81 12,-295.81 12,-295.81 189.45,-295.81 189.45,-295.81 195.45,-295.81 201.45,-301.81 201.45,-307.81 201.45,-307.81 201.45,-327.76 201.45,-327.76 201.45,-333.76 195.45,-339.76 189.45,-339.76"/>
+<text xml:space="preserve" text-anchor="start" x="6.6" y="-322.66" font-family="Helvetica,sans-Serif" font-size="13.00">tag</text>
+<text xml:space="preserve" text-anchor="start" x="6.6" y="-305.41" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#666666">page (cacheable, ttl: medium, #[BlogPage])</text>
+</g>
+<!-- page://self/tag&#45;&gt;app://self/tag -->
+<g id="edge26" class="edge">
+<title>page://self/tag&#45;&gt;app://self/tag</title>
+<path fill="none" stroke="black" d="M176.17,-340.22C219.16,-353.18 273.16,-369.45 316.6,-382.54"/>
+<polygon fill="none" stroke="black" points="315.37,-385.83 325.96,-385.36 317.39,-379.12 315.37,-385.83"/>
+<text xml:space="preserve" text-anchor="middle" x="264.32" y="-374.01" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#333333">tag</text>
+</g>
+<!-- page://self/tag&#45;&gt;app://self/tags -->
+<g id="edge27" class="edge">
+<title>page://self/tag&#45;&gt;app://self/tags</title>
+<path fill="none" stroke="black" d="M201.88,-301.2C282.76,-288.31 399.59,-270.82 502.29,-259.79 556.85,-253.93 618.57,-249.62 665.98,-246.81"/>
+<polygon fill="none" stroke="black" points="666.11,-250.31 675.89,-246.24 665.7,-243.32 666.11,-250.31"/>
+<text xml:space="preserve" text-anchor="middle" x="394.74" y="-283.4" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#333333">tags</text>
+</g>
+</g>
+</svg>
+</svg>
+
+</main>
+<section id="warnings">
+<h2>Warnings</h2>
+<p>No warnings.</p>
+<details data-kind="not-drawn">
+<summary>Not drawn</summary>
+<section data-kind="no-declarations">
+<h3>No declarations (<span class="count">1</span>)</h3>
+<p>Declares nothing the cache acts on.</p>
+<ul>
+<li><span class="uri">app://self/login</span> <span class="source">demo/src/Resource/App/Login.php:9</span></li>
+</ul>
+</section>
+</details>
+
+</section>
+<script type="application/json" id="qr-graph-data">{"app://self/admin/article":{"reaches":{"nodes":["app://self/article","app://self/articles","app://self/category","app://self/ranking","app://self/related","app://self/tag","app://self/tags","page://self/article","page://self/author","page://self/category","page://self/index","page://self/layout/pickup","page://self/tag"],"edges":[["app://self/admin/article","app://self/article"],["app://self/admin/article","app://self/articles"],["app://self/admin/article","app://self/ranking"],["app://self/admin/article","app://self/tags"],["app://self/article","app://self/articles"],["app://self/article","app://self/ranking"],["app://self/article","app://self/related"],["app://self/article","app://self/tags"],["app://self/article","page://self/article"],["app://self/articles","app://self/category"],["app://self/articles","app://self/tag"],["app://self/articles","page://self/author"],["app://self/articles","page://self/index"],["app://self/category","page://self/category"],["app://self/ranking","page://self/index"],["app://self/tags","page://self/layout/pickup"],["app://self/tags","page://self/tag"]],"writes":[["app://self/admin/article","app://self/article"],["app://self/admin/article","app://self/articles"],["app://self/admin/article","app://self/ranking"],["app://self/admin/article","app://self/tags"]]},"reachedBy":{"nodes":[],"edges":[],"writes":[]},"writers":[]},"app://self/article":{"reaches":{"nodes":["app://self/articles","app://self/category","app://self/ranking","app://self/related","app://self/tag","app://self/tags","page://self/article","page://self/author","page://self/category","page://self/index","page://self/layout/pickup","page://self/tag"],"edges":[["app://self/article","app://self/articles"],["app://self/article","app://self/ranking"],["app://self/article","app://self/related"],["app://self/article","app://self/tags"],["app://self/article","page://self/article"],["app://self/articles","app://self/category"],["app://self/articles","app://self/tag"],["app://self/articles","page://self/author"],["app://self/articles","page://self/index"],["app://self/category","page://self/category"],["app://self/tags","page://self/layout/pickup"],["app://self/tags","page://self/tag"]],"writes":[]},"reachedBy":{"nodes":["app://self/admin/article","app://self/author"],"edges":[["app://self/admin/article","app://self/article"],["app://self/author","app://self/article"]],"writes":[["app://self/admin/article","app://self/article"]]},"writers":["app://self/admin/article"]},"app://self/articles":{"reaches":{"nodes":["app://self/category","app://self/tag","page://self/author","page://self/category","page://self/index","page://self/tag"],"edges":[["app://self/articles","app://self/category"],["app://self/articles","app://self/tag"],["app://self/articles","page://self/author"],["app://self/articles","page://self/index"],["app://self/category","page://self/category"],["app://self/tag","page://self/tag"]],"writes":[]},"reachedBy":{"nodes":["app://self/admin/article","app://self/article"],"edges":[["app://self/admin/article","app://self/article"],["app://self/admin/article","app://self/articles"],["app://self/article","app://self/articles"]],"writes":[["app://self/admin/article","app://self/article"],["app://self/admin/article","app://self/articles"]]},"writers":["app://self/admin/article"]},"app://self/author":{"reaches":{"nodes":["app://self/article","page://self/article","page://self/author"],"edges":[["app://self/article","page://self/article"],["app://self/author","app://self/article"],["app://self/author","page://self/author"]],"writes":[]},"reachedBy":{"nodes":[],"edges":[],"writes":[]},"writers":[]},"app://self/categories":{"reaches":{"nodes":["page://self/article","page://self/author","page://self/category","page://self/index","page://self/layout/nav","page://self/tag"],"edges":[["app://self/categories","page://self/layout/nav"],["page://self/layout/nav","page://self/article"],["page://self/layout/nav","page://self/author"],["page://self/layout/nav","page://self/category"],["page://self/layout/nav","page://self/index"],["page://self/layout/nav","page://self/tag"]],"writes":[]},"reachedBy":{"nodes":[],"edges":[],"writes":[]},"writers":[]},"app://self/category":{"reaches":{"nodes":["page://self/category"],"edges":[["app://self/category","page://self/category"]],"writes":[]},"reachedBy":{"nodes":["app://self/admin/article","app://self/article","app://self/articles"],"edges":[["app://self/admin/article","app://self/article"],["app://self/admin/article","app://self/articles"],["app://self/article","app://self/articles"],["app://self/articles","app://self/category"]],"writes":[["app://self/admin/article","app://self/article"],["app://self/admin/article","app://self/articles"]]},"writers":["app://self/admin/article"]},"app://self/comments":{"reaches":{"nodes":["page://self/article"],"edges":[["app://self/comments","page://self/article"]],"writes":[]},"reachedBy":{"nodes":[],"edges":[],"writes":[]},"writers":[]},"app://self/login":{"reaches":{"nodes":[],"edges":[],"writes":[]},"reachedBy":{"nodes":[],"edges":[],"writes":[]},"writers":[]},"app://self/ranking":{"reaches":{"nodes":["page://self/index"],"edges":[["app://self/ranking","page://self/index"]],"writes":[]},"reachedBy":{"nodes":["app://self/admin/article","app://self/article"],"edges":[["app://self/admin/article","app://self/article"],["app://self/admin/article","app://self/ranking"],["app://self/article","app://self/ranking"]],"writes":[["app://self/admin/article","app://self/article"],["app://self/admin/article","app://self/ranking"]]},"writers":["app://self/admin/article"]},"app://self/related":{"reaches":{"nodes":["page://self/article"],"edges":[["app://self/related","page://self/article"]],"writes":[]},"reachedBy":{"nodes":["app://self/admin/article","app://self/article"],"edges":[["app://self/admin/article","app://self/article"],["app://self/article","app://self/related"]],"writes":[["app://self/admin/article","app://self/article"]]},"writers":["app://self/admin/article"]},"app://self/tag":{"reaches":{"nodes":["page://self/tag"],"edges":[["app://self/tag","page://self/tag"]],"writes":[]},"reachedBy":{"nodes":["app://self/admin/article","app://self/article","app://self/articles"],"edges":[["app://self/admin/article","app://self/article"],["app://self/admin/article","app://self/articles"],["app://self/article","app://self/articles"],["app://self/articles","app://self/tag"]],"writes":[["app://self/admin/article","app://self/article"],["app://self/admin/article","app://self/articles"]]},"writers":["app://self/admin/article"]},"app://self/tags":{"reaches":{"nodes":["page://self/index","page://self/layout/pickup","page://self/tag"],"edges":[["app://self/tags","page://self/layout/pickup"],["app://self/tags","page://self/tag"],["page://self/layout/pickup","page://self/index"]],"writes":[]},"reachedBy":{"nodes":["app://self/admin/article","app://self/article"],"edges":[["app://self/admin/article","app://self/article"],["app://self/admin/article","app://self/tags"],["app://self/article","app://self/tags"]],"writes":[["app://self/admin/article","app://self/article"],["app://self/admin/article","app://self/tags"]]},"writers":["app://self/admin/article"]},"layout:QrGraphDemo\\Attribute\\BlogPage":{"reaches":{"nodes":["page://self/article","page://self/author","page://self/category","page://self/tag"],"edges":[],"writes":[]},"reachedBy":{"nodes":["app://self/categories","page://self/layout/footer","page://self/layout/nav"],"edges":[["app://self/categories","page://self/layout/nav"],["page://self/layout/footer","page://self/article"],["page://self/layout/footer","page://self/author"],["page://self/layout/footer","page://self/category"],["page://self/layout/footer","page://self/tag"],["page://self/layout/nav","page://self/article"],["page://self/layout/nav","page://self/author"],["page://self/layout/nav","page://self/category"],["page://self/layout/nav","page://self/tag"]],"writes":[]},"writers":[]},"layout:QrGraphDemo\\Attribute\\IndexPage":{"reaches":{"nodes":["page://self/index"],"edges":[],"writes":[]},"reachedBy":{"nodes":["app://self/admin/article","app://self/article","app://self/categories","app://self/tags","page://self/layout/footer","page://self/layout/nav","page://self/layout/pickup"],"edges":[["app://self/admin/article","app://self/article"],["app://self/admin/article","app://self/tags"],["app://self/article","app://self/tags"],["app://self/categories","page://self/layout/nav"],["app://self/tags","page://self/layout/pickup"],["page://self/layout/footer","page://self/index"],["page://self/layout/nav","page://self/index"],["page://self/layout/pickup","page://self/index"]],"writes":[["app://self/admin/article","app://self/article"],["app://self/admin/article","app://self/tags"]]},"writers":["app://self/admin/article"]},"page://self/article":{"reaches":{"nodes":[],"edges":[],"writes":[]},"reachedBy":{"nodes":["app://self/admin/article","app://self/article","app://self/author","app://self/categories","app://self/comments","app://self/related","page://self/layout/footer","page://self/layout/nav"],"edges":[["app://self/admin/article","app://self/article"],["app://self/article","page://self/article"],["app://self/author","app://self/article"],["app://self/categories","page://self/layout/nav"],["app://self/comments","page://self/article"],["app://self/related","page://self/article"],["page://self/layout/footer","page://self/article"],["page://self/layout/nav","page://self/article"]],"writes":[["app://self/admin/article","app://self/article"]]},"writers":["app://self/admin/article"]},"page://self/author":{"reaches":{"nodes":[],"edges":[],"writes":[]},"reachedBy":{"nodes":["app://self/admin/article","app://self/article","app://self/articles","app://self/author","app://self/categories","page://self/layout/footer","page://self/layout/nav"],"edges":[["app://self/admin/article","app://self/article"],["app://self/admin/article","app://self/articles"],["app://self/article","app://self/articles"],["app://self/articles","page://self/author"],["app://self/author","page://self/author"],["app://self/categories","page://self/layout/nav"],["page://self/layout/footer","page://self/author"],["page://self/layout/nav","page://self/author"]],"writes":[["app://self/admin/article","app://self/article"],["app://self/admin/article","app://self/articles"]]},"writers":["app://self/admin/article"]},"page://self/category":{"reaches":{"nodes":[],"edges":[],"writes":[]},"reachedBy":{"nodes":["app://self/admin/article","app://self/article","app://self/articles","app://self/categories","app://self/category","page://self/layout/footer","page://self/layout/nav"],"edges":[["app://self/admin/article","app://self/article"],["app://self/admin/article","app://self/articles"],["app://self/article","app://self/articles"],["app://self/articles","app://self/category"],["app://self/categories","page://self/layout/nav"],["app://self/category","page://self/category"],["page://self/layout/footer","page://self/category"],["page://self/layout/nav","page://self/category"]],"writes":[["app://self/admin/article","app://self/article"],["app://self/admin/article","app://self/articles"]]},"writers":["app://self/admin/article"]},"page://self/index":{"reaches":{"nodes":[],"edges":[],"writes":[]},"reachedBy":{"nodes":["app://self/admin/article","app://self/article","app://self/articles","app://self/categories","app://self/ranking","app://self/tags","page://self/layout/footer","page://self/layout/nav","page://self/layout/pickup"],"edges":[["app://self/admin/article","app://self/articles"],["app://self/admin/article","app://self/ranking"],["app://self/article","app://self/articles"],["app://self/articles","page://self/index"],["app://self/categories","page://self/layout/nav"],["app://self/ranking","page://self/index"],["app://self/tags","page://self/layout/pickup"],["page://self/layout/footer","page://self/index"],["page://self/layout/nav","page://self/index"],["page://self/layout/pickup","page://self/index"]],"writes":[["app://self/admin/article","app://self/articles"],["app://self/admin/article","app://self/ranking"]]},"writers":["app://self/admin/article"]},"page://self/layout/footer":{"reaches":{"nodes":["page://self/article","page://self/author","page://self/category","page://self/index","page://self/tag"],"edges":[["page://self/layout/footer","page://self/article"],["page://self/layout/footer","page://self/author"],["page://self/layout/footer","page://self/category"],["page://self/layout/footer","page://self/index"],["page://self/layout/footer","page://self/tag"]],"writes":[]},"reachedBy":{"nodes":[],"edges":[],"writes":[]},"writers":[]},"page://self/layout/nav":{"reaches":{"nodes":["page://self/article","page://self/author","page://self/category","page://self/index","page://self/tag"],"edges":[["page://self/layout/nav","page://self/article"],["page://self/layout/nav","page://self/author"],["page://self/layout/nav","page://self/category"],["page://self/layout/nav","page://self/index"],["page://self/layout/nav","page://self/tag"]],"writes":[]},"reachedBy":{"nodes":["app://self/categories"],"edges":[["app://self/categories","page://self/layout/nav"]],"writes":[]},"writers":[]},"page://self/layout/pickup":{"reaches":{"nodes":["page://self/index"],"edges":[["page://self/layout/pickup","page://self/index"]],"writes":[]},"reachedBy":{"nodes":["app://self/admin/article","app://self/article","app://self/tags"],"edges":[["app://self/admin/article","app://self/article"],["app://self/admin/article","app://self/tags"],["app://self/article","app://self/tags"],["app://self/tags","page://self/layout/pickup"]],"writes":[["app://self/admin/article","app://self/article"],["app://self/admin/article","app://self/tags"]]},"writers":["app://self/admin/article"]},"page://self/tag":{"reaches":{"nodes":[],"edges":[],"writes":[]},"reachedBy":{"nodes":["app://self/admin/article","app://self/article","app://self/articles","app://self/categories","app://self/tag","app://self/tags","page://self/layout/footer","page://self/layout/nav"],"edges":[["app://self/admin/article","app://self/article"],["app://self/admin/article","app://self/tags"],["app://self/article","app://self/tags"],["app://self/articles","app://self/tag"],["app://self/categories","page://self/layout/nav"],["app://self/tag","page://self/tag"],["app://self/tags","page://self/tag"],["page://self/layout/footer","page://self/tag"],["page://self/layout/nav","page://self/tag"]],"writes":[["app://self/admin/article","app://self/article"],["app://self/admin/article","app://self/tags"]]},"writers":["app://self/admin/article"]}}</script>
+<script type="application/json" id="qr-graph-layouts">{"rows":[{"id":"esi-layout-nav","uri":"page://self/layout/nav"},{"id":"esi-layout-footer","uri":"page://self/layout/footer"},{"id":"esi-layout-pickup","uri":"page://self/layout/pickup"}],"cells":[{"id":"cell-layout-nav-BlogPage","uri":"page://self/layout/nav","pages":["page://self/article","page://self/author","page://self/category","page://self/tag"]},{"id":"cell-layout-footer-BlogPage","uri":"page://self/layout/footer","pages":["page://self/article","page://self/author","page://self/category","page://self/tag"]},{"id":"cell-layout-nav-IndexPage","uri":"page://self/layout/nav","pages":["page://self/index"]},{"id":"cell-layout-footer-IndexPage","uri":"page://self/layout/footer","pages":["page://self/index"]},{"id":"cell-layout-pickup-IndexPage","uri":"page://self/layout/pickup","pages":["page://self/index"]}],"heads":[{"id":"layout-BlogPage","key":"layout:QrGraphDemo\\Attribute\\BlogPage","label":"#[BlogPage]","pages":["page://self/article","page://self/author","page://self/category","page://self/tag"]},{"id":"layout-IndexPage","key":"layout:QrGraphDemo\\Attribute\\IndexPage","label":"#[IndexPage]","pages":["page://self/index"]}]}</script>
+<script>
+(() => {
+  const graph = JSON.parse(document.getElementById('qr-graph-data').textContent);
+  const svg = document.querySelector('main svg');
+  if (!svg) {
+    return;
+  }
+  const status = document.getElementById('status');
+  const counts = {
+    reaches: document.getElementById('count-reaches'),
+    reachedBy: document.getElementById('count-reached-by'),
+    writer: document.getElementById('count-writer'),
+  };
+  const hint = status.textContent;
+  const title = (g) => g.querySelector('title')?.textContent ?? '';
+  const nodes = new Map();
+  const edges = new Map();
+  svg.querySelectorAll('g.node').forEach((g) => {
+    nodes.set(title(g), g);
+    // A plaintext node is only its letters: give it a box to click.
+    const box = g.getBBox();
+    const hit = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    Object.entries({ x: box.x, y: box.y, width: box.width, height: box.height, fill: 'transparent' })
+      .forEach(([name, value]) => hit.setAttribute(name, value));
+    g.insertBefore(hit, g.querySelector('title').nextSibling);
+    Object.entries({ tabindex: '0', role: 'button', 'aria-label': title(g) })
+      .forEach(([name, value]) => g.setAttribute(name, value));
+  });
+  svg.querySelectorAll('g.edge').forEach((g) => {
+    edges.set(title(g), [...(edges.get(title(g)) ?? []), g]);
+  });
+
+  // The layout table lights cell by cell: a row is its part, a ● the arrows from that part to the pages carrying the
+  // column's layout, a column head the layout. Graphviz names a cell's group `a_` and the cell's ID.
+  const layouts = JSON.parse(document.getElementById('qr-graph-layouts').textContent);
+  const table = nodes.get('layouts');
+  nodes.delete('layouts');
+  table.classList.add('layout-table');
+  ['tabindex', 'role', 'aria-label'].forEach((name) => table.removeAttribute(name));
+  const cell = (id, kind = 'layout-cell') => {
+    const g = document.getElementById('a_' + id);
+    g.classList.add(kind);
+    const box = g.getBBox();
+    const hit = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    Object.entries({ x: box.x - 6, y: box.y - 6, width: box.width + 12, height: box.height + 12, fill: 'transparent' })
+      .forEach(([name, value]) => hit.setAttribute(name, value));
+    g.insertBefore(hit, g.firstChild);
+    return g;
+  };
+  // A row or a ● selects the row's part, a column head its layout; anywhere else in the table selects nothing.
+  const selects = (g, key) => g.addEventListener('click', (event) => {
+    event.stopPropagation();
+    select(key);
+  });
+  const focusable = (g, key, label = key) => {
+    Object.entries({ tabindex: '0', role: 'button', 'aria-label': label })
+      .forEach(([name, value]) => g.setAttribute(name, value));
+    g.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        event.stopPropagation();
+        select(key);
+      }
+    });
+  };
+  // A part with arrows of its own is also a node: the node stands for it, and its row lights with it.
+  const twins = [];
+  const rowCells = [];
+  layouts.rows.forEach(({ id, uri }) => {
+    const g = cell(id);
+    nodes.has(uri) ? twins.push([nodes.get(uri), g]) : nodes.set(uri, g);
+    g.classList.add('layout-row');
+    rowCells.push(g);
+    selects(g, uri);
+    focusable(g, uri);
+  });
+  layouts.cells.forEach(({ id, uri, pages }) => {
+    const g = cell(id);
+    selects(g, uri);
+    pages.forEach((page) => edges.set(uri + '->' + page, [...(edges.get(uri + '->' + page) ?? []), g]));
+  });
+  // The status line names a layout as it is written, `#[ContentPage]`.
+  const labels = new Map();
+  const heads = layouts.heads.map(({ id, key, label, pages }) => {
+    const g = cell(id, 'layout-head');
+    nodes.set(key, g);
+    labels.set(key, label);
+    selects(g, key);
+    focusable(g, key, label);
+    return [g, pages];
+  });
+
+  const classes = ['selected', 'reaches', 'reached-by', 'writer', 'write'];
+  let selected = null;
+  const clear = () => {
+    classes.forEach((name) => svg.querySelectorAll('.' + name).forEach((el) => el.classList.remove(name)));
+    svg.classList.remove('lit');
+    status.textContent = hint;
+    Object.values(counts).forEach((count) => { count.textContent = ''; });
+    selected = null;
+  };
+  // An impact step runs from `by` to `uri`; the arrow drawn for it points either way, a write's from `by`.
+  const light = (set, name) => {
+    set.nodes.forEach((uri) => nodes.get(uri)?.classList.add(name));
+    set.edges.forEach(([by, uri]) => [...(edges.get(by + '->' + uri) ?? []), ...(edges.get(uri + '->' + by) ?? [])]
+      .forEach((g) => g.classList.add(name)));
+    set.writes.forEach(([by, uri]) => (edges.get(by + '->' + uri) ?? []).forEach((g) => g.classList.add('write')));
+  };
+  // The legend counts what the picture draws: it leaves some resources out.
+  const drawn = (uris) => uris.filter((uri) => nodes.has(uri)).length;
+  const select = (uri) => {
+    const again = uri === selected;
+    clear();
+    const sets = graph[uri];
+    if (again || !sets) {
+      return;
+    }
+    selected = uri;
+    svg.classList.add('lit');
+    light(sets.reaches, 'reaches');
+    light(sets.reachedBy, 'reached-by');
+    sets.writers.forEach((writer) => nodes.get(writer)?.classList.add('writer'));
+    nodes.get(uri)?.classList.add('selected');
+    status.textContent = uri;
+    twins.forEach(([node, row]) => ['selected', 'reaches', 'reached-by', 'writer']
+      .forEach((name) => node.classList.contains(name) && row.classList.add(name)));
+    heads.forEach(([head, pages]) => pages.includes(uri) && head.classList.add('reached-by'));
+    // A selected layout lights its column; the rows, its parts, stay as they are, neither lit nor dimmed.
+    svg.classList.toggle('layout-lit', labels.has(uri));
+    if (labels.has(uri)) {
+      rowCells.forEach((row) => row.classList.remove('reaches', 'reached-by', 'writer'));
+    }
+    status.textContent = labels.get(uri) ?? uri;
+    const writers = new Set(sets.writers);
+    counts.reaches.textContent = `(${drawn(sets.reaches.nodes)})`;
+    counts.reachedBy.textContent = `(${drawn(sets.reachedBy.nodes.filter((node) => !writers.has(node)))})`;
+    counts.writer.textContent = `(${drawn(sets.writers)})`;
+  };
+
+  document.addEventListener('click', (event) => {
+    const item = event.target.closest?.('[data-uri]');
+    if (item) {
+      event.preventDefault();
+      select(item.dataset.uri);
+      nodes.get(selected)?.scrollIntoView({ block: 'center', inline: 'center' });
+      return;
+    }
+    // A click on the warnings, their summary included, keeps what is selected.
+    if (event.target.closest?.('#warnings')) {
+      return;
+    }
+    const node = event.target.closest?.('g.node');
+    node ? select(title(node)) : clear();
+  });
+  document.addEventListener('keydown', (event) => {
+    const node = event.target.closest?.('g.node');
+    if (node && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault();
+      select(title(node));
+    } else if (event.key === 'Escape') {
+      clear();
+    }
+  });
+})();
+</script>
+</body>
+</html>
