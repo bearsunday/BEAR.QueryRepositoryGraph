@@ -4,7 +4,9 @@ Static analysis of the cache graph that [BEAR.QueryRepository](https://github.co
 attributes declare. `qr-graph` reads the declarations without running the application: what each resource embeds,
 what each write refreshes and purges, and what an invalidation reaches.
 
-![dot of the demo application](docs/images/dot.svg)
+[![dot of the demo application](docs/images/dot.svg)](https://bearsunday.github.io/BEAR.QueryRepositoryGraph/)
+
+Click the picture for the [interactive version](https://bearsunday.github.io/BEAR.QueryRepositoryGraph/) (`qr-graph html` on the demo).
 
 ## Installation
 
