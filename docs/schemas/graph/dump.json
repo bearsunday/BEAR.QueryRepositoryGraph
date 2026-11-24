@@ -16,7 +16,7 @@
                     "type": "object",
                     "required": ["version", "namespaces", "dir"],
                     "properties": {
-                        "version": {"const": 6},
+                        "version": {"const": 7},
                         "namespaces": {
                             "description": "URI host => PHP namespace. `page://self/html/blog-posting` is `{namespaces.self}\\Resource\\Page\\Html\\BlogPosting`.",
                             "type": "object",
@@ -63,12 +63,11 @@
                 "cacheable": {
                     "description": "#[Cacheable] as declared.",
                     "type": "object",
-                    "required": ["expiry", "expirySecond", "expiryAt", "update", "type"],
+                    "required": ["expiry", "expirySecond", "expiryAt", "type"],
                     "properties": {
                         "expiry": {"type": "string"},
                         "expirySecond": {"type": "integer"},
                         "expiryAt": {"type": "string"},
-                        "update": {"type": "boolean"},
                         "type": {"enum": ["value", "view"]}
                     },
                     "additionalProperties": false
@@ -113,12 +112,12 @@
                     "items": {"$ref": "#/$defs/dependency"}
                 },
                 "refresh": {
-                    "description": "Purged then re-generated after a successful write: #[Refresh], and the resource's own onGet (`implicit`).",
+                    "description": "Purged then re-generated after a successful write: #[Refresh], and the resource's own onGet where its GET is stored (`implicit`).",
                     "type": "array",
                     "items": {"$ref": "#/$defs/target"}
                 },
                 "purge": {
-                    "description": "#[Purge]: purged after a successful write.",
+                    "description": "Purged after a successful write: #[Purge], the resource's own onGet where its GET is not stored (`implicit`), and each list a #[Link(rel: 'collection')] on its onGet() names (`collection`).",
                     "type": "array",
                     "items": {"$ref": "#/$defs/target"}
                 }
@@ -151,9 +150,10 @@
                 "uri": {"$ref": "#/$defs/uri"},
                 "template": {"$ref": "#/$defs/template"},
                 "implicit": {
-                    "description": "No #[Refresh] is written: the attribute named here makes this write refresh its own resource.",
-                    "enum": ["Cacheable", "CacheableResponse", "RefreshCache"]
-                }
+                    "description": "No #[Refresh] or #[Purge] is written: the write invalidates its own resource. Under `refresh`, the attribute named here makes the write read it again; under `purge`, `onGet` is a resource whose GET is not stored.",
+                    "enum": ["Cacheable", "CacheableResponse", "RefreshCache", "onGet"]
+                },
+                "collection": {"description": "Named by #[Link(rel: 'collection')] on the resource's onGet(), not on the write method.", "const": true}
             },
             "additionalProperties": false
         },

@@ -82,10 +82,10 @@ class QrGraphTest extends TestCase
         self::assertSame(0, $code, $err);
         $lines = self::jsonl($out);
         $meta = $lines[0];
-        self::assertSame(6, self::at($meta, 'meta', 'version'));
+        self::assertSame(7, self::at($meta, 'meta', 'version'));
         self::assertSame(['self' => 'FakeVendor\HelloWorld'], self::at($meta, 'meta', 'namespaces'));
         self::assertSame(self::DIR, self::at($meta, 'meta', 'dir'));
-        self::assertSame(['nodes' => 115, 'edges' => 123, 'skipped' => 2], self::at($meta, 'meta', 'counts'));
+        self::assertSame(['nodes' => 115, 'edges' => 146, 'skipped' => 2], self::at($meta, 'meta', 'counts'));
         self::assertSame('qr-graph', self::at($meta, 'meta', 'tool', 'name'));
         self::assertIsString(self::at($meta, 'meta', 'tool', 'version'));
         self::assertNotSame('', self::at($meta, 'meta', 'tool', 'version'));
@@ -141,7 +141,7 @@ class QrGraphTest extends TestCase
     public function testEmbedResolvesRelativeSrcAgainstTheDeclaringScheme(): void
     {
         $node = self::$nodes['page://self/dep/level-one'];
-        $this->assertSame(['expiry' => 'never', 'expirySecond' => 0, 'expiryAt' => '', 'update' => false, 'type' => 'value'], $node['cacheable']);
+        $this->assertSame(['expiry' => 'never', 'expirySecond' => 0, 'expiryAt' => '', 'type' => 'value'], $node['cacheable']);
         $this->assertSame([['rel' => 'level-two', 'uri' => 'page://self/dep/level-two']], self::at($node, 'methods', 'onGet', 'embed'));
         $source = $node['source'];
         $this->assertIsString($source);
@@ -781,7 +781,7 @@ class QrGraphTest extends TestCase
 
     public function testALayoutsWritersReachItThroughAWriteOnly(): void
     {
-        $cacheable = ['expiry' => 'never', 'expirySecond' => 0, 'expiryAt' => '', 'update' => false, 'type' => 'value'];
+        $cacheable = ['expiry' => 'never', 'expirySecond' => 0, 'expiryAt' => '', 'type' => 'value'];
         $layout = ['name' => 'L', 'class' => 'L', 'source' => 'l.php:1', 'embed' => [['rel' => 'a', 'uri' => 'page://self/a'], ['rel' => 'b', 'uri' => 'page://self/b']]];
         $nodes = [
             ['uri' => 'page://self/p', 'source' => 'p.php:1', 'cacheable' => $cacheable, 'layout' => $layout],
@@ -798,7 +798,7 @@ class QrGraphTest extends TestCase
     public function testTheTableTakesItsOwnHeightAboveThePicture(): void
     {
         $layout = ['name' => 'L', 'class' => 'L', 'source' => 'l.php:1', 'embed' => [['rel' => 'a', 'uri' => 'page://self/a']]];
-        $nodes = [['uri' => 'page://self/p', 'source' => 'p.php:1', 'cacheable' => ['expiry' => 'never', 'expirySecond' => 0, 'expiryAt' => '', 'update' => false, 'type' => 'value'], 'layout' => $layout]];
+        $nodes = [['uri' => 'page://self/p', 'source' => 'p.php:1', 'cacheable' => ['expiry' => 'never', 'expirySecond' => 0, 'expiryAt' => '', 'type' => 'value'], 'layout' => $layout]];
         $html = (new HtmlRenderer(new NodeDeclarations(), [PHP_BINARY, '-r', 'stream_get_contents(STDIN); echo \'<svg width="100pt" height="50pt"><g/></svg>\';']))($nodes, []);
 
         $this->assertStringContainsString('<svg width="100pt" height="124pt" viewBox="0 0 100 124"', $html, 'both heights and the gap between them');
@@ -969,7 +969,7 @@ class QrGraphTest extends TestCase
             $nodes[$uri] = $decoded;
         }
 
-        $this->assertSame(14, self::at($nodes['meta'], 'meta', 'counts', 'edges'));
+        $this->assertSame(16, self::at($nodes['meta'], 'meta', 'counts', 'edges'));
         $this->assertSame([
             ['uri' => 'app://self/article', 'template' => 'app://self/article?id={articleId}'],
             ['uri' => 'app://self/author', 'template' => 'app://self/author{?author_id}'],
@@ -980,7 +980,8 @@ class QrGraphTest extends TestCase
             ['uri' => 'app://self/article', 'template' => 'app://self/article?id={articleId}'],
             ['uri' => 'app://self/author', 'template' => 'app://self/author{?author_id}'],
         ], self::at($nodes['app://self/archive'], 'methods', 'onGet', 'dependsOn'));
-        $this->assertNull(self::at($nodes['app://self/entries'], 'methods', 'onPost'), 'only onGet() declarations are read');
+        $this->assertNull(self::at($nodes['app://self/entries'], 'methods', 'onPost', 'dependsOn'), 'only onGet() declarations are read');
+        $this->assertSame([['uri' => 'app://self/entries', 'implicit' => 'onGet']], self::at($nodes['app://self/entries'], 'methods', 'onPost', 'purge'), 'an uncached write purges its own key');
 
         [$code, $out] = self::qrGraph(['impact', 'app://self/article', '--method=onPut', '--json', $dir]);
         $this->assertSame(0, $code);
@@ -1013,6 +1014,47 @@ class QrGraphTest extends TestCase
         [, $out] = self::qrGraph(['dot', $dir]);
         $this->assertStringContainsString('"app://self/entries" -> "app://self/article" [label="dependsOn"', $out);
         $this->assertSame(1, substr_count($out, '"app://self/archive" -> "app://self/author" [label="dependsOn"'), 'two declarations on one URI, differing in their query, are one arrow');
+    }
+
+    public function testEveryWriteToARowPurgesTheCollectionsItsOnGetLinks(): void
+    {
+        $dir = '--dir=tests/Fixture/Collection/Resource';
+        [$code, $out, $err] = self::qrGraph(['dump', $dir]);
+        $this->assertSame(0, $code, $err);
+        $nodes = [];
+        foreach (explode("\n", trim($out)) as $line) {
+            $this->assertSchema('dump.json', $line);
+        }
+
+        foreach (self::jsonl($out) as $decoded) {
+            /** @var string $uri */
+            $uri = $decoded['uri'] ?? 'meta';
+            $nodes[$uri] = $decoded;
+        }
+
+        // A path-only href and a #[Link] of another rel purge nothing.
+        $collections = [
+            ['uri' => 'app://self/posts', 'collection' => true],
+            ['uri' => 'app://self/author/posts', 'template' => 'app://self/author/posts?author_id={author_id}', 'collection' => true],
+        ];
+        $this->assertSame($collections, self::at($nodes['app://self/post'], 'methods', 'onPut', 'purge'));
+        $this->assertSame($collections, self::at($nodes['app://self/post'], 'methods', 'ONDELETE', 'purge'), 'a write handler in any letter case');
+        $this->assertNull(self::at($nodes['app://self/post'], 'methods', 'onPostProcess'), 'a method that only begins with a write name is not a write, and its #[Purge] is not read');
+
+        [, $out] = self::qrGraph(['impact', 'app://self/post', '--method=onPut', '--json', $dir]);
+        foreach (explode("\n", trim($out)) as $line) {
+            $this->assertSchema('impact.json', $line);
+        }
+
+        $this->assertSame([
+            ['app://self/post', 'refresh', 'app://self/post', 1],
+            ['app://self/posts', 'collection', 'app://self/post', 1],
+            ['app://self/author/posts', 'collection', 'app://self/post', 1],
+            ['page://self/index', 'embed', 'app://self/posts', 2],
+        ], array_map(static fn (array $line): array => [$line['uri'], $line['via'], $line['by'], $line['depth']], self::jsonl($out)));
+
+        [, $out] = self::qrGraph(['dot', $dir]);
+        $this->assertStringContainsString('"app://self/post" -> "app://self/posts" [label="onPut collection"', $out);
     }
 
     public function testDependsOnDeclarationsNoWriteInvalidatesAreWarnedOnStderr(): void
@@ -1048,18 +1090,16 @@ class QrGraphTest extends TestCase
             ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/post-camel-list', 'dependsOn' => 'app://self/post-camel?article_id={id}'],
             ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/post-only-list', 'dependsOn' => 'app://self/post-only{?id}'],
             ['warning' => 'depends-on-unknown-resource', 'resource' => 'app://self/typo', 'dependsOn' => 'app://self/artcle{?id}'],
-            ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/unpurged', 'dependsOn' => 'app://self/plain{?id}'],
             ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/with-page', 'dependsOn' => 'app://self/camel-pair{?leftId,rightId,page}'],
-        ], $warnings);
+        ], $warnings, 'Unpurged is not warned: a write to a resource with an onGet() invalidates its own key, cached or not');
         $this->assertSame('The tag is app://self/article?[articleId], but writes purge app://self/article?[id].', $messages['app://self/mismatch']);
         $this->assertSame('The tag is app://self/origin?[id], but writes purge app://self/origin?[articleId], app://self/origin?[].', $messages['app://self/origin-by-id']);
-        $this->assertStringContainsString('make it #[Cacheable]', $messages['app://self/unpurged']);
-        $this->assertStringContainsString('the writes that refresh it are onPost() whose arguments', $messages['app://self/post-only-list']);
-        $this->assertStringContainsString('the writes that refresh it are onPost() whose arguments', $messages['app://self/donut-refresh-post-list'], 'its onPost() already has #[RefreshCache]');
-        $this->assertStringContainsString('it is cached, but has no write method', $messages['app://self/no-write-list']);
+        $this->assertStringContainsString('the writes that invalidate it are onPost() whose arguments', $messages['app://self/post-only-list']);
+        $this->assertStringContainsString('the writes that invalidate it are onPost() whose arguments', $messages['app://self/donut-refresh-post-list'], 'its onPost() already has #[RefreshCache]');
+        $this->assertStringContainsString('it has no write method', $messages['app://self/no-write-list']);
         $this->assertStringEndsWith('it has no onGet(), so no write refreshes it; name it in a #[Purge].', $messages['app://self/no-get-list'], 'its onPut() refreshes nothing, and a #[Refresh] of it fails at run time');
-        $this->assertStringContainsString('the writes that refresh it are onPost() whose arguments', $messages['app://self/plain-refresh-list'], 'uncached, refreshed only by a #[RefreshCache] onPost() that is skipped');
-        $this->assertStringContainsString('only when the write method carries #[RefreshCache] or #[CacheableResponse]', $messages['app://self/method-cached-list'], '#[CacheableResponse] on onGet() caches it, and binds no write');
+        $this->assertStringContainsString('the writes that invalidate it are onPost() whose arguments', $messages['app://self/plain-refresh-list'], 'uncached, refreshed only by a #[RefreshCache] onPost() that is skipped');
+        $this->assertStringContainsString('the writes that invalidate it are onPost() whose arguments', $messages['app://self/method-cached-list'], 'cached by #[CacheableResponse] on onGet(), invalidated by its onPost() only when the POST carries the key');
     }
 
     public function testUsageErrors(): void
@@ -1277,7 +1317,7 @@ class QrGraphTest extends TestCase
         $echo = [PHP_BINARY, '-r', 'echo "<svg>", htmlspecialchars(stream_get_contents(STDIN)), "</svg>";'];
         $declarations = new NodeDeclarations();
 
-        return (new HtmlRenderer($declarations, $echo))($nodes, (new DependsOnWarnings($declarations))($classes, $nodes), $editor);
+        return (new HtmlRenderer($declarations, $echo))($nodes, (new DependsOnWarnings())($classes, $nodes), $editor);
     }
 
     /** @return list<Node> */

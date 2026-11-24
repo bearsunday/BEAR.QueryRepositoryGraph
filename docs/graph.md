@@ -38,11 +38,12 @@ application autoloader looks like. `impact` on a URI no scanned resource serves 
 The first line is `meta`; every other line is a resource and the declarations it makes
 ([schema](schemas/graph/dump.json)). Edges start at the resource that declares them, so a line has no `from`.
 `meta` also records `counts` (nodes, edges, skipped), `tool.name` and the installed package version, and the
-`autoload` file relative to the working directory. `meta.version` is 6: v2 added those fields, v3 the embed `usage`,
-v4 `dependsOn`, v5 dropped the source-text guesses, `dynamic` and the embed `usage`, v6 added `layout`.
+`autoload` file relative to the working directory. `meta.version` is 7: v2 added those fields, v3 the embed `usage`,
+v4 `dependsOn`, v5 dropped the source-text guesses, `dynamic` and the embed `usage`, v6 added `layout`, v7 dropped
+`cacheable.update` and added the `onGet` purge and `collection`.
 
 ```json
-{"uri":"app://self/user","source":"src/Resource/App/User.php:17","cacheable":{"expiry":"never","expirySecond":0,"expiryAt":"","update":false,"type":"value"},"methods":{"onPut":{"source":"src/Resource/App/User.php:52","refresh":[{"uri":"app://self/user","implicit":"Cacheable"},{"uri":"app://self/user/profile","template":"app://self/user/profile?user_id={id}"}],"purge":[{"uri":"app://self/user/friend","template":"app://self/user/friend?user_id={id}"}]}}}
+{"uri":"app://self/user","source":"src/Resource/App/User.php:17","cacheable":{"expiry":"never","expirySecond":0,"expiryAt":"","type":"value"},"methods":{"onPut":{"source":"src/Resource/App/User.php:52","refresh":[{"uri":"app://self/user","implicit":"Cacheable"},{"uri":"app://self/user/profile","template":"app://self/user/profile?user_id={id}"}],"purge":[{"uri":"app://self/user/friend","template":"app://self/user/friend?user_id={id}"},{"uri":"app://self/users","collection":true}]}}}
 ```
 
 - `uri` is `scheme://host/path` without query, exact-matchable everywhere it appears; `template` keeps the
@@ -52,9 +53,13 @@ v4 `dependsOn`, v5 dropped the source-text guesses, `dynamic` and the embed `usa
   (`page://self/index` for `page://self/`). The PHP class is not repeated: it follows from `uri` and `meta.namespaces`.
 - `source` is `file:line`, to open the declaration.
 - `dependsOn` on `onGet` lists its `#[DependsOn]` declarations, including those on an `onGet()` it overrides.
-  A declaration on a row class is not in the graph: see [what the graph does not know](#what-the-graph-does-not-know).
-- `implicit` marks a refresh nobody wrote: a write method of a `#[Cacheable]`/`#[CacheableResponse]` class,
-  or one marked `#[RefreshCache]`, refreshes its own resource.
+- `implicit` marks an invalidation nobody wrote: a write invalidates its own resource. Under `refresh`, a write
+  method of a `#[Cacheable]`/`#[CacheableResponse]` class, or one marked `#[RefreshCache]` or `#[CacheableResponse]`,
+  reads it again; under `purge`, `onGet` is any other resource with an `onGet()`, whose write purges it.
+- `collection` marks a list a `#[Link(rel: 'collection')]` on the resource's `onGet()` names: every write to the
+  resource purges it. An `href` that is not a resource URI, such as a path-only one, names nothing.
+- `refresh` and `purge` are read on `onPut()`, `onPost()`, `onPatch()` and `onDelete()` only, in any letter case, as
+  BEAR.QueryRepository acts on them: a `#[Refresh]`, `#[Purge]` or `#[RefreshCache]` on another method is not listed.
 - `layout` is the class attribute extending BEAR.Resource's `AbstractResourceLayout`: its `name` (`ContentPage`),
   `class`, the `source` of the attribute class, and `embed`, its `EMBED` constant, resolved as an `#[Embed]` is.
   Every command takes each part as an `#[Embed]` on the resource's `onGet()`. A layout that does not declare its own
@@ -68,9 +73,10 @@ Local questions are a `grep` away: `grep '"uri":"app://self/user/profile"'` find
 
 Multi-hop questions ("if this changes, what goes stale?") are answered by `impact`, not by repeated `grep`.
 It walks the embed and `dependsOn` edges breadth-first, one line per reached URI by its shortest path.
-With `--method`, it starts from what that write method refreshes and purges.
-A `dependsOn` edge is followed only from a URI that is purged itself (the one asked about, or a `refresh`/`purge`
-target): a declaration carries the exact tag of the URI it names, not the tags that URI carries. `impact` does
+With `--method`, it starts from what that write method refreshes and purges; a list it purges as its resource's
+collection is a `collection` line. A `dependsOn` edge is followed only from a URI that is purged itself (the one
+asked about, or a `refresh`/`purge`/`collection` target): a declaration carries the exact tag of the URI it names,
+not the tags that URI carries. `impact` does
 not compare tags: an edge whose declaration does not match what the write purges is reported on stderr as
 `depends-on-tag-mismatch` or `depends-on-never-invalidated`, and still listed here.
 
@@ -239,11 +245,10 @@ the exit code. None of them fails at run time:
 These leave the resource stale after a write to what it depends on:
 
 - `depends-on-unknown-resource` — no scanned resource serves the URI.
-- `depends-on-never-invalidated` — no write refreshes or purges the URI. A write method refreshes its own resource
+- `depends-on-never-invalidated` — no write refreshes or purges the URI. A write method invalidates its own resource
   implicitly, but an `onPost()` does so only when its arguments carry every required `onGet()` one, under the same
-  name or its snake_case form: otherwise the refresh is skipped for lack of them. This assumes the POST query uses
-  the `onPost()` argument names. A resource cached by `#[DonutCache]`, or by `#[CacheableResponse]` on `onGet()`
-  only, is refreshed only by a write method that carries `#[RefreshCache]` or `#[CacheableResponse]`.
+  name or its snake_case form: otherwise its own key is skipped for lack of them. This assumes the POST query uses
+  the `onPost()` argument names.
 - `depends-on-tag-mismatch` — the tag the declaration expands to (its path as written, and its query keys) is none
   of the tags a write purges. A write refreshes its own resource under the required `onGet()` parameters, as named
   or all in snake_case, at the resource's own path; a `#[Refresh]`/`#[Purge]` purges the URI it names.
@@ -257,14 +262,13 @@ This one purges more than it should:
   it reads as already run, so the page takes its declarations and is purged whole on every write to them, instead
   of recomposed.
 
-A template variable that is not an `onGet()` parameter, one bound by `#[ResourceParam]`, and a declaration on the
-resource class are not reported: they fail the first GET with `DependsOnNotExpandable`.
+A template variable that is not an `onGet()` parameter and one bound by `#[ResourceParam]` are not reported: they fail
+the first GET with `DependsOnNotExpandable`. A declaration on the resource class is not read, by the graph or at run
+time; PHPStan and Psalm report it.
 
 ## What the graph does not know
 
 - Surrogate keys set in code and resources requested in code.
-- `#[DependsOn]` on a row class: the class lives outside the scanned directory, and which resource's body holds
-  its instances is known only at run time.
 - Which instance a template reaches: `{id}` is filled from the request at run time. That is the log's part.
 - Bindings: the graph reads attributes, not the application's modules, so it does not know whether
   `DonutCacheModule` is installed or a CDN purger is bound.

@@ -23,7 +23,6 @@ use function preg_match_all;
 use function preg_replace;
 use function sort;
 use function sprintf;
-use function str_starts_with;
 use function strtolower;
 use function strval;
 use function uri_template;
@@ -44,7 +43,7 @@ final class DependsOnWarnings
 {
     private readonly UriConverter $converter;
 
-    public function __construct(private readonly NodeDeclarationsInterface $declarations)
+    public function __construct()
     {
         $this->converter = new UriConverter();
     }
@@ -96,8 +95,9 @@ final class DependsOnWarnings
     /**
      * The tags each write purges, by the key of the resource they belong to
      *
-     * A write refreshes its own resource with the required onGet() arguments, under their names or all in snake_case;
-     * an onPost() does so only when its own arguments carry them. A #[Refresh]/#[Purge] purges the URI it names.
+     * A write invalidates its own resource with the required onGet() arguments, under their names or all in snake_case;
+     * an onPost() does so only when its own arguments carry them. A #[Refresh]/#[Purge] purges the URI it names, and
+     * so does a #[Link(rel: 'collection')] on the onGet() of the resource written to.
      *
      * @param list<Node>                                     $nodes
      * @param array<string, ReflectionClass<ResourceObject>> $refs
@@ -117,7 +117,7 @@ final class DependsOnWarnings
                     }
 
                     $required = isset($refs[$nodeKey]) ? $this->requiredParameters($refs[$nodeKey]) : null;
-                    if ($required === null || (str_starts_with($name, 'onPost') && ! $this->carries($refs[$nodeKey]->getMethod($name), $required))) {
+                    if ($required === null || (strtolower($name) === 'onpost' && ! $this->carries($refs[$nodeKey]->getMethod($name), $required))) {
                         continue;
                     }
 
@@ -180,29 +180,22 @@ final class DependsOnWarnings
     }
 
     /**
-     * What makes a write refresh the resource, by the cache it declares and the writes it has
+     * Why no write invalidates the resource: every write to a resource with an onGet() invalidates its own key, so it has
+     * none, or only an onPost() that cannot address the key
      *
      * @param Node|null $node
      */
     private function refreshAdvice(array|null $node): string
     {
         foreach ($node['methods'] ?? [] as $method) {
-            foreach ($method['refresh'] ?? [] as $target) {
+            foreach ([...$method['refresh'] ?? [], ...$method['purge'] ?? []] as $target) {
                 if (isset($target['implicit'])) {
-                    return 'the writes that refresh it are onPost() whose arguments, the keys of a POST query that uses their names, do not carry the required onGet() ones; add them, or name it in a #[Purge]/#[Refresh].';
+                    return 'the writes that invalidate it are onPost() whose arguments, the keys of a POST query that uses their names, do not carry the required onGet() ones; add them, or name it in a #[Purge]/#[Refresh].';
                 }
             }
         }
 
-        if ($node === null || ! $this->declarations->isCached($node)) {
-            return 'make it #[Cacheable], or name it in a #[Purge]/#[Refresh].';
-        }
-
-        if (isset($node['cacheable']) || isset($node['cacheableResponse'])) {
-            return 'it is cached, but has no write method; add one, or name it in a #[Purge]/#[Refresh].';
-        }
-
-        return 'it is cached by #[DonutCache] or by #[CacheableResponse] on onGet(), so a write refreshes it only when the write method carries #[RefreshCache] or #[CacheableResponse]; add one, or name it in a #[Purge]/#[Refresh].';
+        return 'it has no write method; add one, or name it in a #[Purge]/#[Refresh].';
     }
 
     /** @param Purged $tag */

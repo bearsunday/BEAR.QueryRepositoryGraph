@@ -109,7 +109,7 @@ final class Impact
         return $lines;
     }
 
-    /** @return list<array{uri: string, via: string, by: string, depth: int}> what the write method refreshes, then what it purges */
+    /** @return list<array{uri: string, via: string, by: string, depth: int}> what the write method refreshes, then what it purges; a list its resource names as its collection is `collection` */
     private function writeTargets(string $key, string $start, string $method): array
     {
         $declared = $this->nodes[$key]['methods'][$method] ?? [];
@@ -119,7 +119,7 @@ final class Impact
         }
 
         foreach ($declared['purge'] ?? [] as $target) {
-            $targets[] = ['uri' => $target['uri'], 'via' => 'purge', 'by' => $start, 'depth' => 1];
+            $targets[] = ['uri' => $target['uri'], 'via' => isset($target['collection']) ? 'collection' : 'purge', 'by' => $start, 'depth' => 1];
         }
 
         return $targets;

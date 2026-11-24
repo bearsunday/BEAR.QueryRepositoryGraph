@@ -198,7 +198,7 @@ USAGE;
             'dump' => [
                 [
                     'meta' => [
-                        'version' => 6,
+                        'version' => 7,
                         'namespaces' => $graph['namespaces'],
                         'dir' => $options['dir'],
                         'counts' => $this->counts($graph['nodes'], $skipped),
@@ -266,7 +266,7 @@ USAGE;
             ));
         }
 
-        $warnings = (new DependsOnWarnings($this->declarations))($classes, $graph['nodes']);
+        $warnings = (new DependsOnWarnings())($classes, $graph['nodes']);
         foreach ($warnings as $warning) {
             fwrite($stderr, json_encode($warning, self::JSON) . "\n");
         }

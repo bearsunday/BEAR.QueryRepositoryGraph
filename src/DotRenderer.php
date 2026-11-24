@@ -355,7 +355,7 @@ final class DotRenderer
 
         foreach (['refresh' => $method['refresh'] ?? [], 'purge' => $method['purge'] ?? []] as $kind => $targets) {
             foreach ($targets as $target) {
-                $arrows[] = [$target['uri'], sprintf('label="%s %s", color="#3b73b9", fontcolor="#2f5f9e"', $name, $kind)];
+                $arrows[] = [$target['uri'], sprintf('label="%s %s", color="#3b73b9", fontcolor="#2f5f9e"', $name, isset($target['collection']) ? 'collection' : $kind)];
             }
         }
 
