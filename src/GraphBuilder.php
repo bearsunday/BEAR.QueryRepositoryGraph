@@ -276,7 +276,7 @@ final class GraphBuilder
     {
         $refresh = [];
         $purge = [];
-        $implicit = $this->implicitRefresh($method, $cacheable, $classResponse);
+        $implicit = $ref->hasMethod('onGet') ? $this->implicitRefresh($method, $cacheable, $classResponse) : null;
         if ($implicit !== null) {
             $refresh[] = ['uri' => $uri, 'implicit' => $implicit];
         }

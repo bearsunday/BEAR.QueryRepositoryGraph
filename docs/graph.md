@@ -248,9 +248,10 @@ These leave the resource stale after a write to what it depends on:
 
 - `depends-on-unknown-resource` — no scanned resource serves the URI.
 - `depends-on-never-invalidated` — no write refreshes or purges the URI. A write method invalidates its own resource
-  implicitly, but an `onPost()` does so only when its arguments carry every required `onGet()` one, under the same
-  name or its snake_case form: otherwise its own key is skipped for lack of them. This assumes the POST query uses
-  the `onPost()` argument names.
+  implicitly, but an `onPost()`, or any write to a resource with no cache attribute, does so only when its arguments
+  carry every required `onGet()` one, under the same name or its snake_case form: otherwise its own key is skipped
+  for lack of them. This assumes the write query uses the method's argument names. A parameter `#[ResourceParam]`
+  binds is not part of the key.
 - `depends-on-tag-mismatch` — the tag the declaration expands to (its path as written, and its query keys) is none
   of the tags a write purges. A write refreshes its own resource under the required `onGet()` parameters, as named
   or all in snake_case, at the resource's own path; a `#[Refresh]`/`#[Purge]` purges the URI it names.

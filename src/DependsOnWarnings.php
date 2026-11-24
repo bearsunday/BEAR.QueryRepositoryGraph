@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace BEAR\QueryRepositoryGraph;
 
+use BEAR\Resource\Annotation\ResourceParam;
 use BEAR\Resource\ResourceObject;
 use Ray\WebContextParam\Annotation\AbstractWebContextParam;
 use ReflectionAttribute;
@@ -96,7 +97,7 @@ final class DependsOnWarnings
      * The tags each write purges, by the key of the resource they belong to
      *
      * A write invalidates its own resource with the required onGet() arguments, under their names or all in snake_case;
-     * an onPost() does so only when its own arguments carry them. A #[Refresh]/#[Purge] purges the URI it names, and
+     * an uncached write and an onPost() do so only when their own arguments carry them. A #[Refresh]/#[Purge] purges the URI it names, and
      * so does a #[Link(rel: 'collection')] on the onGet() of the resource written to.
      *
      * @param list<Node>                                     $nodes
@@ -117,7 +118,7 @@ final class DependsOnWarnings
                     }
 
                     $required = isset($refs[$nodeKey]) ? $this->requiredParameters($refs[$nodeKey]) : null;
-                    if ($required === null || (strtolower($name) === 'onpost' && ! $this->carries($refs[$nodeKey]->getMethod($name), $required))) {
+                    if ($required === null || ((strtolower($name) === 'onpost' || $target['implicit'] === 'onGet') && ! $this->carries($refs[$nodeKey]->getMethod($name), $required))) {
                         continue;
                     }
 
@@ -190,7 +191,7 @@ final class DependsOnWarnings
         foreach ($node['methods'] ?? [] as $method) {
             foreach ([...$method['refresh'] ?? [], ...$method['purge'] ?? []] as $target) {
                 if (isset($target['implicit'])) {
-                    return 'the writes that invalidate it are onPost() whose arguments, the keys of a POST query that uses their names, do not carry the required onGet() ones; add them, or name it in a #[Purge]/#[Refresh].';
+                    return 'the writes that invalidate it are write methods whose arguments, the keys of a write query that uses their names, do not carry the required onGet() ones; add them, or name it in a #[Purge]/#[Refresh].';
                 }
             }
         }
@@ -234,7 +235,7 @@ final class DependsOnWarnings
     /**
      * @param ReflectionClass<ResourceObject> $ref
      *
-     * @return list<string>|null sorted; null when the resource has no onGet()
+     * @return list<string>|null sorted, without the parameters #[ResourceParam] binds; null when the resource has no onGet()
      */
     private function requiredParameters(ReflectionClass $ref): array|null
     {
@@ -242,9 +243,12 @@ final class DependsOnWarnings
             return null;
         }
 
+        $onGet = $ref->getMethod('onGet');
+        $bound = array_map(static fn (ReflectionAttribute $attribute): string => $attribute->newInstance()->param, $onGet->getAttributes(ResourceParam::class));
         $required = [];
-        foreach ($ref->getMethod('onGet')->getParameters() as $parameter) {
-            if (! $parameter->isDefaultValueAvailable()) {
+        foreach ($onGet->getParameters() as $parameter) {
+            $isBound = in_array($parameter->name, $bound, true) || $parameter->getAttributes(ResourceParam::class) !== [];
+            if (! $parameter->isDefaultValueAvailable() && ! $isBound) {
                 $required[] = $parameter->name;
             }
         }

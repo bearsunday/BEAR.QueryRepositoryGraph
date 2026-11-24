@@ -1091,20 +1091,40 @@ class QrGraphTest extends TestCase
             ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/no-get-list', 'dependsOn' => 'app://self/no-get{?id}'],
             ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/no-write-list', 'dependsOn' => 'app://self/no-write{?id}'],
             ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/origin-by-id', 'dependsOn' => 'app://self/origin{?id}'],
+            ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/plain-put-list', 'dependsOn' => 'app://self/plain-put{?id}'],
             ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/plain-refresh-list', 'dependsOn' => 'app://self/plain-refresh{?id}'],
             ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/post-camel-list', 'dependsOn' => 'app://self/post-camel?article_id={id}'],
             ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/post-only-list', 'dependsOn' => 'app://self/post-only{?id}'],
             ['warning' => 'depends-on-unknown-resource', 'resource' => 'app://self/typo', 'dependsOn' => 'app://self/artcle{?id}'],
             ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/with-page', 'dependsOn' => 'app://self/camel-pair{?leftId,rightId,page}'],
         ], $warnings, 'Unpurged is not warned: a write to a resource with an onGet() invalidates its own key, cached or not');
+        $this->assertStringContainsString('write methods whose arguments', $messages['app://self/plain-put-list'], 'an uncached onPut() without the key skips its own key as an onPost() does; BoundKeyList is not warned, a #[ResourceParam] onGet() parameter is not in the key');
         $this->assertSame('The tag is app://self/article?[articleId], but writes purge app://self/article?[id].', $messages['app://self/mismatch']);
         $this->assertSame('The tag is app://self/origin?[id], but writes purge app://self/origin?[articleId], app://self/origin?[].', $messages['app://self/origin-by-id']);
-        $this->assertStringContainsString('the writes that invalidate it are onPost() whose arguments', $messages['app://self/post-only-list']);
-        $this->assertStringContainsString('the writes that invalidate it are onPost() whose arguments', $messages['app://self/donut-refresh-post-list'], 'its onPost() already has #[RefreshCache]');
+        $this->assertStringContainsString('the writes that invalidate it are write methods whose arguments', $messages['app://self/post-only-list']);
+        $this->assertStringContainsString('the writes that invalidate it are write methods whose arguments', $messages['app://self/donut-refresh-post-list'], 'its onPost() already has #[RefreshCache]');
         $this->assertStringContainsString('it has no write method', $messages['app://self/no-write-list']);
         $this->assertStringEndsWith('it has no onGet(), so no write refreshes it; name it in a #[Purge].', $messages['app://self/no-get-list'], 'its onPut() refreshes nothing, and a #[Refresh] of it fails at run time');
-        $this->assertStringContainsString('the writes that invalidate it are onPost() whose arguments', $messages['app://self/plain-refresh-list'], 'uncached, refreshed only by a #[RefreshCache] onPost() that is skipped');
-        $this->assertStringContainsString('the writes that invalidate it are onPost() whose arguments', $messages['app://self/method-cached-list'], 'cached by #[CacheableResponse] on onGet(), invalidated by its onPost() only when the POST carries the key');
+        $this->assertStringContainsString('the writes that invalidate it are write methods whose arguments', $messages['app://self/plain-refresh-list'], 'uncached, refreshed only by a #[RefreshCache] onPost() that is skipped');
+        $this->assertStringContainsString('the writes that invalidate it are write methods whose arguments', $messages['app://self/method-cached-list'], 'cached by #[CacheableResponse] on onGet(), invalidated by its onPost() only when the POST carries the key');
+    }
+
+    public function testAWriteToACacheableResourceWithoutOnGetRefreshesNothing(): void
+    {
+        $nodes = (new GraphBuilder(new UriConverter(), (string) getcwd()))->build((new ResourceScanner())->scan('tests/Fixture/DependsOnWarn/Resource'))['nodes'];
+        $noGet = array_values(array_filter($nodes, static fn (array $node): bool => $node['uri'] === 'app://self/no-get'));
+        $this->assertCount(1, $noGet);
+        $this->assertArrayNotHasKey('methods', $noGet[0], 'NoGet is #[Cacheable] and has an onPut() but no onGet()');
+    }
+
+    public function testImpactReadsTheWriteMethodInAnyLetterCase(): void
+    {
+        $dir = '--dir=tests/Fixture/Collection/Resource';
+        [$code, $out, $err] = self::qrGraph(['impact', 'app://self/post', '--method=ondelete', '--json', $dir]);
+        $this->assertSame(0, $code, $err);
+        [, $expected] = self::qrGraph(['impact', 'app://self/post', '--method=ONDELETE', '--json', $dir]);
+        $this->assertSame($expected, $out);
+        $this->assertStringContainsString('app://self/posts', $out);
     }
 
     public function testUsageErrors(): void
