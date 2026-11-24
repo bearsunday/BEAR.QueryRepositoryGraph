@@ -20,7 +20,7 @@
         "php": "^8.2",
         "ext-tokenizer": "*",
         "composer-runtime-api": "^2.0",
-        "bear/query-repository": "^1.21",
+        "bear/query-repository": "^1.21@dev",
         "bear/resource": "^1.36"
     },
     "require-dev": {

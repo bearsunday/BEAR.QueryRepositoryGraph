@@ -57,8 +57,9 @@ v4 `dependsOn`, v5 dropped the source-text guesses, `dynamic` and the embed `usa
   method of a `#[Cacheable]`/`#[CacheableResponse]` class, or one marked `#[RefreshCache]` or `#[CacheableResponse]`,
   reads it again; under `purge`, `onGet` is any other resource with an `onGet()`, whose write purges it.
 - `collection` marks a list a `#[Link(rel: 'collection')]` on the resource's `onGet()` names: every write to the
-  resource purges it. A path-only `href` (`/posts`, `{/kind}/posts`) takes the resource's scheme and host, as
-  BEAR.QueryRepository resolves it; any other `href` that is not a resource URI, such as `//host/posts`, names nothing.
+  resource purges it. A path-only `href` (`/posts`, `{/kind}/posts`) is drawn under the resource's own scheme and
+  host; the purge reaches the list at that path under any scheme, as a purge tag holds none. Any other `href` that
+  is not a resource URI, such as `//host/posts`, names nothing.
 - `refresh` and `purge` are read on `onPut()`, `onPost()`, `onPatch()` and `onDelete()` only, in any letter case, as
   BEAR.QueryRepository acts on them: a `#[Refresh]`, `#[Purge]` or `#[RefreshCache]` on another method is not listed.
 - `layout` is the class attribute extending BEAR.Resource's `AbstractResourceLayout`: its `name` (`ContentPage`),
