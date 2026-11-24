@@ -14,6 +14,7 @@ use BEAR\RepositoryModule\Annotation\Refresh;
 use BEAR\RepositoryModule\Annotation\RefreshCache;
 use BEAR\Resource\Annotation\AbstractResourceLayout;
 use BEAR\Resource\Annotation\Embed;
+use BEAR\Resource\Annotation\Link;
 use BEAR\Resource\ResourceObject;
 use ReflectionAttribute;
 use ReflectionClass;
@@ -27,9 +28,12 @@ use function count;
 use function getcwd;
 use function in_array;
 use function sprintf;
+use function str_contains;
 use function str_replace;
 use function str_starts_with;
 use function strlen;
+use function strpos;
+use function strtolower;
 use function substr;
 use function usort;
 
@@ -39,17 +43,19 @@ use function usort;
  * Every edge starts at the resource that declares it, so a record carries no `from`.
  * The record's shape is the `resource` definition in `docs/schemas/graph/dump.json`.
  *
- * @psalm-type Target = array{uri: string, template?: string, implicit?: string}
+ * @psalm-type Target = array{uri: string, template?: string, implicit?: string, collection?: true}
  * @psalm-type EmbedTarget = array{rel: string, uri: string, template?: string}
  * @psalm-type Method = array{source: string, cacheableResponse?: true, embed?: list<EmbedTarget>, dependsOn?: list<array{uri: string, template?: string}>, refresh?: list<Target>, purge?: list<Target>}
  * @psalm-type Layout = array{name: string, class: string, source: string, embed: list<EmbedTarget>}
- * @psalm-type Node = array{uri: string, source: string, cacheable?: array{expiry: string, expirySecond: int, expiryAt: string, update: bool, type: string}, donutCache?: true, cacheableResponse?: true, httpCache?: string, layout?: Layout, methods?: array<string, Method>}
+ * @psalm-type Node = array{uri: string, source: string, cacheable?: array{expiry: string, expirySecond: int, expiryAt: string, type: string}, donutCache?: true, cacheableResponse?: true, httpCache?: string, layout?: Layout, methods?: array<string, Method>}
  * @SuppressWarnings("PHPMD.CouplingBetweenObjects")
  */
 final class GraphBuilder
 {
-    /** Methods the command interceptors bind to: they refresh the resource's own onGet */
-    private const WRITE_METHODS = ['onPut', 'onPost', 'onPatch', 'onDelete'];
+    /** The handlers BEAR.Resource dispatches a write to, in any letter case: the command interceptor binds to these alone */
+    private const WRITE_METHODS = ['onput', 'onpost', 'onpatch', 'ondelete'];
+
+    private const COLLECTION = 'collection';
 
     private readonly string $cwd;
 
@@ -132,11 +138,11 @@ final class GraphBuilder
 
         $methods = [];
         foreach ($ref->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
-            if (! str_starts_with($method->getName(), 'on') || $method->getDeclaringClass()->getName() === ResourceObject::class) {
+            if (! str_starts_with(strtolower($method->getName()), 'on') || $method->getDeclaringClass()->getName() === ResourceObject::class) {
                 continue;
             }
 
-            $declared = $this->method($method, $uri, $cacheable, $classResponse);
+            $declared = $this->method($ref, $method, $uri, $cacheable, $classResponse);
             if ($declared !== null) {
                 $methods[$method->getName()] = $declared;
             }
@@ -152,7 +158,7 @@ final class GraphBuilder
     /**
      * @param ReflectionClass<ResourceObject> $ref
      *
-     * @return array{cacheable?: array{expiry: string, expirySecond: int, expiryAt: string, update: bool, type: string}, donutCache?: true, cacheableResponse?: true, httpCache?: string}
+     * @return array{cacheable?: array{expiry: string, expirySecond: int, expiryAt: string, type: string}, donutCache?: true, cacheableResponse?: true, httpCache?: string}
      */
     private function classDeclarations(ReflectionClass $ref): array
     {
@@ -163,7 +169,6 @@ final class GraphBuilder
                 'expiry' => $cacheable->expiry,
                 'expirySecond' => $cacheable->expirySecond,
                 'expiryAt' => $cacheable->expiryAt,
-                'update' => $cacheable->update,
                 'type' => $cacheable->type,
             ];
         }
@@ -232,8 +237,12 @@ final class GraphBuilder
         ];
     }
 
-    /** @return Method|null null when the method declares nothing the cache acts on */
-    private function method(ReflectionMethod $method, string $uri, bool $cacheable, bool $classResponse): array|null
+    /**
+     * @param ReflectionClass<ResourceObject> $ref
+     *
+     * @return Method|null null when the method declares nothing the cache acts on
+     */
+    private function method(ReflectionClass $ref, ReflectionMethod $method, string $uri, bool $cacheable, bool $classResponse): array|null
     {
         $embed = [];
         foreach ($method->getAttributes(Embed::class) as $attribute) {
@@ -241,33 +250,88 @@ final class GraphBuilder
             $embed[] = ['rel' => $instance->rel] + $this->target($instance->src, $uri);
         }
 
-        // The command interceptors refresh the resource's own onGet before any #[Refresh]/#[Purge].
+        $declared = [];
+        if ($method->getAttributes(CacheableResponse::class) !== []) {
+            $declared['cacheableResponse'] = true;
+        }
+
+        // #[Refresh], #[Purge] and #[RefreshCache] act on a write handler alone.
+        $writes = in_array(strtolower($method->getName()), self::WRITE_METHODS, true) ? $this->writes($ref, $method, $uri, $cacheable, $classResponse) : [];
+        $declared += array_filter(['embed' => $embed, 'dependsOn' => $this->dependsOn($method, $uri)] + $writes);
+        if ($declared === []) {
+            return null;
+        }
+
+        return ['source' => $this->source((string) $method->getFileName(), (int) $method->getStartLine())] + $declared;
+    }
+
+    /**
+     * What a write invalidates: its own key first, refreshed where its GET is stored and otherwise purged, then what it names
+     *
+     * @param ReflectionClass<ResourceObject> $ref
+     *
+     * @return array{refresh: list<Target>, purge: list<Target>}
+     */
+    private function writes(ReflectionClass $ref, ReflectionMethod $method, string $uri, bool $cacheable, bool $classResponse): array
+    {
         $refresh = [];
-        $implicit = $this->implicitRefresh($method, $cacheable, $classResponse);
+        $purge = [];
+        $implicit = $ref->hasMethod('onGet') ? $this->implicitRefresh($method, $cacheable, $classResponse) : null;
         if ($implicit !== null) {
             $refresh[] = ['uri' => $uri, 'implicit' => $implicit];
+        }
+
+        if ($implicit === null && $ref->hasMethod('onGet')) {
+            $purge[] = ['uri' => $uri, 'implicit' => 'onGet'];
         }
 
         foreach ($method->getAttributes(Refresh::class) as $attribute) {
             $refresh[] = $this->target($attribute->newInstance()->uri, $uri);
         }
 
-        $purge = [];
         foreach ($method->getAttributes(Purge::class) as $attribute) {
             $purge[] = $this->target($attribute->newInstance()->uri, $uri);
         }
 
-        $declared = [];
-        if ($method->getAttributes(CacheableResponse::class) !== []) {
-            $declared['cacheableResponse'] = true;
+        return ['refresh' => $refresh, 'purge' => [...$purge, ...$this->collections($ref, $uri)]];
+    }
+
+    /**
+     * The lists each #[Link(rel: 'collection')] on onGet() names, which every write to the resource purges
+     *
+     * Read as BEAR.Resource's Linker reads links, without walking parent classes. A path-only href (`/posts`, `{/kind}/posts`)
+     * takes the resource's scheme and host; any other href that is not a resource URI purges nothing.
+     *
+     * @param ReflectionClass<ResourceObject> $ref
+     *
+     * @return list<Target>
+     */
+    private function collections(ReflectionClass $ref, string $uri): array
+    {
+        if (! $ref->hasMethod('onGet')) {
+            return [];
         }
 
-        $declared += array_filter(['embed' => $embed, 'dependsOn' => $this->dependsOn($method, $uri), 'refresh' => $refresh, 'purge' => $purge]);
-        if ($declared === []) {
-            return null;
+        $scheme = substr($uri, 0, (int) strpos($uri, '://'));
+        $targets = [];
+        foreach ($ref->getMethod('onGet')->getAttributes(Link::class) as $attribute) {
+            $link = $attribute->newInstance();
+            $href = $this->isPathOnly($link->href) ? "{$scheme}://self{$link->href}" : $link->href;
+            if ($link->rel !== self::COLLECTION || ! str_contains($href, '://')) {
+                continue;
+            }
+
+            $target = $this->target($href, $uri) + ['collection' => true];
+            $targets[$target['template'] ?? $target['uri']] = $target;
         }
 
-        return ['source' => $this->source((string) $method->getFileName(), (int) $method->getStartLine())] + $declared;
+        return array_values($targets);
+    }
+
+    /** A path, or a template whose first part expands to one, but not a scheme-relative `//host` reference */
+    private function isPathOnly(string $href): bool
+    {
+        return (str_starts_with($href, '/') && ! str_starts_with($href, '//')) || str_starts_with($href, '{/');
     }
 
     /**
@@ -297,15 +361,6 @@ final class GraphBuilder
     {
         if ($method->getAttributes(RefreshCache::class) !== []) {
             return 'RefreshCache';
-        }
-
-        $isWrite = false;
-        foreach (self::WRITE_METHODS as $prefix) {
-            $isWrite = $isWrite || str_starts_with($method->getName(), $prefix);
-        }
-
-        if (! $isWrite) {
-            return null;
         }
 
         if ($cacheable) {

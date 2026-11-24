@@ -43,7 +43,7 @@ JSONL, described by the [JSON Schemas](docs/schemas/graph). Each command and its
 | second row | the scheme and the cache as declared: `cacheable, ttl: short`, `cacheable view, ttl: …`, `cacheable response`, `donut cache`; nothing when the resource is not cached |
 | black arrow | embeds, labelled with the relation (`index` embeds `ranking` as `ranking`) |
 | grey arrow | `#[DependsOn]` |
-| blue arrow | a write that refreshes or purges, labelled `onPut refresh`, `onPost purge` |
+| blue arrow | a write that refreshes or purges, labelled `onPut refresh`, `onPost purge`, or `onPut collection` for a list the written resource names with `#[Link(rel: 'collection')]` |
 
 Arrows point the way they are declared. Invalidation travels against them: refreshing `article` reaches `ranking`
 through its grey arrow, and `index` through the black one.

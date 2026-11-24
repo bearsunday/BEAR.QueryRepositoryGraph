@@ -6,6 +6,11 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Requires bear/query-repository 1.21.0 or later: a write to a resource with an `onGet()` and no stored GET purges its own key (`implicit: "onGet"` under `purge`), and `#[Refresh]`, `#[Purge]` and `#[RefreshCache]` count only on `onPut()`, `onPost()`, `onPatch()` and `onDelete()`, in any letter case.
+- A `#[DependsOn]` on a resource whose writes do not carry its required `onGet()` arguments is warned as never invalidated; arguments bound by `#[ResourceParam]` are not counted.
+- A write to a `#[Cacheable]` resource without an `onGet()` refreshes nothing.
+- `impact --method` matches the write method in any letter case.
+- `dump` no longer records `cacheable.update`, which bear/query-repository 1.21.0 removes (`meta.version` 7).
 - `html` draws only the cached part of the picture, as `dot --cached` does, so the whole graph is no longer clickable; draw it with `qr-graph dot | dot -Tsvg`. `--cached` is still accepted and changes nothing.
 - A URI ending in `/` is an error, in `#[Embed]`, `#[DependsOn]`, `#[Refresh]`, `#[Purge]` and as a command argument: write the `index` it names (`page://self/index` for `page://self/`).
 - Requires bear/resource 1.36.0 or later.
@@ -13,6 +18,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- `#[Link(rel: 'collection', href: ...)]` on a resource's `onGet()`: every write to the resource purges the list, shown as `collection` in `dump` (`meta.version` 7), `impact`, `snapshot`, `dot` and `html`. A path-only `href` such as `/posts` is drawn under the resource's own scheme and host.
 - `html` lists, below the picture in a section that starts collapsed, the declarations that affect no cache, each with its `file:line`: `#[Purge]`/`#[Refresh]` targets that reach no cached resource, URIs no scanned resource serves, and the `#[DependsOn]` warnings. A collapsed "Not drawn" lists the resources the picture leaves out.
 - `html --editor=phpstorm` links each `file:line` to the file in PhpStorm; without it the page holds no absolute path, so it can be shared.
 - Resource layouts (BEAR.Resource's `AbstractResourceLayout`, such as `#[ContentPage]`): every command takes each part as an `#[Embed]` of the pages carrying the layout, `dump` records it as `layout` (`meta.version` 6), and `dot`/`html` draw the layouts as one table of layouts × parts at the top-left instead of arrows.

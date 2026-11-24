@@ -22,6 +22,7 @@ use function json_encode;
 use function sprintf;
 use function str_replace;
 use function str_starts_with;
+use function strcasecmp;
 use function strlen;
 use function substr;
 
@@ -184,7 +185,7 @@ USAGE;
         $skipped = $graph['skipped'];
 
         if ($command === 'impact') {
-            $this->assertTarget($graph['nodes'], $args[0], $options['method'], $options['allowUnknown']);
+            $options['method'] = $this->assertTarget($graph['nodes'], $args[0], $options['method'], $options['allowUnknown']);
         }
 
         $text = $this->text($command, $options, $args, $graph['nodes'], $graph['warnings']);
@@ -198,7 +199,7 @@ USAGE;
             'dump' => [
                 [
                     'meta' => [
-                        'version' => 6,
+                        'version' => 7,
                         'namespaces' => $graph['namespaces'],
                         'dir' => $options['dir'],
                         'counts' => $this->counts($graph['nodes'], $skipped),
@@ -266,7 +267,7 @@ USAGE;
             ));
         }
 
-        $warnings = (new DependsOnWarnings($this->declarations))($classes, $graph['nodes']);
+        $warnings = (new DependsOnWarnings())($classes, $graph['nodes']);
         foreach ($warnings as $warning) {
             fwrite($stderr, json_encode($warning, self::JSON) . "\n");
         }
@@ -321,9 +322,11 @@ USAGE;
     /**
      * @param list<Node> $nodes
      *
+     * @return string|null the write method as the resource spells it; `$method` is matched in any letter case
+     *
      * @throws RuntimeException when the target URI or its write method is not in the graph.
      */
-    private function assertTarget(array $nodes, string $uri, string|null $method, bool $allowUnknown): void
+    private function assertTarget(array $nodes, string $uri, string|null $method, bool $allowUnknown): string|null
     {
         $converter = new UriConverter();
         $uri = $converter->resolve($uri, $uri)['uri'];
@@ -334,19 +337,20 @@ USAGE;
             }
 
             if ($method === null) {
-                return;
+                return null;
             }
 
-            $declared = $node['methods'][$method] ?? null;
-            if ($declared !== null && (($declared['refresh'] ?? []) !== [] || ($declared['purge'] ?? []) !== [])) {
-                return;
+            foreach ($node['methods'] ?? [] as $name => $declared) {
+                if (strcasecmp($name, $method) === 0 && (($declared['refresh'] ?? []) !== [] || ($declared['purge'] ?? []) !== [])) {
+                    return $name;
+                }
             }
 
             throw new RuntimeException("No write method {$method} on {$uri}");
         }
 
         if ($allowUnknown) {
-            return;
+            return $method;
         }
 
         throw new RuntimeException("No resource {$uri}");

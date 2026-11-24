@@ -12,6 +12,7 @@ use function array_values;
 use function fclose;
 use function fwrite;
 use function implode;
+use function in_array;
 use function json_encode;
 use function ksort;
 use function max;
@@ -282,7 +283,7 @@ final class HtmlRenderer
             $edge = [(string) $step['by'], $step['uri']];
             $key = $edge[0] . ' ' . $edge[1];
             $lit['edges'][$key] = $edge;
-            if ($step['via'] === 'refresh' || $step['via'] === 'purge') {
+            if (in_array($step['via'], ['refresh', 'purge', 'collection'], true)) {
                 $lit['writes'][$key] = $edge;
             }
         }

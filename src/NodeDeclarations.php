@@ -57,7 +57,7 @@ final class NodeDeclarations implements NodeDeclarationsInterface
         return $caches;
     }
 
-    /** @param array{expiry: string, expirySecond: int, expiryAt: string, update: bool, type: string} $cacheable */
+    /** @param array{expiry: string, expirySecond: int, expiryAt: string, type: string} $cacheable */
     private function ttl(array $cacheable): string
     {
         if ($cacheable['expirySecond'] > 0) {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace BEAR\QueryRepositoryGraph;
 
 use function array_shift;
+use function strcasecmp;
 
 /**
  * What a write or an invalidation reaches, transitively, through the declared graph
@@ -109,17 +110,23 @@ final class Impact
         return $lines;
     }
 
-    /** @return list<array{uri: string, via: string, by: string, depth: int}> what the write method refreshes, then what it purges */
+    /** @return list<array{uri: string, via: string, by: string, depth: int}> what the write method refreshes, then what it purges; a list its resource names as its collection is `collection` */
     private function writeTargets(string $key, string $start, string $method): array
     {
-        $declared = $this->nodes[$key]['methods'][$method] ?? [];
+        $declared = [];
+        foreach ($this->nodes[$key]['methods'] ?? [] as $name => $candidate) {
+            if (strcasecmp($name, $method) === 0) {
+                $declared = $candidate;
+            }
+        }
+
         $targets = [];
         foreach ($declared['refresh'] ?? [] as $target) {
             $targets[] = ['uri' => $target['uri'], 'via' => 'refresh', 'by' => $start, 'depth' => 1];
         }
 
         foreach ($declared['purge'] ?? [] as $target) {
-            $targets[] = ['uri' => $target['uri'], 'via' => 'purge', 'by' => $start, 'depth' => 1];
+            $targets[] = ['uri' => $target['uri'], 'via' => isset($target['collection']) ? 'collection' : 'purge', 'by' => $start, 'depth' => 1];
         }
 
         return $targets;
