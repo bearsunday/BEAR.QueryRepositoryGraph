@@ -13,6 +13,9 @@ class Post extends ResourceObject
     #[Link(rel: 'collection', href: 'app://self/posts')]
     #[Link(rel: 'collection', href: 'app://self/author/posts?author_id={author_id}')]
     #[Link(rel: 'collection', href: '/posts')]
+    #[Link(rel: 'collection', href: '/archive')]
+    #[Link(rel: 'collection', href: '{/kind}/posts')]
+    #[Link(rel: 'collection', href: '//cdn.example/posts')]
     #[Link(rel: 'author', href: 'app://self/author{?author_id}')]
     public function onGet(string $id): static
     {

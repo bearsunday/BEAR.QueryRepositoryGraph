@@ -32,6 +32,7 @@ use function str_contains;
 use function str_replace;
 use function str_starts_with;
 use function strlen;
+use function strpos;
 use function strtolower;
 use function substr;
 use function usort;
@@ -298,8 +299,8 @@ final class GraphBuilder
     /**
      * The lists each #[Link(rel: 'collection')] on onGet() names, which every write to the resource purges
      *
-     * Read as BEAR.Resource's Linker reads links, without walking parent classes. An href that is not a resource URI,
-     * such as a path-only one, purges nothing.
+     * Read as BEAR.Resource's Linker reads links, without walking parent classes. A path-only href (`/posts`, `{/kind}/posts`)
+     * takes the resource's scheme and host; any other href that is not a resource URI purges nothing.
      *
      * @param ReflectionClass<ResourceObject> $ref
      *
@@ -311,17 +312,26 @@ final class GraphBuilder
             return [];
         }
 
+        $scheme = substr($uri, 0, (int) strpos($uri, '://'));
         $targets = [];
         foreach ($ref->getMethod('onGet')->getAttributes(Link::class) as $attribute) {
             $link = $attribute->newInstance();
-            if ($link->rel !== self::COLLECTION || ! str_contains($link->href, '://')) {
+            $href = $this->isPathOnly($link->href) ? "{$scheme}://self{$link->href}" : $link->href;
+            if ($link->rel !== self::COLLECTION || ! str_contains($href, '://')) {
                 continue;
             }
 
-            $targets[$link->href] = $this->target($link->href, $uri) + ['collection' => true];
+            $target = $this->target($href, $uri) + ['collection' => true];
+            $targets[$target['template'] ?? $target['uri']] = $target;
         }
 
         return array_values($targets);
+    }
+
+    /** A path, or a template whose first part expands to one, but not a scheme-relative `//host` reference */
+    private function isPathOnly(string $href): bool
+    {
+        return (str_starts_with($href, '/') && ! str_starts_with($href, '//')) || str_starts_with($href, '{/');
     }
 
     /**

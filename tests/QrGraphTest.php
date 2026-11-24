@@ -1032,10 +1032,13 @@ class QrGraphTest extends TestCase
             $nodes[$uri] = $decoded;
         }
 
-        // A path-only href and a #[Link] of another rel purge nothing.
+        // A path-only href takes the resource's scheme and host, so `/posts` is the list already named; a `//host`
+        // reference and a #[Link] of another rel purge nothing.
         $collections = [
             ['uri' => 'app://self/posts', 'collection' => true],
             ['uri' => 'app://self/author/posts', 'template' => 'app://self/author/posts?author_id={author_id}', 'collection' => true],
+            ['uri' => 'app://self/archive', 'collection' => true],
+            ['uri' => 'app://self{/kind}/posts', 'collection' => true],
         ];
         $this->assertSame($collections, self::at($nodes['app://self/post'], 'methods', 'onPut', 'purge'));
         $this->assertSame($collections, self::at($nodes['app://self/post'], 'methods', 'ONDELETE', 'purge'), 'a write handler in any letter case');
@@ -1050,6 +1053,8 @@ class QrGraphTest extends TestCase
             ['app://self/post', 'refresh', 'app://self/post', 1],
             ['app://self/posts', 'collection', 'app://self/post', 1],
             ['app://self/author/posts', 'collection', 'app://self/post', 1],
+            ['app://self/archive', 'collection', 'app://self/post', 1],
+            ['app://self{/kind}/posts', 'collection', 'app://self/post', 1],
             ['page://self/index', 'embed', 'app://self/posts', 2],
         ], array_map(static fn (array $line): array => [$line['uri'], $line['via'], $line['by'], $line['depth']], self::jsonl($out)));
 
