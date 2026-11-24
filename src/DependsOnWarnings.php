@@ -235,14 +235,10 @@ final class DependsOnWarnings
     /**
      * @param ReflectionClass<ResourceObject> $ref
      *
-     * @return list<string>|null sorted, without the parameters #[ResourceParam] binds; null when the resource has no onGet()
+     * @return list<string> sorted, without the parameters #[ResourceParam] binds
      */
-    private function requiredParameters(ReflectionClass $ref): array|null
+    private function requiredParameters(ReflectionClass $ref): array
     {
-        if (! $ref->hasMethod('onGet')) {
-            return null;
-        }
-
         $onGet = $ref->getMethod('onGet');
         $bound = array_map(static fn (ReflectionAttribute $attribute): string => $attribute->newInstance()->param, $onGet->getAttributes(ResourceParam::class));
         $required = [];
