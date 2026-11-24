@@ -6,7 +6,9 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
-- Requires bear/query-repository 1.21.0 or later, and reads writes as it acts on them: a write to a resource with an `onGet()` and no stored GET purges its own key (`implicit: "onGet"` under `purge`), and `#[Refresh]`, `#[Purge]` and `#[RefreshCache]` count only on `onPut()`, `onPost()`, `onPatch()` and `onDelete()`, in any letter case. A `#[DependsOn]` on such a resource is warned as never invalidated when no write's arguments carry its required `onGet()` ones, leaving out those `#[ResourceParam]` binds. A write to a `#[Cacheable]` resource without an `onGet()` refreshes nothing.
+- Requires bear/query-repository 1.21.0 or later: a write to a resource with an `onGet()` and no stored GET purges its own key (`implicit: "onGet"` under `purge`), and `#[Refresh]`, `#[Purge]` and `#[RefreshCache]` count only on `onPut()`, `onPost()`, `onPatch()` and `onDelete()`, in any letter case.
+- A `#[DependsOn]` on a resource whose writes do not carry its required `onGet()` arguments is warned as never invalidated; arguments bound by `#[ResourceParam]` are not counted.
+- A write to a `#[Cacheable]` resource without an `onGet()` refreshes nothing.
 - `impact --method` matches the write method in any letter case.
 - `dump` no longer records `cacheable.update`, which bear/query-repository 1.21.0 removes (`meta.version` 7).
 - `html` draws only the cached part of the picture, as `dot --cached` does, so the whole graph is no longer clickable; draw it with `qr-graph dot | dot -Tsvg`. `--cached` is still accepted and changes nothing.

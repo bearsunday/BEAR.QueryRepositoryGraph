@@ -261,13 +261,21 @@ final class DependsOnWarnings
     /**
      * Whether a query keyed by the write's argument names carries each required onGet() argument
      *
-     * BEAR.QueryRepository's MatchQuery looks each one up under its name, then under its snake_case form.
+     * BEAR.QueryRepository's MatchQuery looks each one up under its name, then under its snake_case form. An argument
+     * the write binds with #[ResourceParam] is not in the request query.
      *
      * @param list<string> $required
      */
     private function carries(ReflectionMethod $write, array $required): bool
     {
-        $query = array_map(static fn ($parameter): string => $parameter->name, $write->getParameters());
+        $bound = array_map(static fn (ReflectionAttribute $attribute): string => $attribute->newInstance()->param, $write->getAttributes(ResourceParam::class));
+        $query = [];
+        foreach ($write->getParameters() as $parameter) {
+            if ($parameter->getAttributes(ResourceParam::class) === [] && ! in_array($parameter->name, $bound, true)) {
+                $query[] = $parameter->name;
+            }
+        }
+
         foreach ($required as $name) {
             if (! in_array($name, $query, true) && ! in_array($this->snake([$name])[0], $query, true)) {
                 return false;

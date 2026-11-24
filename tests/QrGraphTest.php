@@ -1082,6 +1082,7 @@ class QrGraphTest extends TestCase
         $this->assertSame([
             ['warning' => 'depends-on-tag-mismatch', 'resource' => 'app://self/alias', 'dependsOn' => 'app://self/camelPair{?leftId,rightId}'],
             ['warning' => 'depends-on-bound-parameter', 'resource' => 'app://self/bound', 'dependsOn' => 'app://self/article{?id}'],
+            ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/bound-write-list', 'dependsOn' => 'app://self/bound-write{?id}'],
             ['warning' => 'depends-on-default-body', 'resource' => 'app://self/default-body'],
             ['warning' => 'depends-on-default-body', 'resource' => 'app://self/default-code'],
             ['warning' => 'depends-on-never-invalidated', 'resource' => 'app://self/donut-refresh-post-list', 'dependsOn' => 'app://self/donut-refresh-post{?id}'],
