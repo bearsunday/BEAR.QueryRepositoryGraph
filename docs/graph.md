@@ -252,7 +252,7 @@ These leave the resource stale after a write to what it depends on:
   when its arguments carry every required `onGet()` one, under the same name or its snake_case form: otherwise its own
   key is skipped for lack of them. This assumes the write query uses the method's argument names, and an argument the
   write binds with `#[ResourceParam]` is not in it. A parameter `#[ResourceParam]` binds on `onGet()` is left out of
-  the key unless the write sends it.
+  the key; the graph does not draw the case where the write sends it.
 - `depends-on-tag-mismatch` — the tag the declaration expands to (its path as written, and its query keys) is none
   of the tags a write purges. A write refreshes its own resource under the required `onGet()` parameters, as named
   or all in snake_case, at the resource's own path; a `#[Refresh]`/`#[Purge]` purges the URI it names.
